@@ -1,15 +1,13 @@
 import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 
-// Minimal namespace surface from the worker's BROADCAST_DO binding. Matches
-// the subset of `DurableObjectNamespace` we actually call — keeps this file
-// off the workers-types dependency.
+// Minimal namespace surface for BROADCAST_DO — declared locally so this
+// file stays off `@cloudflare/workers-types`.
 export interface BroadcastNamespace {
   idFromName(name: string): unknown;
   get(id: unknown): BroadcastStub;
 }
 
 interface BroadcastStub {
-  // Direct RPC method invocation — see BroadcastDO for the contract.
   broadcast(payload: string): Promise<void>;
   closeAll(reason: string): Promise<void>;
   fetch(request: Request): Promise<Response>;
@@ -43,9 +41,7 @@ export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   }
 }
 
-// Drive an async iterator from the WS the broadcast actor returns. The
-// socket open + the message listener attach run eagerly here — before the
-// caller awaits the iterator's first `.next()` — so a broadcast that races
+// Listener registration and socket open run eagerly so a broadcast that races
 // against the iterator drain still buffers into the queue and lands on the
 // next read.
 const iterateFromBroadcastSocket = <T>(
@@ -94,9 +90,7 @@ const iterateFromBroadcastSocket = <T>(
       deliver({ value: undefined as never, done: true });
     });
     socket.addEventListener('error', () => {
-      // The DOM CloseEvent / Event delivered here carries no useful diagnostic
-      // beyond "the runtime decided this socket is unusable". Convey what we
-      // can; if the message-side parse already populated pendingError, keep it.
+      // Error events carry no useful payload; preserve any earlier pendingError.
       if (pendingError === null) pendingError = new Error('BroadcastDO socket error');
       void closeAndEnd();
     });
