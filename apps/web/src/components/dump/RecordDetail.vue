@@ -215,13 +215,13 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
             {{ copyLabelFor('req-body') }}
           </button>
         </header>
-        <div class="px-4 py-3">
-          <p v-if="!requestBody || !requestBody.text" class="text-xs text-gray-600">No request body.</p>
+        <div>
+          <p v-if="!requestBody || !requestBody.text" class="px-4 py-3 text-xs text-gray-600">No request body.</p>
           <template v-else>
-            <p v-if="requestBody.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            <p v-if="requestBody.isBinaryFallback" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Binary body; UTF-8 decoding failed. Showing base64.
             </p>
-            <Code :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
+            <Code flush :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
           </template>
         </div>
       </section>
@@ -276,50 +276,46 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
             </button>
           </template>
         </header>
-        <div class="px-4 py-3">
+        <div>
           <template v-if="record.response.type === 'none'">
-            <p class="text-xs text-gray-600">No response body — request did not produce a response.</p>
+            <p class="px-4 py-3 text-xs text-gray-600">No response body — request did not produce a response.</p>
           </template>
 
           <template v-else-if="record.response.type === 'bytes'">
-            <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="text-xs text-gray-600">Empty body.</p>
+            <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
             <template v-else>
-              <p v-if="responseBodyRendered.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              <p v-if="responseBodyRendered.isBinaryFallback" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
                 Binary body; UTF-8 decoding failed. Showing base64.
               </p>
-              <Code :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
+              <Code flush :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
             </template>
           </template>
 
           <template v-else-if="streamView === 'collected'">
-            <p v-if="collectKind === null" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            <p v-if="collectKind === null" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               No protocol-specific collector for this path. Switch to "Events" to inspect raw frames.
             </p>
             <template v-else-if="collected">
-              <p v-if="collected.error" class="mb-2 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
+              <p v-if="collected.error" class="mx-4 mt-3 mb-2 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
                 Stream errored: {{ collected.error }}
               </p>
-              <p v-else-if="collected.truncated" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              <p v-else-if="collected.truncated" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
                 Output truncated by the upstream (length cap).
               </p>
-              <Code v-if="collected.text" :code="collected.text" language="json" :copyable="false" />
-              <p v-else-if="!collected.error" class="text-xs text-gray-600">No text recovered from the stream.</p>
+              <Code v-if="collected.text" flush :code="collected.text" language="json" :copyable="false" />
+              <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No text recovered from the stream.</p>
             </template>
           </template>
 
           <template v-else>
-            <ul class="space-y-2">
-              <li
-                v-for="(event, i) in eventsRendered"
-                :key="i"
-                class="rounded-md border border-white/[0.04] bg-surface-800/40 px-3 py-2"
-              >
-                <div class="mb-1 flex items-center gap-2 text-[11px]">
+            <ul class="divide-y divide-white/[0.04]">
+              <li v-for="(event, i) in eventsRendered" :key="i">
+                <div class="flex items-center gap-2 px-4 pt-2 text-[11px]">
                   <span v-if="event.event" class="font-mono text-accent-cyan">{{ event.event }}</span>
                   <span v-else class="font-mono text-gray-600">(no event name)</span>
                   <span class="ml-auto font-mono text-gray-500">{{ formatTs(event.ts) }}</span>
                 </div>
-                <Code :code="event.pretty" language="json" :copyable="false" />
+                <Code flush :code="event.pretty" language="json" :copyable="false" />
               </li>
             </ul>
           </template>

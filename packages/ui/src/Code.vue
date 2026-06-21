@@ -11,9 +11,18 @@ const props = withDefaults(defineProps<{
   code: string;
   language?: 'bash' | 'toml' | 'json' | 'text';
   copyable?: boolean;
+  // "flush" mode embeds the code edge-to-edge: no rounded card chrome and
+  // no inner OverlayScrollbars wrapper. Horizontal scroll comes from native
+  // overflow-x, so wheel events bubble through to whichever ancestor owns
+  // vertical scroll. Use this anywhere a code block is mounted inside a
+  // panel that already provides its own framing and scrolling — embedding
+  // the default card would produce a card-in-card and an inner OS that
+  // captures wheel events the outer pane needs for vertical scroll.
+  flush?: boolean;
 }>(), {
   copyable: true,
   language: 'text',
+  flush: false,
 });
 
 const copied = ref(false);
@@ -39,7 +48,20 @@ const highlighted = computed(() => {
 </script>
 
 <template>
-  <div class="code-block relative group">
+  <div v-if="flush" class="code-block relative group">
+    <pre class="min-w-max overflow-x-auto px-4 py-3 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
+    <button
+      v-if="copyable"
+      type="button"
+      class="absolute right-2.5 top-2.5 inline-flex size-7 items-center justify-center rounded-md bg-surface-700/80 text-gray-500 opacity-100 transition-all hover:bg-surface-600 hover:text-accent-cyan focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+      @click="copy"
+    >
+      <i :class="copied ? 'i-lucide-check text-accent-emerald' : 'i-lucide-clipboard'" class="size-3.5" />
+      <span class="sr-only">{{ copied ? 'Copied' : 'Copy' }}</span>
+    </button>
+  </div>
+
+  <div v-else class="code-block relative group">
     <OverlayScrollbars class="rounded-xl border border-white/[0.04] bg-surface-900" no-tabindex>
       <pre class="min-w-max p-4 pr-11 text-[11px] font-mono leading-[1.6] text-gray-200"><code :class="`language-${language}`" v-html="highlighted" /></pre>
     </OverlayScrollbars>
