@@ -1,4 +1,4 @@
-import { DurableObjectDumpBroker, type KeyDumpNamespace } from './dump/broker.ts';
+import { DurableObjectDumpBroker, type BroadcastNamespace } from './dump/broker.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
@@ -23,17 +23,19 @@ export interface CloudflareEnv {
   DUMP_BLOBS: R2BucketLike;
   IMAGES: ImagesBinding;
   KV: KvNamespace;
-  KEY_DUMP_DO: KeyDumpNamespace;
+  BROADCAST_DO: BroadcastNamespace;
   [key: string]: unknown;
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 holds spilled payloads, Images compresses inline
 // images, KV memoises compressed image results, DUMP_BLOBS holds captured
-// dump bodies, KEY_DUMP_DO fans out live dump notifications. A missing
-// binding means wrangler.jsonc drifted from the code, so we refuse to
-// initialise rather than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'DUMP_BLOBS', 'IMAGES', 'KV', 'KEY_DUMP_DO'] as const;
+// dump bodies, BROADCAST_DO fans out live per-key WebSocket frames (used
+// today for dump notifications; content-agnostic so future features can
+// publish through the same actor). A missing binding means wrangler.jsonc
+// drifted from the code, so we refuse to initialise rather than 503 on
+// first use of the absent binding.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'DUMP_BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined || env[name] === null);
@@ -56,6 +58,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
   initDumpStore(new FileDumpStore(env.DB, new R2FileProvider(env.DUMP_BLOBS)));
-  initDumpBroker(new DurableObjectDumpBroker(env.KEY_DUMP_DO));
+  initDumpBroker(new DurableObjectDumpBroker(env.BROADCAST_DO));
   return { db: env.DB };
 };

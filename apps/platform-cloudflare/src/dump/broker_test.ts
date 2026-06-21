@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
-import { DurableObjectDumpBroker, type KeyDumpNamespace } from './broker.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
+import { DurableObjectDumpBroker, type BroadcastNamespace } from './broker.ts';
 import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
 
 class FakeServerSocket {
@@ -31,13 +30,13 @@ class FakeServerSocket {
   }
 }
 
-const buildNamespace = (socket: FakeServerSocket) => {
-  const ns: KeyDumpNamespace = {
+const buildNamespace = (socket: FakeServerSocket, broadcasts: string[] = [], closeAlls: string[] = []) => {
+  const ns: BroadcastNamespace = {
     idFromName(_name) { return {}; },
     get(_id) {
       return {
-        publish: async () => {},
-        notifyDisabled: async () => {},
+        broadcast: async payload => { broadcasts.push(payload); },
+        closeAll: async reason => { closeAlls.push(reason); },
         fetch: async () => {
           // Real CF returns 101; Node's `Response` rejects status 101 in its
           // constructor, so synthesise it by overriding `status` after the
@@ -53,7 +52,7 @@ const buildNamespace = (socket: FakeServerSocket) => {
   return ns;
 };
 
-test('DurableObjectDumpBroker.subscribe drives metas through the DO socket', async () => {
+test('DurableObjectDumpBroker.subscribe drives metas through the broadcast socket', async () => {
   const socket = new FakeServerSocket();
   const broker = new DurableObjectDumpBroker(buildNamespace(socket));
   const controller = new AbortController();
@@ -78,20 +77,22 @@ test('DurableObjectDumpBroker.subscribe drives metas through the DO socket', asy
   assertEquals(socket.closed?.code, 1000);
 });
 
-test('DurableObjectDumpBroker.publish dispatches through the namespace stub', async () => {
-  const calls: DumpMetadata[] = [];
-  const ns: KeyDumpNamespace = {
-    idFromName(_name) { return {}; },
-    get(_id) {
-      return {
-        publish: async meta => { calls.push(meta); },
-        notifyDisabled: async () => {},
-        fetch: async () => new Response(null),
-      };
-    },
-  };
+test('DurableObjectDumpBroker.publish dispatches an appended frame through broadcast', async () => {
+  const broadcasts: string[] = [];
+  const ns = buildNamespace(new FakeServerSocket(), broadcasts);
   const broker = new DurableObjectDumpBroker(ns);
   await broker.publish('k', fakeMeta({ id: 'A1' }));
-  assertEquals(calls.length, 1);
-  assertEquals(calls[0]!.id, 'A1');
+  assertEquals(broadcasts.length, 1);
+  const parsed = JSON.parse(broadcasts[0]!) as { event: string; data: { id: string } };
+  assertEquals(parsed.event, 'appended');
+  assertEquals(parsed.data.id, 'A1');
+});
+
+test('DurableObjectDumpBroker.notifyDisabled translates to closeAll with the documented reason', async () => {
+  const closeAlls: string[] = [];
+  const ns = buildNamespace(new FakeServerSocket(), [], closeAlls);
+  const broker = new DurableObjectDumpBroker(ns);
+  await broker.notifyDisabled('k');
+  assertEquals(closeAlls.length, 1);
+  assertEquals(closeAlls[0], 'dump retention disabled');
 });

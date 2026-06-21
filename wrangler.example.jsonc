@@ -95,26 +95,26 @@
       "id": "<YOUR_KV_NAMESPACE_ID>"
     }
   ],
-  // Per-API-key dump fan-out. The DO has no persistent state of its own —
-  // dump rows live in D1, bodies live in DUMP_BLOBS, and the actor only
-  // routes WebSocket frames from the capturing data-plane to the SSE
-  // subscribers on the dashboard.
+  // Per-key WebSocket fan-out actor. The DO has no persistent state of its
+  // own — it's content-agnostic infrastructure that the dump feature (and
+  // any future per-key live-event consumer) layers a framing convention on
+  // top of. `broadcast(payload)` fans a string out to every subscriber;
+  // `closeAll(reason)` ends every subscriber session.
   "durable_objects": {
     "bindings": [
       {
-        "name": "KEY_DUMP_DO",
-        "class_name": "KeyDumpDO"
+        "name": "BROADCAST_DO",
+        "class_name": "BroadcastDO"
       }
     ]
   },
   // `new_sqlite_classes` is the current spelling even for stateless DOs;
   // the KV-backed `new_classes` path is being phased out. The actor has no
-  // SQLite mount, no alarms, and no migrations to manage as the schema
-  // evolves on the data-plane side.
+  // SQLite mount, no alarms, and no migrations to manage.
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["KeyDumpDO"]
+      "new_sqlite_classes": ["BroadcastDO"]
     }
   ]
 }
