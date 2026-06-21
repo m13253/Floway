@@ -77,13 +77,6 @@ describe('collect', () => {
     expect(result.candidates[0].content.parts).toEqual([{ text: 'hi there' }]);
   });
 
-  it('returns a null-result outcome when no collector matches the path', () => {
-    const out = collectByKind(null, []);
-    expect(out.result).toBeNull();
-    expect(out.error).toBeNull();
-    expect(out.truncated).toBe(false);
-  });
-
   it('detects protocol from path', () => {
     expect(detectCollectKind('/v1/messages')).toBe('messages');
     expect(detectCollectKind('/v1/responses')).toBe('responses');

@@ -158,6 +158,7 @@ const collectKind = computed(() => record.value ? detectCollectKind(record.value
 
 const collected = computed<CollectOutcome | null>(() => {
   if (record.value?.response.type !== 'stream') return null;
+  if (collectKind.value === null) return null;
   return collectByKind(collectKind.value, streamEvents.value);
 });
 

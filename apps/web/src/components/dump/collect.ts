@@ -1,33 +1,24 @@
 import type { DumpStreamEvent } from '@floway-dev/protocols/dump';
 import {
   collectChatCompletionsStream,
+  type CollectOutcome as ProtocolCollectOutcome,
   collectGeminiStream,
   collectMessagesStream,
   collectResponsesStream,
 } from '@floway-dev/protocols/dump-collect';
 
-// Structured collected view of a streaming response. `result` is the
-// fully-reconstructed non-streaming payload (envelope + content blocks +
-// tool calls + usage + finish reason etc.) that the dashboard pretty-prints
-// as JSON. `error` and `truncated` flag the cases where the stream did not
-// close cleanly — the heavy folding logic lives behind
-// `@floway-dev/protocols/dump-collect` so the gateway and the dashboard share
-// it.
-export interface CollectOutcome {
-  result: unknown | null;
-  error: string | null;
-  truncated: boolean;
-}
+export type CollectOutcome = ProtocolCollectOutcome<unknown>;
 
-export type CollectKind = 'messages' | 'chat-completions' | 'responses' | 'gemini' | null;
+export type CollectKind = 'messages' | 'chat-completions' | 'responses' | 'gemini';
 
-// Sniff the protocol from the request path. The dashboard only renders one
-// collected view at a time and the path is the highest-signal hint we have.
-export const detectCollectKind = (path: string): CollectKind => {
-  if (path.includes('/messages') || path.includes('/v1/messages')) return 'messages';
-  if (path.includes('/responses') || path.includes('/v1/responses')) return 'responses';
+// Sniff the protocol from the request path. Returns null when the path
+// doesn't match any known protocol so callers can short-circuit before
+// invoking `collectByKind`.
+export const detectCollectKind = (path: string): CollectKind | null => {
+  if (path.includes('/messages')) return 'messages';
+  if (path.includes('/responses')) return 'responses';
   if (path.includes('/chat/completions')) return 'chat-completions';
-  if (path.includes('/v1beta/') || path.includes(':streamGenerateContent') || path.includes(':generateContent')) return 'gemini';
+  if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini';
   return null;
 };
 
@@ -37,6 +28,5 @@ export const collectByKind = (kind: CollectKind, events: DumpStreamEvent[]): Col
   case 'chat-completions': return collectChatCompletionsStream(events);
   case 'responses': return collectResponsesStream(events);
   case 'gemini': return collectGeminiStream(events);
-  case null: return { result: null, error: null, truncated: false };
   }
 };
