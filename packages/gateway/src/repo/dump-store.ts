@@ -11,14 +11,10 @@ import type {
   DumpStreamEvent,
 } from '@floway-dev/protocols/dump';
 
-// File-backed `DumpStore` impl shared between deployment targets. See the
-// interface contract in `packages/gateway/src/runtime/dump-store-contract.ts`
-// for the metadata-in-SQL / bytes-in-FileProvider split.
-//
-// Concrete layout: bodies live under hour-bucketed FileProvider keys
+// Bodies live under hour-bucketed FileProvider keys
 // `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`. The hour bucket
-// exists so the cron sweep can `deletePrefix` whole expired hours without
-// per-record file enumeration.
+// lets the cron sweep `deletePrefix` whole expired hours without per-record
+// file enumeration.
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
@@ -26,10 +22,9 @@ const HOUR_MS = 60 * 60 * 1000;
 interface BodyDescriptor {
   key: string;
   contentType: string;
-  // 'bytes' for non-SSE responses, 'events' for SSE-parsed responses (the
-  // body file holds the JSON array of DumpStreamEvent). Absent on request-
-  // side descriptors — request bodies are always 'bytes' there.
-  type?: 'bytes' | 'events';
+  // 'bytes' for raw bodies; 'events' when the body file holds a JSON array
+  // of DumpStreamEvent for an SSE-parsed response.
+  type: 'bytes' | 'events';
 }
 
 interface DumpRow {
@@ -56,14 +51,6 @@ const hydrateUpstream = (row: { upstream_id: string | null; upstream_name: strin
   return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind };
 };
 
-// Strip the in-memory `upstream` field before storage. The ref is rebuilt
-// from the join at read time so an admin rename (or delete) is honored on
-// every historical record, not only on future captures.
-const metaForStorage = (meta: DumpMetadata): Omit<DumpMetadata, 'upstream'> => {
-  const { upstream: _drop, ...rest } = meta;
-  return rest;
-};
-
 const hourBucket = (ms: number): string => {
   const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
   const y = date.getUTCFullYear().toString().padStart(4, '0');
@@ -87,6 +74,9 @@ const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
 
+const contentTypeOf = (headers: ReadonlyArray<[string, string]>): string =>
+  headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
+
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
   return new Uint8Array(await stream.arrayBuffer());
@@ -97,35 +87,16 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   return new Uint8Array(await stream.arrayBuffer());
 };
 
-const requestContentType = (request: DumpRequest): string => {
-  for (const [name, value] of request.headers) {
-    if (name.toLowerCase() === 'content-type') return value;
-  }
-  return '';
-};
-
-const responseContentType = (response: DumpResponse): string => {
-  for (const [name, value] of response.headers) {
-    if (name.toLowerCase() === 'content-type') return value;
-  }
-  return '';
-};
-
 const putBody = async (
   files: FileProvider,
   key: string,
   rawBytes: Uint8Array,
   contentType: string,
-  type: 'bytes' | 'events' | undefined,
+  type: 'bytes' | 'events',
 ): Promise<BodyDescriptor> => {
   const gz = await gzip(rawBytes);
   await files.put(key, gz);
-  const descriptor: BodyDescriptor = {
-    key,
-    contentType,
-  };
-  if (type !== undefined) descriptor.type = type;
-  return descriptor;
+  return { key, contentType, type };
 };
 
 const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<Uint8Array> => {
@@ -149,18 +120,23 @@ export class FileDumpStore implements DumpStore {
     const requestRaw = decodeBodyFromWire(record.request.body);
     const requestDescriptor = requestRaw.byteLength === 0
       ? null
-      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, requestContentType(record.request), undefined);
+      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, contentTypeOf(record.request.headers), 'bytes');
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.type === 'bytes') {
       const responseRaw = decodeBodyFromWire(record.response.body);
       if (responseRaw.byteLength > 0) {
-        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, responseContentType(record.response), 'bytes');
+        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, contentTypeOf(record.response.headers), 'bytes');
       }
     } else if (record.response.type === 'stream') {
       const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.events));
-      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, responseContentType(record.response), 'events');
+      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, contentTypeOf(record.response.headers), 'events');
     }
+
+    // Strip the in-memory `upstream` field before storage; the ref is
+    // rebuilt from the join at read time so an admin rename (or delete)
+    // is honored on every historical record.
+    const { upstream: _drop, ...metaToStore } = record.meta;
 
     // Files first, then the row — a partial failure leaves orphan files the
     // hour-bucket sweep collects, never an orphan row whose detail fetch
@@ -174,7 +150,7 @@ export class FileDumpStore implements DumpStore {
       record.meta.id,
       record.meta.completedAt,
       record.meta.upstream?.id ?? null,
-      JSON.stringify(metaForStorage(record.meta)),
+      JSON.stringify(metaToStore),
       JSON.stringify(record.request.headers),
       record.response.type === 'none' ? null : JSON.stringify(record.response.headers),
       requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
@@ -250,8 +226,7 @@ export class FileDumpStore implements DumpStore {
     if (responseHeaders === null) {
       responseBody = { type: 'none' };
     } else if (responseDescriptor === null) {
-      const contentType = responseHeaders.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-      responseBody = { type: 'bytes', body: encodeBodyForWire(new Uint8Array(0), contentType) };
+      responseBody = { type: 'bytes', body: encodeBodyForWire(new Uint8Array(0), contentTypeOf(responseHeaders)) };
     } else if (responseDescriptor.type === 'events') {
       responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
     } else {
