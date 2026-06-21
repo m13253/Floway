@@ -8,11 +8,6 @@ import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 // channelId allocates a fresh EventTarget on demand. The total number of
 // distinct channels held at any moment is bounded by whatever the caller
 // chooses as the channel-id space.
-//
-// The codec is degenerate for in-process delivery (the encoded string round-
-// trips through `decode` without touching the wire) but the type still flows
-// so this class composes with the gateway's typed wrappers identically to its
-// Cloudflare sibling.
 export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
   private readonly targets = new Map<string, EventTarget>();
 
@@ -35,9 +30,6 @@ export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
     const target = this.targets.get(channelId);
     if (!target) return;
     target.dispatchEvent(new Event('close'));
-    // Drop the target entry so the map size stays bounded across repeated
-    // close cycles; a future publish on the same channelId allocates a fresh
-    // EventTarget on demand.
     this.targets.delete(channelId);
   }
 
