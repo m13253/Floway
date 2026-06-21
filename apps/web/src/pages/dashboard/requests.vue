@@ -86,7 +86,7 @@ watch(dumpKeys, next => {
     </div>
 
     <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
-      <aside class="flex max-h-72 w-full shrink-0 flex-col border-b border-white/[0.06] lg:max-h-none lg:w-90 lg:border-b-0 lg:border-r">
+      <aside class="flex max-h-72 w-full min-h-0 shrink-0 flex-col border-b border-white/[0.06] lg:max-h-none lg:w-90 lg:border-b-0 lg:border-r">
         <div class="border-b border-white/[0.06] p-3">
           <select
             v-if="dumpKeys && dumpKeys.length > 0"
@@ -108,18 +108,22 @@ watch(dumpKeys, next => {
           </RouterLink>
         </div>
 
-        <RequestList
-          v-else-if="dumpKeys"
-          :records="subscription.records.value"
-          :loading="subscription.loading.value"
-          :error="subscription.error.value"
-          v-model:selected-id="selectedRecordId"
-          @load-older="subscription.loadOlder"
-        />
+        <div v-else-if="dumpKeys" class="flex min-h-0 flex-1 flex-col">
+          <RequestList
+            :records="subscription.records.value"
+            :loading="subscription.loading.value"
+            :error="subscription.error.value"
+            v-model:selected-id="selectedRecordId"
+            @load-older="subscription.loadOlder"
+          />
+        </div>
       </aside>
 
-      <div class="min-w-0 flex-1">
-        <RecordDetail :key-id="selectedKeyId" :record-id="selectedRecordId" />
+      <div class="flex min-w-0 min-h-0 flex-1 flex-col">
+        <div v-if="selectedKeyId === ''" class="flex h-full items-center justify-center px-6 text-center text-sm text-gray-600">
+          Select an API key on the left to view captured requests.
+        </div>
+        <RecordDetail v-else :key-id="selectedKeyId" :record-id="selectedRecordId" />
       </div>
     </div>
   </div>

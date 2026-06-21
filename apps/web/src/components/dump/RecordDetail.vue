@@ -31,6 +31,11 @@ const fetchRecord = async () => {
   const token = ++activeToken;
   loading.value = true;
   error.value = null;
+  // Reset the stream-view toggle whenever a new record starts loading. Without
+  // this the Events tab persists across record switches, so the first paint
+  // of a streaming record can land on Events even though the operator's
+  // typical entry point is the Collected reconstruction.
+  streamView.value = 'collected';
   try {
     const res = await authFetch(`/api/dump/keys/${encodeURIComponent(props.keyId)}/records/${encodeURIComponent(props.recordId)}`);
     if (token !== activeToken) return;
@@ -60,29 +65,32 @@ const contentTypeOf = (headers: Array<[string, string]>): string => {
   return '';
 };
 
-const decodeBase64Utf8 = (b64: string): { text: string; ok: boolean } => {
+const decodeBase64Utf8 = (b64: string): { text: string; error: string | null } => {
   try {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    return { text, ok: true };
-  } catch {
-    return { text: '', ok: false };
+    return { text, error: null };
+  } catch (e) {
+    return { text: '', error: e instanceof Error ? e.message : String(e) };
   }
 };
 
 interface RenderedBody {
   text: string;
-  isBinaryFallback: boolean;
+  // Filled when a "textual" content-type carried non-UTF-8 bytes — the
+  // banner surfaces the exact TextDecoder message so an operator can tell
+  // a wrong charset apart from a genuinely binary payload.
+  decodeError: string | null;
   isJson: boolean;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', isBinaryFallback: false, isJson: false };
+  if (body.data.length === 0) return { text: '', decodeError: null, isJson: false };
   if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
   const decoded = decodeBase64Utf8(body.data);
-  if (!decoded.ok) return { text: body.data, isBinaryFallback: true, isJson: false };
+  if (decoded.error !== null) return { text: body.data, decodeError: decoded.error, isJson: false };
   return renderTextBody(decoded.text, contentType);
 };
 
@@ -97,12 +105,12 @@ const renderTextBody = (body: string, contentType: string): RenderedBody => {
   if (isJsonContentType(contentType)) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return { text: JSON.stringify(parsed, null, 2), isBinaryFallback: false, isJson: true };
+      return { text: JSON.stringify(parsed, null, 2), decodeError: null, isJson: true };
     } catch {
-      return { text: body, isBinaryFallback: false, isJson: false };
+      return { text: body, decodeError: null, isJson: false };
     }
   }
-  return { text: body, isBinaryFallback: false, isJson: false };
+  return { text: body, decodeError: null, isJson: false };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
@@ -136,12 +144,30 @@ const eventsRendered = computed(() => streamEvents.value.map(ev => {
   return { event: ev.event, ts: ev.ts, pretty };
 }));
 
+// One-click "copy the whole SSE wire" affordance for the Events view. Joins
+// every captured frame back into `event: …\ndata: …\n` form so an operator
+// can replay the captured stream against a different gateway or pipe it into
+// a logger. Skipped on the `event:` line when the frame had no event name —
+// SSE semantics: a frame with only a `data:` line is a "message"-typed
+// event, which is what the encoder produces.
+const eventsCopyText = computed(() => streamEvents.value
+  .map(ev => `${ev.event ? `event: ${ev.event}\n` : ''}data: ${ev.data}\n`)
+  .join('\n'));
+
 const collectKind = computed(() => record.value ? detectCollectKind(record.value.meta.path) : null);
 
 const collected = computed<CollectOutcome | null>(() => {
   if (record.value?.response.type !== 'stream') return null;
   return collectByKind(collectKind.value, streamEvents.value);
 });
+
+const requestHeadersCopy = computed(() => record.value
+  ? record.value.request.headers.map(([k, v]) => `${k}: ${v}`).join('\n')
+  : '');
+
+const responseHeadersCopy = computed(() => record.value
+  ? record.value.response.headers.map(([k, v]) => `${k}: ${v}`).join('\n')
+  : '');
 
 // Match the KeysTable copy-button convention: surface clipboard write failures
 // so the operator knows the click did nothing rather than silently dropping
@@ -164,6 +190,7 @@ const copyLabelFor = (section: string): string => {
   if (copyState.value === `error:${section}`) return 'Copy failed';
   return 'Copy';
 };
+const copyDangerFor = (section: string): boolean => copyState.value === `error:${section}`;
 
 const formatTs = (ms: number) => {
   if (ms < 1) return `${ms.toFixed(3)}ms`;
@@ -171,7 +198,17 @@ const formatTs = (ms: number) => {
   return `${(ms / 1000).toFixed(2)}s`;
 };
 
-const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-white/[0.06] bg-surface-900/85 px-4 py-2.5 backdrop-blur-md';
+// `status === 0` is the gateway's sentinel for "no response was produced"
+// (transport failure, abort before bytes, dial error). Distinguish it from
+// a real 4xx/5xx so the operator can tell the upstream rejected the
+// request from "the request never reached an upstream at all."
+const statusLabel = (status: number): string => status === 0 ? 'No response' : String(status);
+
+const sectionHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-white/[0.06] bg-surface-900/85 px-4 py-2.5 backdrop-blur-md';
+const copyBtn = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-white/[0.06]';
+const copyBtnNeutral = 'text-gray-400 hover:text-gray-200';
+const copyBtnDanger = 'border border-accent-rose/40 bg-accent-rose/10 text-accent-rose';
+const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ? copyBtnDanger : copyBtnNeutral}`;
 </script>
 
 <template>
@@ -189,62 +226,59 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
       {{ error }}
     </div>
 
-    <OverlayScrollbars v-else-if="record" class="min-h-0 flex-1">
+    <OverlayScrollbars v-else-if="record" class="min-h-0 flex-1" no-tabindex>
       <section>
-        <header :class="stickyHeader">
+        <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request</span>
+          <span class="ml-3 font-mono text-xs text-accent-cyan">{{ record.request.method }}</span>
+          <span class="ml-1 min-w-0 truncate font-mono text-xs text-gray-300" :title="record.request.path">{{ record.request.path }}</span>
+          <button type="button" :class="`ml-auto ${copyBtnClass('req-headers')}`" @click="copy(requestHeadersCopy, 'req-headers')">
+            {{ copyLabelFor('req-headers') }}
+          </button>
         </header>
-        <div class="px-4 py-3">
-          <p class="mb-2 font-mono text-xs text-gray-300">
-            <span class="text-accent-cyan">{{ record.request.method }}</span>
-            <span class="ml-2 break-all">{{ record.request.path }}</span>
-          </p>
+        <div class="px-4 py-2">
           <HeaderTable :key="`req:${record.meta.id}`" :headers="record.request.headers" />
         </div>
       </section>
 
       <section class="border-t border-white/[0.06]">
-        <header :class="stickyHeader">
+        <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request body</span>
-          <button
-            v-if="requestBody && requestBody.text"
-            type="button"
-            class="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200"
-            @click="copy(requestBody.text, 'req-body')"
-          >
+          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.text, 'req-body')">
             {{ copyLabelFor('req-body') }}
           </button>
         </header>
-        <div>
-          <p v-if="!requestBody || !requestBody.text" class="px-4 py-3 text-xs text-gray-600">No request body.</p>
-          <template v-else>
-            <p v-if="requestBody.isBinaryFallback" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-              Binary body; UTF-8 decoding failed. Showing base64.
-            </p>
-            <Code flush :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
-          </template>
-        </div>
+        <div v-if="!requestBody || !requestBody.text" class="px-4 py-3 text-xs text-gray-600">No request body.</div>
+        <template v-else>
+          <p v-if="requestBody.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            Could not decode the request body ({{ requestBody.decodeError }}); showing raw base64 below.
+          </p>
+          <Code flush :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
+        </template>
       </section>
 
       <section class="border-t border-white/[0.06]">
-        <header :class="stickyHeader">
+        <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response</span>
           <span
             class="ml-2 inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold"
             :class="statusBadgeClass(record.response.status, record.meta.error)"
           >
-            {{ record.response.status === 0 ? 'ERR' : record.response.status }}
+            {{ statusLabel(record.response.status) }}
           </span>
-          <span v-if="record.meta.error" class="ml-2 truncate text-[11px] text-accent-rose" :title="record.meta.error">{{ record.meta.error }}</span>
+          <span v-if="record.meta.error" class="ml-2 min-w-0 truncate text-[11px] text-accent-rose" :title="record.meta.error">{{ record.meta.error }}</span>
+          <button v-if="record.response.headers.length > 0" type="button" :class="`ml-auto ${copyBtnClass('res-headers')}`" @click="copy(responseHeadersCopy, 'res-headers')">
+            {{ copyLabelFor('res-headers') }}
+          </button>
         </header>
-        <div class="px-4 py-3">
+        <div class="px-4 py-2">
           <HeaderTable v-if="record.response.headers.length > 0" :key="`res:${record.meta.id}`" :headers="record.response.headers" />
           <p v-else class="text-xs text-gray-600">No response headers.</p>
         </div>
       </section>
 
       <section class="border-t border-white/[0.06]">
-        <header :class="stickyHeader">
+        <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response body</span>
           <template v-if="record.response.type === 'stream'">
             <div class="ml-auto inline-flex overflow-hidden rounded border border-white/[0.08]">
@@ -265,61 +299,59 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
                 Events ({{ streamEvents.length }})
               </button>
             </div>
+            <button v-if="streamView === 'events'" type="button" :class="`ml-2 ${copyBtnClass('res-events')}`" @click="copy(eventsCopyText, 'res-events')">
+              {{ copyLabelFor('res-events') }}
+            </button>
           </template>
           <template v-else-if="record.response.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
-            <button
-              type="button"
-              class="ml-auto inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-gray-400 hover:bg-white/[0.06] hover:text-gray-200"
-              @click="copy(responseBodyRendered.text, 'res-body')"
-            >
+            <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.text, 'res-body')">
               {{ copyLabelFor('res-body') }}
             </button>
           </template>
         </header>
-        <div>
-          <template v-if="record.response.type === 'none'">
-            <p class="px-4 py-3 text-xs text-gray-600">No response body — request did not produce a response.</p>
-          </template>
 
-          <template v-else-if="record.response.type === 'bytes'">
-            <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
-            <template v-else>
-              <p v-if="responseBodyRendered.isBinaryFallback" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-                Binary body; UTF-8 decoding failed. Showing base64.
-              </p>
-              <Code flush :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
-            </template>
-          </template>
+        <template v-if="record.response.type === 'none'">
+          <p class="px-4 py-3 text-xs text-gray-600">No response body — request did not produce a response.</p>
+        </template>
 
-          <template v-else-if="streamView === 'collected'">
-            <p v-if="collectKind === null" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-              No protocol-specific collector for this path. Switch to "Events" to inspect raw frames.
-            </p>
-            <template v-else-if="collected">
-              <p v-if="collected.error" class="mx-4 mt-3 mb-2 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
-                Stream errored: {{ collected.error }}
-              </p>
-              <p v-else-if="collected.truncated" class="mx-4 mt-3 mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-                Output truncated by the upstream (length cap).
-              </p>
-              <Code v-if="collected.text" flush :code="collected.text" language="json" :copyable="false" />
-              <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No text recovered from the stream.</p>
-            </template>
-          </template>
-
+        <template v-else-if="record.response.type === 'bytes'">
+          <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
           <template v-else>
-            <ul class="divide-y divide-white/[0.04]">
-              <li v-for="(event, i) in eventsRendered" :key="i">
-                <div class="flex items-center gap-2 px-4 pt-2 text-[11px]">
-                  <span v-if="event.event" class="font-mono text-accent-cyan">{{ event.event }}</span>
-                  <span v-else class="font-mono text-gray-600">(no event name)</span>
-                  <span class="ml-auto font-mono text-gray-500">{{ formatTs(event.ts) }}</span>
-                </div>
-                <Code flush :code="event.pretty" language="json" :copyable="false" />
-              </li>
-            </ul>
+            <p v-if="responseBodyRendered.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              Could not decode the response body ({{ responseBodyRendered.decodeError }}); showing raw base64 below.
+            </p>
+            <Code flush :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
           </template>
-        </div>
+        </template>
+
+        <template v-else-if="streamView === 'collected'">
+          <p v-if="collectKind === null" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            No protocol-specific collector for this path. Switch to "Events" to inspect raw frames.
+          </p>
+          <template v-else-if="collected">
+            <p v-if="collected.error" class="mx-4 mt-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">
+              Stream errored: {{ collected.error }}
+            </p>
+            <p v-else-if="collected.truncated" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              Output truncated by the upstream (length cap).
+            </p>
+            <Code v-if="collected.text" flush :code="collected.text" language="json" :copyable="false" />
+            <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No text recovered from the stream.</p>
+          </template>
+        </template>
+
+        <template v-else>
+          <ul class="divide-y divide-white/[0.04]">
+            <li v-for="(event, i) in eventsRendered" :key="i">
+              <div class="flex items-center gap-2 px-4 pt-2 text-[11px]">
+                <span v-if="event.event" class="font-mono text-accent-cyan">{{ event.event }}</span>
+                <span v-else class="font-mono text-gray-600">(unlabeled)</span>
+                <span class="ml-auto font-mono text-gray-500">+{{ formatTs(event.ts) }}</span>
+              </div>
+              <Code flush :code="event.pretty" language="json" :copyable="false" />
+            </li>
+          </ul>
+        </template>
       </section>
     </OverlayScrollbars>
   </div>

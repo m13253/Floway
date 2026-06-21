@@ -11,13 +11,15 @@ const props = withDefaults(defineProps<{
   code: string;
   language?: 'bash' | 'toml' | 'json' | 'text';
   copyable?: boolean;
-  // "flush" mode embeds the code edge-to-edge: no rounded card chrome and
-  // no inner OverlayScrollbars wrapper. Horizontal scroll comes from native
-  // overflow-x, so wheel events bubble through to whichever ancestor owns
-  // vertical scroll. Use this anywhere a code block is mounted inside a
-  // panel that already provides its own framing and scrolling — embedding
-  // the default card would produce a card-in-card and an inner OS that
-  // captures wheel events the outer pane needs for vertical scroll.
+  // "flush" mode embeds the code edge-to-edge inside an ancestor that
+  // owns its own framing (a section card, a panel header, etc.). The
+  // rounded card chrome and the inner OverlayScrollbars are stripped:
+  // the pre handles horizontal scroll natively via `overflow-x: auto` so
+  // wheel events bubble straight through to whichever ancestor owns the
+  // pane's vertical scroll, and there is no nested card-in-card visual.
+  // Use this anywhere the code lives inside a panel that scrolls
+  // vertically as a whole; the default (chromed) render is for
+  // standalone code samples that need their own framed surface.
   flush?: boolean;
 }>(), {
   copyable: true,
