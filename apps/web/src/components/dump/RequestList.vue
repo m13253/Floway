@@ -194,20 +194,19 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           </div>
 
           <div class="mt-1 flex items-center gap-2 text-[11px]">
-            <span :class="upstreamKindTextClass(record.upstream?.kind)" class="min-w-0 truncate">
-              {{ record.upstream?.name ?? 'No upstream' }}
+            <span v-if="record.upstream" :class="upstreamKindTextClass(record.upstream.kind)" class="min-w-0 truncate">
+              {{ record.upstream.name }}
             </span>
-            <span class="ml-auto shrink-0 text-gray-600">
+            <span
+              v-if="record.error"
+              class="ml-auto min-w-0 truncate text-accent-rose"
+              :title="record.error"
+            >
+              {{ record.error }}
+            </span>
+            <span v-else class="ml-auto shrink-0 text-gray-600">
               {{ totalTokens(record) === null ? '—' : `${formatTokens(totalTokens(record)!)} tok` }}
             </span>
-          </div>
-
-          <div
-            v-if="record.error"
-            class="mt-1 truncate text-[11px] text-accent-rose"
-            :title="record.error"
-          >
-            {{ record.error }}
           </div>
         </li>
       </ul>

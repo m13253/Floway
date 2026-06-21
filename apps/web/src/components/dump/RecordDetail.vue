@@ -6,7 +6,7 @@ import { collectByKind, detectCollectKind, type CollectOutcome } from './collect
 import HeaderTable from './HeaderTable.vue';
 import { authFetch } from '../../api/client.ts';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
-import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
+import { Code, OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
   keyId: string;
@@ -75,13 +75,14 @@ const decodeBase64Utf8 = (b64: string): { text: string; ok: boolean } => {
 interface RenderedBody {
   text: string;
   isBinaryFallback: boolean;
+  isJson: boolean;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', isBinaryFallback: false };
+  if (body.data.length === 0) return { text: '', isBinaryFallback: false, isJson: false };
   if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
   const decoded = decodeBase64Utf8(body.data);
-  if (!decoded.ok) return { text: body.data, isBinaryFallback: true };
+  if (!decoded.ok) return { text: body.data, isBinaryFallback: true, isJson: false };
   return renderTextBody(decoded.text, contentType);
 };
 
@@ -96,12 +97,12 @@ const renderTextBody = (body: string, contentType: string): RenderedBody => {
   if (isJsonContentType(contentType)) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return { text: JSON.stringify(parsed, null, 2), isBinaryFallback: false };
+      return { text: JSON.stringify(parsed, null, 2), isBinaryFallback: false, isJson: true };
     } catch {
-      return { text: body, isBinaryFallback: false };
+      return { text: body, isBinaryFallback: false, isJson: false };
     }
   }
-  return { text: body, isBinaryFallback: false };
+  return { text: body, isBinaryFallback: false, isJson: false };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
@@ -123,6 +124,17 @@ const streamEvents = computed<DumpStreamEvent[]>(() => {
   const r = record.value.response;
   return r.type === 'stream' ? r.events : [];
 });
+
+// Pretty-print each event's `data` as JSON when it parses; otherwise pass
+// the raw payload through. Computed once per record so the v-for doesn't
+// re-parse on every render.
+const eventsRendered = computed(() => streamEvents.value.map(ev => {
+  let pretty = ev.data;
+  try {
+    pretty = JSON.stringify(JSON.parse(ev.data), null, 2);
+  } catch { /* not all SSE data is JSON — leave as raw */ }
+  return { event: ev.event, ts: ev.ts, pretty };
+}));
 
 const collectKind = computed(() => record.value ? detectCollectKind(record.value.meta.path) : null);
 
@@ -209,7 +221,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
             <p v-if="requestBody.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Binary body; UTF-8 decoding failed. Showing base64.
             </p>
-            <pre class="whitespace-pre-wrap break-all font-mono text-xs text-gray-300">{{ requestBody.text }}</pre>
+            <Code :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
           </template>
         </div>
       </section>
@@ -275,7 +287,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
               <p v-if="responseBodyRendered.isBinaryFallback" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
                 Binary body; UTF-8 decoding failed. Showing base64.
               </p>
-              <pre class="whitespace-pre-wrap break-all font-mono text-xs text-gray-300">{{ responseBodyRendered.text }}</pre>
+              <Code :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
             </template>
           </template>
 
@@ -290,7 +302,7 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
               <p v-else-if="collected.truncated" class="mb-2 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
                 Output truncated by the upstream (length cap).
               </p>
-              <pre v-if="collected.text" class="whitespace-pre-wrap break-words font-mono text-xs text-gray-300">{{ collected.text }}</pre>
+              <Code v-if="collected.text" :code="collected.text" language="json" :copyable="false" />
               <p v-else-if="!collected.error" class="text-xs text-gray-600">No text recovered from the stream.</p>
             </template>
           </template>
@@ -298,16 +310,16 @@ const stickyHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-
           <template v-else>
             <ul class="space-y-2">
               <li
-                v-for="(event, i) in streamEvents"
+                v-for="(event, i) in eventsRendered"
                 :key="i"
                 class="rounded-md border border-white/[0.04] bg-surface-800/40 px-3 py-2"
               >
-                <div class="flex items-center gap-2 text-[11px]">
+                <div class="mb-1 flex items-center gap-2 text-[11px]">
                   <span v-if="event.event" class="font-mono text-accent-cyan">{{ event.event }}</span>
                   <span v-else class="font-mono text-gray-600">(no event name)</span>
                   <span class="ml-auto font-mono text-gray-500">{{ formatTs(event.ts) }}</span>
                 </div>
-                <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-gray-400">{{ event.data }}</pre>
+                <Code :code="event.pretty" language="json" :copyable="false" />
               </li>
             </ul>
           </template>

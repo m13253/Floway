@@ -19,11 +19,24 @@ test('isSensitiveHeader leaves non-credential headers untouched', () => {
   }
 });
 
-test('redactHeaderValue preserves last four characters behind a fixed-width mask', () => {
-  expect(redactHeaderValue('sk-abcdef1234')).toBe('••••••••1234');
-  // Values shorter than the safe tail threshold collapse to a tail-less mask
-  // so the secret isn't echoed back wholesale (e.g. a three-char value would
-  // otherwise appear verbatim after the mask).
-  expect(redactHeaderValue('abc')).toBe('••••••••');
-  expect(redactHeaderValue('1234567')).toBe('••••••••');
+test('redactHeaderValue keeps first 8 + last 8 and replaces the middle with bullets at original length', () => {
+  // 36-char token: 8 visible prefix + 20 bullets + 8 visible suffix.
+  const token = 'sk-ant-api03-abcdefghijklmnopqr-ABCD';
+  const out = redactHeaderValue(token);
+  expect(out.length).toBe(token.length);
+  expect(out.slice(0, 8)).toBe('sk-ant-a');
+  expect(out.slice(-8)).toBe('pqr-ABCD');
+  expect(out.slice(8, -8)).toBe('•'.repeat(token.length - 16));
+
+  // 17-char value: the smallest input that still has a middle (8 + 1 + 8).
+  expect(redactHeaderValue('1234567890ABCDEFG')).toBe('12345678•0ABCDEFG');
+});
+
+test('redactHeaderValue masks the whole value when there is no safe middle', () => {
+  // Anything 16 chars or shorter has no middle — keeping any visible bytes
+  // would leak the entire secret. Mask the whole value at its original
+  // length so the visual mass still reflects the input.
+  expect(redactHeaderValue('abc')).toBe('•••');
+  expect(redactHeaderValue('1234567890ABCDEF')).toBe('••••••••••••••••');
+  expect(redactHeaderValue('1234567890ABCDEF').length).toBe(16);
 });

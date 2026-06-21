@@ -14,12 +14,15 @@ const SENSITIVE_HEADERS = new Set([
 
 export const isSensitiveHeader = (key: string): boolean => SENSITIVE_HEADERS.has(key.toLowerCase());
 
-// Fixed-width mask: do not leak the secret's length. Keep up to the last four
-// characters so an operator can recognize *which* credential they're looking
-// at without revealing the bulk of it. Short values get a tail-less mask —
-// "the last four characters" of a three-character value would be the entire
-// secret, so suppress the tail when the value is too short to suffix safely.
+// Length-preserving mask. The visual mass of the original value carries one
+// useful signal — "this is a 64-char token, not an 8-char one" — and erasing
+// it makes every credential look identical. Keep the first 8 and last 8
+// characters so an operator can recognize the credential type from the
+// prefix (`sk-ant-…`, `cgw-main-…`) and match the tail against their notes,
+// and replace the middle with the same number of `•` as the original held.
+// Anything 16 chars or shorter has no "middle" — keeping any visible bytes
+// at that length leaks the whole secret, so collapse to a same-length mask.
 export const redactHeaderValue = (value: string): string => {
-  if (value.length < 8) return '•'.repeat(8);
-  return `${'•'.repeat(8)}${value.slice(-4)}`;
+  if (value.length <= 16) return '•'.repeat(value.length);
+  return `${value.slice(0, 8)}${'•'.repeat(value.length - 16)}${value.slice(-8)}`;
 };
