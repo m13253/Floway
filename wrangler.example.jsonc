@@ -108,9 +108,16 @@
       }
     ]
   },
-  // `new_sqlite_classes` is the current spelling even for stateless DOs;
-  // the KV-backed `new_classes` path is being phased out. The actor has no
-  // SQLite mount, no alarms, and no migrations to manage.
+  // CF requires every DO class to declare a storage backend at create time,
+  // even when the actor body never calls `ctx.storage.*`. `new_sqlite_classes`
+  // picks the SQLite backend (CF's recommendation for all new classes, the
+  // only backend Workers Free supports, and ~12 KB per empty instance). The
+  // alternative `new_classes` picks the legacy KV-backed storage path which
+  // CF is phasing out and which Workers Free cannot create.
+  //
+  // BroadcastDO has no `ctx.storage.*` calls — the SQLite db is provisioned
+  // but unused. The name reflects the BACKEND choice, not whether the actor
+  // touches it.
   "migrations": [
     {
       "tag": "v1",
