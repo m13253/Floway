@@ -192,7 +192,8 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
     };
   }
 
-  if (snapshot === null && terminal === null) {
+  const envelope = terminal ?? snapshot;
+  if (envelope === null) {
     return {
       result: null,
       error: error ?? 'no response.created or terminal event in stream',
@@ -200,7 +201,6 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
     };
   }
 
-  const envelope = terminal ?? snapshot!;
   return {
     result: { ...envelope, output },
     error,

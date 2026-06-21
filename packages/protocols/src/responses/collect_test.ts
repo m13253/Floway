@@ -240,3 +240,13 @@ test('collectResponsesStream surfaces a mid-stream error frame and keeps the par
   if (message.type !== 'message') throw new Error('expected message');
   assertEquals(message.content[0], { type: 'output_text', text: 'before-err' });
 });
+
+test('collectResponsesStream returns a catastrophic outcome when no created or terminal frame ever arrived', () => {
+  const outcome = collectResponsesStream([]);
+
+  assertEquals(outcome.result, null);
+  assertEquals(outcome.truncated, true);
+  if (!outcome.error?.includes('no response.created')) {
+    throw new Error(`expected error to mention no response.created, got ${outcome.error}`);
+  }
+});
