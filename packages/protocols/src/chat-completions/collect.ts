@@ -12,14 +12,17 @@ import type { CollectOutcome } from '../dump-collect/index.ts';
 // instead carries `{ error: { message, code, ... } }`. Detect that shape
 // before attempting to fold the chunk as a normal event.
 interface ChatCompletionsErrorChunk {
-  error: { message?: string; code?: string; type?: string };
+  error: { message: string; code?: string; type?: string };
 }
 
 const isErrorChunk = (parsed: unknown): parsed is ChatCompletionsErrorChunk => {
   if (typeof parsed !== 'object' || parsed === null) return false;
   if (!('error' in parsed)) return false;
   const err = (parsed as { error: unknown }).error;
-  return typeof err === 'object' && err !== null;
+  if (typeof err !== 'object' || err === null) return false;
+  // Require a string `message` so a legitimate result that happens to carry
+  // an `error` extension key isn't misclassified.
+  return 'message' in err && typeof (err as { message: unknown }).message === 'string';
 };
 
 type ParsedChunk =
@@ -34,7 +37,7 @@ const parseChunk = (raw: DumpStreamEvent): ParsedChunk => {
   if (data === '[DONE]') return { kind: 'done' };
   const parsed = JSON.parse(data) as unknown;
   if (isErrorChunk(parsed)) {
-    return { kind: 'error', message: parsed.error.message ?? 'unknown chat completions error' };
+    return { kind: 'error', message: parsed.error.message };
   }
   return { kind: 'event', event: parsed as ChatCompletionsStreamEvent };
 };

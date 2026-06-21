@@ -1,9 +1,6 @@
 import type {
-  ResponsesOutputContentBlock,
   ResponsesOutputImageGenerationCall,
   ResponsesOutputItem,
-  ResponsesOutputMessage,
-  ResponsesOutputReasoning,
   ResponsesOutputWebSearchCall,
   ResponsesResult,
   ResponsesStreamEvent,
@@ -25,42 +22,6 @@ const cloneOutputItem = (item: ResponsesOutputItem): ResponsesOutputItem => {
     return { ...item, summary: item.summary.map(part => ({ ...part })) };
   }
   return { ...item };
-};
-
-const cloneOutput = (output: ResponsesOutputItem[]): ResponsesOutputItem[] => output.map(cloneOutputItem);
-
-const appendOutputText = (item: ResponsesOutputItem, contentIndex: number, delta: string): ResponsesOutputItem => {
-  if (item.type !== 'message') return item;
-  const existing = item.content[contentIndex];
-  // Bail when an existing slot is a different content type — don't overwrite
-  // data we don't know how to extend. Matches appendReasoningSummary.
-  if (existing !== undefined && existing.type !== 'output_text') return item;
-  const content: ResponsesOutputContentBlock[] = item.content.slice();
-  const previousText = existing?.text ?? '';
-  content[contentIndex] = { type: 'output_text', text: previousText + delta };
-  const next: ResponsesOutputMessage = { ...item, content };
-  return next;
-};
-
-const appendReasoningSummary = (item: ResponsesOutputItem, summaryIndex: number, delta: string): ResponsesOutputItem => {
-  if (item.type !== 'reasoning') return item;
-  const existing = item.summary[summaryIndex];
-  if (existing !== undefined && existing.type !== 'summary_text') return item;
-  const summary = item.summary.slice();
-  const previousText = existing?.text ?? '';
-  summary[summaryIndex] = { type: 'summary_text', text: previousText + delta };
-  const next: ResponsesOutputReasoning = { ...item, summary };
-  return next;
-};
-
-const appendFunctionArguments = (item: ResponsesOutputItem, delta: string): ResponsesOutputItem => {
-  if (item.type !== 'function_call') return item;
-  return { ...item, arguments: item.arguments + delta };
-};
-
-const appendCustomToolInput = (item: ResponsesOutputItem, delta: string): ResponsesOutputItem => {
-  if (item.type !== 'custom_tool_call') return item;
-  return { ...item, input: item.input + delta };
 };
 
 const setWebSearchStatus = (item: ResponsesOutputItem, status: ResponsesOutputWebSearchCall['status']): ResponsesOutputItem => {
@@ -92,11 +53,9 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
     switch (event.type) {
     case 'response.created':
     case 'response.in_progress':
-      snapshot = { ...event.response, output: cloneOutput(event.response.output) };
+      snapshot = { ...event.response, output: event.response.output.map(cloneOutputItem) };
       break;
     case 'response.output_item.added':
-      output[event.output_index] = cloneOutputItem(event.item);
-      break;
     case 'response.output_item.done':
       // `.done` carries the authoritative item shape (status, results, etc.);
       // it overrides anything the per-event accumulators built.
@@ -112,7 +71,15 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       });
       break;
     case 'response.output_text.delta':
-      updateItem(event.output_index, item => appendOutputText(item, event.content_index, event.delta));
+      updateItem(event.output_index, item => {
+        if (item.type !== 'message') return item;
+        const existing = item.content[event.content_index];
+        // Don't overwrite a slot whose content type we can't extend.
+        if (existing !== undefined && existing.type !== 'output_text') return item;
+        const content = item.content.slice();
+        content[event.content_index] = { type: 'output_text', text: (existing?.text ?? '') + event.delta };
+        return { ...item, content };
+      });
       break;
     case 'response.output_text.done':
       updateItem(event.output_index, item => {
@@ -132,7 +99,14 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       });
       break;
     case 'response.reasoning_summary_text.delta':
-      updateItem(event.output_index, item => appendReasoningSummary(item, event.summary_index, event.delta));
+      updateItem(event.output_index, item => {
+        if (item.type !== 'reasoning') return item;
+        const existing = item.summary[event.summary_index];
+        if (existing !== undefined && existing.type !== 'summary_text') return item;
+        const summary = item.summary.slice();
+        summary[event.summary_index] = { type: 'summary_text', text: (existing?.text ?? '') + event.delta };
+        return { ...item, summary };
+      });
       break;
     case 'response.reasoning_summary_text.done':
       updateItem(event.output_index, item => {
@@ -143,7 +117,8 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       });
       break;
     case 'response.function_call_arguments.delta':
-      updateItem(event.output_index, item => appendFunctionArguments(item, event.delta));
+      updateItem(event.output_index, item =>
+        item.type !== 'function_call' ? item : { ...item, arguments: item.arguments + event.delta });
       break;
     case 'response.function_call_arguments.done':
       updateItem(event.output_index, item => {
@@ -152,7 +127,8 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       });
       break;
     case 'response.custom_tool_call_input.delta':
-      updateItem(event.output_index, item => appendCustomToolInput(item, event.delta));
+      updateItem(event.output_index, item =>
+        item.type !== 'custom_tool_call' ? item : { ...item, input: item.input + event.delta });
       break;
     case 'response.custom_tool_call_input.done':
       updateItem(event.output_index, item => {
@@ -209,10 +185,8 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
   }
 
   if (terminal !== null && error === null) {
-    // Terminal frame carries the canonical final `ResponsesResult` — adopt it
-    // outright when the stream wasn't poisoned by an error frame.
     return {
-      result: { ...terminal, output: cloneOutput(terminal.output) },
+      result: { ...terminal, output: terminal.output.map(cloneOutputItem) },
       error: null,
       truncated: terminal.status === 'incomplete' || terminal.status === 'failed',
     };
