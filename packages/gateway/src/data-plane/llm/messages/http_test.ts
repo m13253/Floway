@@ -6,7 +6,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
@@ -77,8 +77,8 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const upstreamModel = stubUpstreamModel();
@@ -113,13 +113,13 @@ const makeCandidate = (overrides: {
 test('POST /v1/messages streams a successful SSE body', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -134,13 +134,13 @@ test('POST /v1/messages streams a successful SSE body', async () => {
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callMessages })]);
 
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -155,7 +155,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
   // No candidates queued — the http entry rejects before reaching the serve.
   const response = await makeApp().request('/v1/messages', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       max_tokens: 32,
@@ -173,14 +173,14 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
   installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
   queueCandidates([makeCandidate({ callMessagesCountTokens })]);
 
   const response = await makeApp().request('/v1/messages/count_tokens', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -188,4 +188,61 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+});
+
+test('POST /v1/messages forwards upstream response headers end-to-end (streaming) and strips hop-by-hop / cookies', async () => {
+  installRepo();
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'anthropic-ratelimit-unified-remaining': '99',
+    'request-id': 'req_e2e_stream',
+    'openai-version': '2024-10-21',
+    'connection': 'close',
+    'set-cookie': 'session=secret',
+  });
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
+  queueCandidates([makeCandidate({ callMessages })]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-remaining'), '99');
+  assertEquals(response.headers.get('request-id'), 'req_e2e_stream');
+  assertEquals(response.headers.get('openai-version'), '2024-10-21');
+  // hop-by-hop and cookies are stripped. `connection` is special-cased
+  // because Hono's streamSSE writer sets its own `keep-alive`; assert
+  // upstream's distinctive `close` did not survive instead of asserting
+  // absence.
+  assert(response.headers.get('connection') !== 'close');
+  assertEquals(response.headers.get('set-cookie'), null);
+  await response.text();
+});
+
+test('POST /v1/messages forwards upstream response headers end-to-end (non-streaming)', async () => {
+  installRepo();
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'cf-ray': 'cf_ray_e2e',
+  });
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
+  queueCandidates([makeCandidate({ callMessages })]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
 });

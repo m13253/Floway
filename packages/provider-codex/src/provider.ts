@@ -10,7 +10,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { getProviderRepo, type ModelProvider, type ModelProviderInstance, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
@@ -20,6 +20,12 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   // pool. The schema carries an array so a future fan-out can pick a
   // different active account per call without a wire migration.
   const accountIdentity = config.accounts[0];
+
+  // Computed once per provider instance: only the upstream layer applies
+  // (no per-model override layer). Threaded into every UpstreamModel emitted
+  // by getProvidedModels so interceptors can read the effective flag set
+  // without re-resolving — same pattern as the claude-code provider.
+  const enabledFlags = resolveEffectiveFlags(defaultsForProvider('codex'), [record.flagOverrides]);
 
   // Re-read upstream state on every request rather than capturing the record's
   // state at construction. Refresh-token rotation, terminal-state transitions,
@@ -88,7 +94,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       // operator's gateway is its own surface — they can dispatch to those
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
-      return raw.map(codexRawToUpstreamModel);
+      return raw.map(r => codexRawToUpstreamModel(r, enabledFlags));
     },
 
     // Codex itself is a flat-fee subscription, but the dashboard reports
@@ -96,10 +102,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, headers, opts) => {
+    callResponses: async (model, body, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...headers },
+        headers: new Headers(opts.headers),
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderStreamResult<ResponsesStreamEvent>>(
@@ -120,10 +126,10 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       );
     },
 
-    callResponsesCompact: async (model, body, signal, headers, opts) => {
+    callResponsesCompact: async (model, body, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
-        headers: { ...headers },
+        headers: new Headers(opts.headers),
         model,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
@@ -145,13 +151,18 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     },
 
     // Codex upstream only exposes /responses; getProvidedModels advertises
-    // that single endpoint and no other entry point is reachable.
-    callMessages: () => Promise.reject(new Error('Codex provider does not implement callMessages')),
-    callChatCompletions: () => Promise.reject(new Error('Codex provider does not implement callChatCompletions')),
-    callMessagesCountTokens: () => Promise.reject(new Error('Codex provider does not implement callMessagesCountTokens')),
-    callEmbeddings: () => Promise.reject(new Error('Codex provider does not implement callEmbeddings')),
-    callImagesGenerations: () => Promise.reject(new Error('Codex provider does not implement callImagesGenerations')),
-    callImagesEdits: () => Promise.reject(new Error('Codex provider does not implement callImagesEdits')),
+    // that single endpoint and no other entry point is reachable. The data
+    // plane never routes these surfaces here in practice, but a stray
+    // dispatch must surface as a 405 carrying a proper JSON error rather
+    // than letting a raw stack trace bubble up the boundary. The synthetic
+    // response still flows through the per-call latency recorder so the
+    // gateway's wrap-once contract holds even for these stubs.
+    callMessages: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
+    callMessagesCountTokens: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callChatCompletions: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
+    callEmbeddings: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callImagesGenerations: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callImagesEdits: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
   };
 
   return {
@@ -163,3 +174,19 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     supportsResponsesItemReference: false,
   };
 };
+
+const synthetic405 = (): Response => new Response(
+  JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by codex provider' } }),
+  { status: 405, headers: { 'content-type': 'application/json' } },
+);
+
+const unsupportedStreamResult = async <TEvent>(opts: UpstreamCallOptions): Promise<ProviderStreamResult<TEvent>> => ({
+  ok: false,
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});
+
+const unsupportedCallResult = async (opts: UpstreamCallOptions): Promise<ProviderCallResult> => ({
+  modelKey: '',
+  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+});

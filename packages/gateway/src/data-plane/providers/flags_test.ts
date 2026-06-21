@@ -49,14 +49,17 @@ test('provider flags: defaultsForProvider returns the catalog-declared defaults'
   assertEquals(copilotDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim', 'retry-cyber-policy']);
   const azureDefaults = [...defaultsForProvider('azure')].sort();
   assertEquals(azureDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim']);
-  assertEquals(defaultsForProvider('custom').size, 0);
+  const customDefaults = [...defaultsForProvider('custom')].sort();
+  assertEquals(customDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim']);
+  const ollamaDefaults = [...defaultsForProvider('ollama')].sort();
+  assertEquals(ollamaDefaults, ['messages-web-search-shim', 'responses-image-generation-shim', 'responses-web-search-shim']);
+  assertEquals(defaultsForProvider('codex').size, 0);
 });
 
 test('provider flags: defaultsForProvider memoizes the set per provider kind', () => {
-  // Azure's per-deployment getProvidedModels loop calls this once per
-  // deployment per request; repeated calls must return the same frozen set
-  // reference so the memo never regresses into per-call allocations.
   assertEquals(defaultsForProvider('copilot') === defaultsForProvider('copilot'), true);
   assertEquals(defaultsForProvider('azure') === defaultsForProvider('azure'), true);
   assertEquals(defaultsForProvider('custom') === defaultsForProvider('custom'), true);
+  assertEquals(defaultsForProvider('codex') === defaultsForProvider('codex'), true);
+  assertEquals(defaultsForProvider('ollama') === defaultsForProvider('ollama'), true);
 });

@@ -10,7 +10,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
@@ -102,10 +102,10 @@ const makeResponsesResultEvent = (id = 'resp_test'): ResponsesStreamEvent => {
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
@@ -146,7 +146,7 @@ const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K)
 test('generate translates through native Chat Completions target end to end', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
 
@@ -155,6 +155,7 @@ test('generate translates through native Chat Completions target end to end', as
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   const events = expectType(result, 'events').events;
@@ -165,7 +166,7 @@ test('generate translates through native Chat Completions target end to end', as
 test('generate translates through Messages when only that endpoint is exposed', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'messages', callMessages })]);
 
@@ -174,6 +175,7 @@ test('generate translates through Messages when only that endpoint is exposed', 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   const events = expectType(result, 'events').events;
@@ -184,7 +186,7 @@ test('generate translates through Messages when only that endpoint is exposed', 
 test('generate translates through Responses when only that endpoint is exposed', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k',
+    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ targetApi: 'responses', callResponses })]);
 
@@ -193,6 +195,7 @@ test('generate translates through Responses when only that endpoint is exposed',
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   const events = expectType(result, 'events').events;
@@ -203,13 +206,13 @@ test('generate translates through Responses when only that endpoint is exposed',
 test('generate stops at the first candidate even when it yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: { 'content-type': 'application/json' },
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
     ok: false, response: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions: firstCall }),
@@ -221,6 +224,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   // An upstream error from the first candidate IS the final answer — the
@@ -234,7 +238,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
 test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions }),
@@ -246,6 +250,7 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   const events = expectType(result, 'events').events;
@@ -262,6 +267,7 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'unknown-model',
+    headers: new Headers(),
   });
 
   const upstreamError = expectType(result, 'upstream-error');
@@ -276,7 +282,7 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
   installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 17 }), {
-      status: 200, headers: { 'content-type': 'application/json' },
+      status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'k',
   }));
@@ -287,6 +293,7 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
+    headers: new Headers(),
   });
 
   const plain = expectType(result, 'plain');
@@ -305,6 +312,7 @@ test('countTokens renders a Google RPC NOT_FOUND when no Messages-capable candid
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'no-messages-model',
+    headers: new Headers(),
   });
 
   const upstreamError = expectType(result, 'upstream-error');

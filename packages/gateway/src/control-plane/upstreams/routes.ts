@@ -15,8 +15,15 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog } from '@floway-dev/provider';
-import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import {
+  directFetcher,
+  getFlagCatalog,
+  ProviderModelsUnavailableError,
+  type Fetcher,
+  type ProxyFallbackEntry,
+  type UpstreamProviderKind,
+  type UpstreamRecord,
+} from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
   type CodexQuotaSnapshot,
@@ -489,6 +496,7 @@ type CodexCredentialBody = z.infer<typeof codexImportBody> | z.infer<typeof code
 
 const ingestCodexCredential = async (
   body: CodexCredentialBody,
+  fetcher: Fetcher,
 ): Promise<{ ok: true; config: CodexUpstreamConfig; state: CodexUpstreamState } | { ok: false; error: string }> => {
   try {
     if (body.auth_json !== undefined) {
@@ -513,7 +521,7 @@ const ingestCodexCredential = async (
     if (!pending) {
       return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
     }
-    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier });
+    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -522,7 +530,15 @@ const ingestCodexCredential = async (
 
 export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   const body = c.req.valid('json');
-  const ingestion = await ingestCodexCredential(body);
+  let fetcher: Fetcher;
+  try {
+    // First-time import has no upstream id, so the resolver falls back to
+    // direct egress when the operator left the override empty.
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCodexCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const existing = await getRepo().upstreams.list();
@@ -558,7 +574,15 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   }
 
   const body = c.req.valid('json');
-  const ingestion = await ingestCodexCredential(body);
+  let fetcher: Fetcher;
+  try {
+    // Re-import threads the override through the same resolver as
+    // `codexRefreshNow`; absent falls back to the persisted row's list.
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCodexCredential(body, fetcher);
   if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
 
   const next: UpstreamRecord = {

@@ -22,7 +22,8 @@ export interface ModelEndpoints {
 export type ModelEndpointKey = keyof ModelEndpoints;
 
 // USD per million tokens, keyed by billing dimension.
-export type ModelPricing = Partial<Record<'input' | 'input_cache_read' | 'input_cache_write' | 'input_image' | 'output' | 'output_image', number>>;
+export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_cache_write_1h' | 'input_image' | 'output' | 'output_image';
+export type ModelPricing = Partial<Record<BillingDimension, number>>;
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;

@@ -100,6 +100,7 @@ const applyMessagesUsage = (usage: MessagesUsage, update: Partial<MessagesUsage>
   if (update.cache_read_input_tokens != null) {
     usage.cache_read_input_tokens = update.cache_read_input_tokens;
   }
+  if (update.cache_creation != null) usage.cache_creation = update.cache_creation;
   if (update.service_tier != null) usage.service_tier = update.service_tier;
   if (update.server_tool_use != null) {
     usage.server_tool_use = update.server_tool_use;

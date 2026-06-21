@@ -1,5 +1,5 @@
 import { isKnownFlagId } from './flags.ts';
-import type { ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
@@ -120,13 +120,11 @@ const nonNegativeNumberField = (value: unknown, label: string): number => {
   return value;
 };
 
-const PRICING_DIMENSIONS: readonly (keyof ModelPricing)[] = ['input', 'input_cache_read', 'input_cache_write', 'input_image', 'output', 'output_image'];
-
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
   const pricing: ModelPricing = {};
-  for (const dimension of PRICING_DIMENSIONS) {
+  for (const dimension of BILLING_DIMENSIONS) {
     if (record[dimension] !== undefined) pricing[dimension] = nonNegativeNumberField(record[dimension], `${label}.${dimension}`);
   }
   return Object.keys(pricing).length > 0 ? pricing : undefined;

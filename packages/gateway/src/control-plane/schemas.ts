@@ -74,6 +74,7 @@ const upstreamModelSchema = z.object({
     output: z.number().optional(),
     input_cache_read: z.number().optional(),
     input_cache_write: z.number().optional(),
+    input_cache_write_1h: z.number().optional(),
     input_image: z.number().optional(),
     output_image: z.number().optional(),
   }).optional(),
@@ -304,6 +305,11 @@ const codexCredentialFields = {
     // picks `callback_url` first when present.
     callback_url: z.string().min(1).optional(),
   }).optional(),
+  // Edit-form override carried through the import dialog. The PKCE token
+  // exchange runs before the upstream record exists, so re-import uses the
+  // persisted row's list as a fallback; on first-time import only the
+  // override path is available.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
 };
 
 const requireExactlyOneCredential = (b: { auth_json?: unknown; callback?: unknown }): boolean =>

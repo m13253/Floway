@@ -9,11 +9,11 @@ import { assertEquals, assertFalse, stubUpstreamModel } from '@floway-dev/test-u
 const stubRequest = {};
 
 const okEvents = (): Promise<ProviderStreamResult<ResponsesStreamEvent>> =>
-  Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
+  Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', headers: new Headers() });
 
 const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
-  headers: {},
+  headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
 });
 

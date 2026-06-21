@@ -225,6 +225,14 @@ export interface MessagesUsage {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  // Per-TTL split for cache writes introduced by extended-cache-ttl-2025-04-11.
+  // Each `ephemeral_*` field is a disjoint subset of `cache_creation_input_tokens`
+  // (the legacy flat field is the sum of both); upstreams that have not opted
+  // into the beta omit `cache_creation` entirely and emit only the flat field.
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
   service_tier?: 'standard' | 'priority' | 'batch';
   server_tool_use?: MessagesUsageServerToolUse;
 }
@@ -300,6 +308,10 @@ export interface MessagesMessageDeltaEvent {
     output_tokens: number;
     cache_creation_input_tokens?: number;
     cache_read_input_tokens?: number;
+    cache_creation?: {
+      ephemeral_5m_input_tokens?: number;
+      ephemeral_1h_input_tokens?: number;
+    };
     server_tool_use?: MessagesUsageServerToolUse;
   };
 }
@@ -326,3 +338,10 @@ export interface MessagesErrorEvent {
 }
 
 export { parseMessagesStream, type ParseMessagesStreamOptions } from './stream.ts';
+
+// Parse an inbound `anthropic-beta` header into the comma-separated beta
+// slice that variant selection and policy filters consume. Returns an empty
+// array for a null/empty header so callers can `.includes(...)` without an
+// extra guard.
+export const parseAnthropicBetaHeader = (raw: string | null | undefined): readonly string[] =>
+  raw ? raw.split(',').map(part => part.trim()).filter(part => part.length > 0) : [];

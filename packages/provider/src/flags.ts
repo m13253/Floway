@@ -13,6 +13,7 @@
 // standard and no vendor rewrite runs.
 
 import type { UpstreamProviderKind } from './model.ts';
+import { ALL_PROVIDER_KINDS } from './model.ts';
 
 export interface Flag {
   id: string;
@@ -51,19 +52,19 @@ export const OPTIONAL_FLAGS = [
     id: 'messages-web-search-shim',
     label: 'Messages web search shim',
     description: "Execute Anthropic native Messages web search through the gateway's configured search provider instead of forwarding it to the upstream. (When a client Messages request is routed to a non-Messages backend, the shim always runs regardless of this flag, because those targets cannot carry Anthropic server tools.)",
-    defaultFor: ['copilot', 'azure'],
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => !['codex'].includes(p)),
   },
   {
     id: 'responses-web-search-shim',
     label: 'Responses web search shim',
     description: "Execute the Responses `web_search` hosted tool through the gateway's configured search provider instead of forwarding it to a Responses upstream. (When a Responses request is routed to a non-Responses backend, the shim always runs regardless of this flag, because those targets cannot carry hosted web_search.)",
-    defaultFor: ['copilot', 'azure'],
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => !['codex'].includes(p)),
   },
   {
     id: 'responses-image-generation-shim',
     label: 'Responses image generation shim',
     description: "Execute the Responses `image_generation` hosted tool through the gateway's image-capable upstream (gpt-image-*) instead of forwarding it to a Responses upstream. The orchestrator model calls a generated function tool; the shim drives the standalone /images/{generations,edits} backend and synthesizes the native image_generation_call lifecycle. (When a Responses request is routed to a non-Responses backend, the shim always runs regardless of this flag, because those targets cannot carry the hosted image_generation tool.)",
-    defaultFor: ['copilot', 'azure'],
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => !['codex'].includes(p)),
   },
   {
     id: 'disable-reasoning-on-forced-tool-choice',

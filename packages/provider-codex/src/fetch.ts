@@ -33,7 +33,7 @@ export interface CallCodexResponsesOptions {
   account: CodexAccountCredential;
   model: UpstreamModel;
   body: Omit<ResponsesPayload, 'model'>;
-  headers: Record<string, string>;
+  headers: Headers;
   signal?: AbortSignal;
   effects: CodexCallEffects;
   call: UpstreamCallOptions;
@@ -90,15 +90,16 @@ const performUpstreamCall = async (
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
-  const headers: Record<string, string> = {
-    ...opts.headers,
-    'authorization': `Bearer ${accessToken}`,
-    'chatgpt-account-id': opts.account.chatgptAccountId,
-    'originator': CODEX_ORIGINATOR,
-    'user-agent': CODEX_USER_AGENT,
-    'accept': 'text/event-stream',
-    'content-type': 'application/json',
-  };
+  // `opts.headers` is the provider's private boundary-ctx clone; mutate
+  // directly. Every header below uses `set`, so retry passes overwrite
+  // rather than accumulate.
+  const headers = opts.headers;
+  headers.set('authorization', `Bearer ${accessToken}`);
+  headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
+  headers.set('originator', CODEX_ORIGINATOR);
+  headers.set('user-agent', CODEX_USER_AGENT);
+  headers.set('accept', 'text/event-stream');
+  headers.set('content-type', 'application/json');
 
   const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
@@ -109,18 +110,14 @@ const performUpstreamCall = async (
     if (response.ok) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: false });
-      // Quota persistence is best-effort — getCodexQuota already treats a
-      // missing or stale snapshot as null, so a CAS loss or transient
-      // storage error is recoverable noise rather than something to crash
-      // the request on.
-      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
       return ensureSseContentType(response);
     }
 
     if (response.status === 429) {
       const responseNow = new Date();
       const snapshot = parseCodexQuotaHeaders(response.headers, { now: responseNow, isRateLimited: true });
-      putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot).catch(() => {});
+      registerBackgroundWrite(opts, putCodexQuota(opts.upstreamId, opts.account.chatgptAccountId, snapshot));
       return response;
     }
 
@@ -154,7 +151,7 @@ const performUpstreamCall = async (
     let newAccessToken: string;
     try {
       const minted = await mintAccessToken(opts, opts.account.refresh_token);
-      putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted).catch(() => {});
+      registerBackgroundWrite(opts, putCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, minted));
       newAccessToken = minted.token;
     } catch (err) {
       if (err instanceof CodexOAuthSessionTerminatedError) {
@@ -205,4 +202,12 @@ const ensureSseContentType = (response: Response): Response => {
   const headers = new Headers(response.headers);
   headers.set('content-type', 'text/event-stream');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+};
+
+// Hand best-effort writes to waitUntil so workerd does not cancel them when
+// the streaming response returns; the swallow guards against recoverable
+// noise (CAS losses on access-token / quota state_json rows, transient
+// storage errors) tripping the request.
+const registerBackgroundWrite = (opts: CallCodexResponsesOptions, write: Promise<void>): void => {
+  opts.call.waitUntil(write.catch(() => {}));
 };

@@ -1120,3 +1120,42 @@ test('POST /api/upstreams/:id/codex-refresh-now without an override falls back t
     },
   );
 });
+
+test('POST /api/upstreams/codex-import honors the proxy_fallback_list override over the persisted list', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  const resp = await requestApp(
+    '/api/upstreams/codex-import',
+    authed(adminSession, {
+      callback: { code: 'AUTH_CODE', state },
+      proxy_fallback_list: [{ id: 'p_unknown' }],
+    }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
+
+test('POST /api/upstreams/:id/codex-reimport honors the proxy_fallback_list override over the persisted list', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
+
+  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
+  const { state } = (await startResp.json()) as { state: string };
+
+  const resp = await requestApp(
+    `/api/upstreams/${created.id}/codex-reimport`,
+    authed(adminSession, {
+      callback: { code: 'AUTH_CODE', state },
+      proxy_fallback_list: [{ id: 'p_unknown' }],
+    }),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
+});
