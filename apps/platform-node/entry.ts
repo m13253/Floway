@@ -13,10 +13,8 @@ import {
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
 
-// In Node we don't have Workers' executionCtx.waitUntil — there's no request
-// lifecycle to attach background work to — so the resolver fire-and-forgets
-// the promise. Logging the rejection here is the only signal we get; without
-// it a swallowed background failure would be silent.
+// Node has no executionCtx.waitUntil; fire-and-forget with a logged
+// rejection so background failures aren't silent.
 initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
@@ -24,8 +22,6 @@ initBackgroundSchedulerResolver(_c => promise => {
 initResponsesWebSocketUpgradeResolver((c, events) =>
   upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
 
-// `bootstrapNodePlatform` installs `initEnv` first, so `getEnvOptional`
-// reads route through the same platform contract as every other env consumer.
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
 
@@ -34,15 +30,10 @@ const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-// Run the scheduled maintenance job once after a short startup delay and
-// then every hour. Without the startup run, a process that restarts more
-// often than the interval (crash loop, frequent deploys) would never run
-// maintenance and the scheduled sweeps would silently lag. The 30s delay
-// keeps the very first request after boot from racing the sweep.
-// unref() on both timers lets the process exit cleanly on SIGINT. A failure
-// here must not crash the process — one bad sweep should not stop future
-// sweeps — so log the error with a greppable tag and let the next tick try
-// again.
+// Run once at startup (so processes that restart faster than the interval
+// still sweep) and then hourly. unref() lets SIGINT exit; failures are
+// logged so one bad sweep doesn't kill future ones. The 30s delay keeps
+// the very first request after boot from racing the sweep.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
   runScheduledMaintenance().catch(err => {

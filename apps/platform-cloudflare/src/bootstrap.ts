@@ -29,16 +29,12 @@ export interface CloudflareEnv {
   [key: string]: unknown;
 }
 
-// Every binding declared on CloudflareEnv is load-bearing — D1 holds all
-// config and telemetry, FILES holds spilled payloads, BLOBS holds an extra
-// payload-spill bucket, IMAGES compresses, KV memoises, BROADCAST_DO fans
-// out per-channel WS frames. A missing binding means wrangler.jsonc drifted
-// from the code, so we refuse to initialise rather than 503 on first use of
-// the absent binding.
+// A missing binding means wrangler.jsonc drifted from the code; refuse to
+// initialise rather than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
-  const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined || env[name] === null);
+  const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined);
   if (missing.length > 0) {
     throw new Error(
       `Missing required Cloudflare bindings: ${missing.join(', ')}. `
@@ -48,8 +44,8 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
 
   initEnv(name => {
     const value = env[name];
-    if (value === undefined || value === null) return undefined;
-    return String(value);
+    if (typeof value !== 'string') return undefined;
+    return value;
   });
   initRuntimeKind('cloudflare');
   initFileProvider(new R2FileProvider(env.FILES));

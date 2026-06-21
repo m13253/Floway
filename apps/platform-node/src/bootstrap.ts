@@ -21,9 +21,6 @@ import {
 } from '@floway-dev/platform';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Bootstraps `initEnv` against `process.env` first so every subsequent read
-// — including the runtime paths below — routes through the same contract as
-// every other env consumer (auth, performance telemetry, etc).
 export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initEnv(name => process.env[name]);
   initRuntimeKind('node');
@@ -38,8 +35,6 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   const db = createNodeSqliteDatabase(dbPath);
   initImageCacheStore(new SqliteImageCache(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());
-  // FileDumpStore shares the FS provider; its own prefix scheme keeps spilled
-  // bodies isolated from other writers.
   initDumpStore(new FileDumpStore(db, files));
   initDumpBroker(new EventTargetChannelBroker<DumpMetadata>(dumpCodec));
   return { db };
