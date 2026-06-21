@@ -40,15 +40,18 @@ interface DumpRow {
   response_body_descriptor: string | null;
 }
 
-// The JOIN against `upstreams` provides three nullable columns: a null
+// The JOIN against `upstreams` provides three nullable columns. A null
 // `upstream_id` means the row was captured without an identified upstream
 // (auth error, validation rejection, no candidate matched); a non-null
 // `upstream_id` with a null `upstream_name` means the referenced upstream
-// has since been deleted. Both surface as a null DumpUpstreamRef so the
-// dashboard's "no upstream" branch handles them uniformly.
+// has since been deleted. (Checking `upstream_name` alone is enough on the
+// delete side because `upstreams.name`/`provider` are both NOT NULL — a
+// real row never has one without the other.) Both surface as a null
+// DumpUpstreamRef so the dashboard's "no upstream" branch handles them
+// uniformly.
 const hydrateUpstream = (row: { upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }) => {
-  if (row.upstream_id === null || row.upstream_name === null || row.upstream_kind === null) return null;
-  return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind };
+  if (row.upstream_id === null || row.upstream_name === null) return null;
+  return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind! };
 };
 
 const hourBucket = (ms: number): string => {
@@ -136,7 +139,7 @@ export class FileDumpStore implements DumpStore {
     // Strip the in-memory `upstream` field before storage; the ref is
     // rebuilt from the join at read time so an admin rename (or delete)
     // is honored on every historical record.
-    const { upstream: _drop, ...metaToStore } = record.meta;
+    const { upstream: _upstream, ...metaToStore } = record.meta;
 
     // Files first, then the row — a partial failure leaves orphan files the
     // hour-bucket sweep collects, never an orphan row whose detail fetch
@@ -159,12 +162,13 @@ export class FileDumpStore implements DumpStore {
   }
 
   async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
-    const before = opts.before
+    const beforeId = opts.before ?? null;
+    const beforeRow = beforeId !== null
       ? await this.db.prepare(
           'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
-        ).bind(keyId, opts.before).first<{ created_at: number }>()
+        ).bind(keyId, beforeId).first<{ created_at: number }>()
       : null;
-    const beforeTs = before?.created_at ?? null;
+    const beforeTs = beforeRow?.created_at ?? null;
 
     // Newest-first with a compound (created_at, id) cursor so two rows that
     // share a millisecond still page deterministically. ULID lex order
@@ -180,7 +184,7 @@ export class FileDumpStore implements DumpStore {
       : `${select} WHERE d.key_id = ? AND (d.created_at < ? OR (d.created_at = ? AND d.id < ?)) ORDER BY d.created_at DESC, d.id DESC LIMIT ?`;
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, opts.limit)
-      : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, opts.before!, opts.limit);
+      : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, beforeId, opts.limit);
     const { results } = await stmt.all<{ meta_json: string; upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
