@@ -66,9 +66,10 @@ const formatDuration = (ms: number): string => {
 
 const formatTokens = (n: number): string => {
   if (n < 1000) return n.toString();
-  // The space + uppercase `K` matches how the usage page and key dialogs
-  // render token counts; bucket at 10 K so a single noisy ".0" decimal
-  // drops off once the value is comfortably in thousands.
+  // The space + uppercase ` K` gives the dense row's token chip the same
+  // shape as its `ms` / `B` / `KB` neighbors (digit + space + unit). Bucket
+  // at 10 K so a single noisy ".0" decimal drops off once the value is
+  // comfortably in thousands.
   if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
   if (n < 1_000_000) return `${Math.round(n / 1000)} K`;
   return `${(n / 1_000_000).toFixed(1)} M`;

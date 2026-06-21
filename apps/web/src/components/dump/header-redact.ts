@@ -16,13 +16,18 @@ export const isSensitiveHeader = (key: string): boolean => SENSITIVE_HEADERS.has
 
 // Length-preserving mask. The visual mass of the original value carries one
 // useful signal — "this is a 64-char token, not an 8-char one" — and erasing
-// it makes every credential look identical. Keep the first 8 and last 8
-// characters so an operator can recognize the credential type from the
-// prefix (`sk-ant-…`, `cgw-main-…`) and match the tail against their notes,
-// and replace the middle with the same number of `•` as the original held.
-// Anything 16 chars or shorter has no "middle" — keeping any visible bytes
-// at that length leaks the whole secret, so collapse to a same-length mask.
+// it makes every credential look identical. Keep the first and last
+// `VISIBLE_PREFIX` / `VISIBLE_SUFFIX` characters so an operator can recognize
+// the credential type from the prefix (`sk-ant-…`, `cgw-main-…`) and match
+// the tail against their notes, and replace the middle with the same number
+// of `•` as the original held. Anything `VISIBLE_PREFIX + VISIBLE_SUFFIX`
+// chars or shorter has no "middle" — keeping any visible bytes at that
+// length leaks the whole secret, so collapse to a same-length mask.
+const VISIBLE_PREFIX = 8;
+const VISIBLE_SUFFIX = 8;
+const SAFE_MIN_LENGTH = VISIBLE_PREFIX + VISIBLE_SUFFIX;
+
 export const redactHeaderValue = (value: string): string => {
-  if (value.length <= 16) return '•'.repeat(value.length);
-  return `${value.slice(0, 8)}${'•'.repeat(value.length - 16)}${value.slice(-8)}`;
+  if (value.length <= SAFE_MIN_LENGTH) return '•'.repeat(value.length);
+  return `${value.slice(0, VISIBLE_PREFIX)}${'•'.repeat(value.length - SAFE_MIN_LENGTH)}${value.slice(-VISIBLE_SUFFIX)}`;
 };

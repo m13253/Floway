@@ -12,12 +12,12 @@ const props = withDefaults(defineProps<{
   language?: 'bash' | 'toml' | 'json' | 'text';
   copyable?: boolean;
   // "flush" mode embeds the code edge-to-edge inside an ancestor that
-  // owns its own framing (a section card, a panel header, etc.). The
-  // rounded card chrome and the inner OverlayScrollbars are stripped:
-  // the pre handles horizontal scroll natively via `overflow-x: auto` so
-  // wheel events bubble straight through to whichever ancestor owns the
-  // pane's vertical scroll, and there is no nested card-in-card visual.
-  // Use this anywhere the code lives inside a panel that scrolls
+  // owns its own framing (a section card, a panel header). The rounded
+  // card chrome (border + bg + rounded-xl) and the extra right-pad that
+  // makes room for the absolute copy button are dropped; the inner
+  // OverlayScrollbars still owns horizontal overflow so the scrollbar
+  // style stays consistent with every other scrollable surface in the
+  // app. Use this anywhere the code lives inside a panel that scrolls
   // vertically as a whole; the default (chromed) render is for
   // standalone code samples that need their own framed surface.
   flush?: boolean;
