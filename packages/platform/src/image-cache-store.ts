@@ -4,7 +4,7 @@
 //
 // Why the sliding TTL is debounced: Cloudflare KV rate-limits writes to a
 // single key to 1/sec (https://developers.cloudflare.com/kv/platform/limits/),
-// and a single agentic request typically batches dozens of identical inline
+// and a single caller request typically batches dozens of identical inline
 // images through `Promise.all`. An unconditional refresh-on-read would race
 // concurrent writes to the same key on every cache hit. The store refreshes
 // the entry's expiry only when the entry has aged past

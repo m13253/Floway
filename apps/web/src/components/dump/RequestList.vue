@@ -76,8 +76,15 @@ const upstreamKindTextClass = (kind: string | undefined): string => {
 
 const statusLabel = (status: number) => status === 0 ? 'ERR' : String(status);
 
-const totalTokens = (meta: DumpMetadata): number =>
-  (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0);
+// `inputTokens`/`outputTokens` are `null` when the upstream didn't report
+// that dimension (preserved deliberately by capture-dump's token accounting).
+// Collapsing both to 0 would conflate "not measured" with "zero tokens", so
+// return null when neither side has a number and let the template render an
+// em-dash for that case.
+const totalTokens = (meta: DumpMetadata): number | null => {
+  if (meta.inputTokens === null && meta.outputTokens === null) return null;
+  return (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0);
+};
 
 const relTime = (ms: number) => dayjs(ms).fromNow();
 const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
@@ -191,7 +198,7 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
               {{ record.upstream?.name ?? 'No upstream' }}
             </span>
             <span class="ml-auto shrink-0 text-gray-600">
-              {{ totalTokens(record) > 0 ? `${formatTokens(totalTokens(record))} tok` : '—' }}
+              {{ totalTokens(record) === null ? '—' : `${formatTokens(totalTokens(record)!)} tok` }}
             </span>
           </div>
 

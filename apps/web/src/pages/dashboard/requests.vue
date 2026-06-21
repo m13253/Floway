@@ -30,9 +30,13 @@ const initialData = useRequestsPageData();
 const keys = ref<ApiKey[] | null>(initialData.data.value.keys);
 const loadError = ref<string | null>(initialData.data.value.error);
 
-const dumpKeys = computed(() => (keys.value ?? []).filter(k => k.dump_retention_seconds !== null));
+// `keys.value === null` means the API call failed — distinct from "loaded an
+// empty list". Preserve the null so the picker UI stays gated and the load
+// error surfaces via `loadError` above; only filter once we actually have a
+// list to filter.
+const dumpKeys = computed(() => keys.value === null ? null : keys.value.filter(k => k.dump_retention_seconds !== null));
 
-const selectedKeyId = ref<string>(dumpKeys.value[0]?.id ?? '');
+const selectedKeyId = ref<string>(dumpKeys.value?.[0]?.id ?? '');
 const selectedRecordId = useHashRef();
 
 const subscription = useDumpSubscription(selectedKeyId);
@@ -61,7 +65,10 @@ useEventListener(window, 'focus', () => { void reloadKeys(); });
 
 // Reconcile selectedKeyId when the dump-enabled set changes: if the current
 // pick is no longer in the list, fall back to the first available (or '').
+// When the keys list itself failed to load (`dumpKeys === null`), leave the
+// selection alone — the page renders the load-error block instead.
 watch(dumpKeys, next => {
+  if (next === null) return;
   if (selectedKeyId.value === '') {
     selectKey(next[0]?.id ?? '');
     return;
@@ -82,7 +89,7 @@ watch(dumpKeys, next => {
       <aside class="flex max-h-72 w-full shrink-0 flex-col border-b border-white/[0.06] lg:max-h-none lg:w-90 lg:border-b-0 lg:border-r">
         <div class="border-b border-white/[0.06] p-3">
           <select
-            v-if="dumpKeys.length > 0"
+            v-if="dumpKeys && dumpKeys.length > 0"
             :value="selectedKeyId"
             class="w-full bg-transparent text-xs text-gray-200 focus:outline-none"
             @change="selectKey(($event.target as HTMLSelectElement).value)"
@@ -91,10 +98,10 @@ watch(dumpKeys, next => {
               {{ k.name }} ({{ k.key.slice(-4) }})
             </option>
           </select>
-          <p v-else class="text-xs text-gray-500">No dump-enabled keys.</p>
+          <p v-else-if="dumpKeys" class="text-xs text-gray-500">No dump-enabled keys.</p>
         </div>
 
-        <div v-if="dumpKeys.length === 0" class="px-4 py-6 text-center text-xs text-gray-500">
+        <div v-if="dumpKeys && dumpKeys.length === 0" class="px-4 py-6 text-center text-xs text-gray-500">
           Enable request dump retention on an API key to start capturing requests.
           <RouterLink to="/dashboard/keys" class="mt-2 block text-accent-cyan hover:underline">
             Go to API Keys →
@@ -102,7 +109,7 @@ watch(dumpKeys, next => {
         </div>
 
         <RequestList
-          v-else
+          v-else-if="dumpKeys"
           :records="subscription.records.value"
           :loading="subscription.loading.value"
           :error="subscription.error.value"
