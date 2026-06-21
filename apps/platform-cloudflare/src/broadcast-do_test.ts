@@ -27,7 +27,12 @@ class FakeWebSocket implements WebSocket {
   closed: { code: number; reason: string } | null = null;
 
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
-    this.sent.push(typeof data === 'string' ? data : '');
+    // BroadcastDO's `broadcast(payload: string)` contract forbids non-string
+    // payloads; throw loud on any binary input so a regression that sneaks
+    // ArrayBuffer/Blob through surfaces here instead of becoming a silent
+    // empty frame on the wire.
+    if (typeof data !== 'string') throw new Error('FakeWebSocket.send: expected string payload');
+    this.sent.push(data);
   }
   close(code = 1000, reason = ''): void { this.closed = { code, reason }; }
   accept(): void { /* noop */ }
@@ -50,11 +55,12 @@ class FakeState {
 }
 
 test('BroadcastDO extends DurableObject so the runtime gates RPC dispatch on it', () => {
-  // Without `extends DurableObject` the CF runtime rejects direct method
-  // invocation (`stub.broadcast(...)`, `stub.closeAll(...)`) with "the
-  // receiving Durable Object does not support RPC". A deployment smoke test
-  // caught the regression; the unit-test surface doesn't reach the runtime
-  // RPC machinery, so we lock the prototype-chain relationship here.
+  // BroadcastDO must extend DurableObject so the CF runtime gates RPC
+  // dispatch on the subclass; without the extends declaration, direct method
+  // invocation (`stub.broadcast(...)`, `stub.closeAll(...)`) fails with
+  // "the receiving Durable Object does not support RPC". The unit-test
+  // surface doesn't reach the runtime RPC machinery, so the prototype-chain
+  // check pins that the extends declaration is present.
   assertEquals(Object.getPrototypeOf(BroadcastDO.prototype) === DurableObject.prototype, true);
 });
 
@@ -108,4 +114,48 @@ test('BroadcastDO.webSocketError exists so the runtime delivers close events', a
   await actor.webSocketError(ws, new Error('whatever'));
   // No side effect — the runtime drops the socket from getWebSockets() on its own.
   assertEquals(ws.closed, null);
+});
+
+test('BroadcastDO.fetch upgrades to a WebSocket and registers the server side', async () => {
+  // The actor's fetch path is the subscriber entry point: it must mint a
+  // WebSocketPair, hand the server side to the runtime via acceptWebSocket,
+  // and return a 101 response carrying the client side. Stub the CF-only
+  // globals locally — Node's `Response` constructor rejects status 101 so
+  // we patch the global to accept it for the duration of the test.
+  const realResponse = globalThis.Response;
+  const realWebSocketPair = (globalThis as Record<string, unknown>).WebSocketPair;
+
+  const PairCtor = function (): [WebSocket, WebSocket] {
+    return [new FakeWebSocket() as unknown as WebSocket, new FakeWebSocket() as unknown as WebSocket];
+  };
+  (globalThis as Record<string, unknown>).WebSocketPair = PairCtor as unknown;
+
+  class StubResponse {
+    readonly status: number;
+    readonly webSocket: WebSocket | undefined;
+    constructor(_body: BodyInit | null, init?: ResponseInit & { webSocket?: WebSocket }) {
+      this.status = init?.status ?? 200;
+      this.webSocket = init?.webSocket;
+    }
+  }
+  (globalThis as Record<string, unknown>).Response = StubResponse as unknown as typeof Response;
+
+  try {
+    const state = new FakeState();
+    const actor = new BroadcastDO(state, {});
+
+    const response = await actor.fetch(new Request('https://broadcast.do/subscribe'));
+
+    assertEquals(response.status, 101);
+    const responseWithSocket = response as Response & { webSocket?: WebSocket };
+    assertEquals(responseWithSocket.webSocket !== undefined, true);
+    assertEquals(state.sockets.length, 1);
+  } finally {
+    globalThis.Response = realResponse;
+    if (realWebSocketPair === undefined) {
+      delete (globalThis as Record<string, unknown>).WebSocketPair;
+    } else {
+      (globalThis as Record<string, unknown>).WebSocketPair = realWebSocketPair;
+    }
+  }
 });

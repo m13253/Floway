@@ -1,9 +1,6 @@
+import type { DumpListOptions, DumpStore } from '../runtime/dump-store-contract.ts';
 import { decodeBodyFromWire, encodeBodyForWire } from '../shared/dump-wire.ts';
-import type {
-  DumpListOptions,
-  DumpStore,
-  FileProvider, SqlDatabase,
-} from '@floway-dev/platform';
+import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 import type {
   DumpMetadata,
   DumpRecord,
@@ -15,8 +12,8 @@ import type {
 } from '@floway-dev/protocols/dump';
 
 // File-backed `DumpStore` impl shared between deployment targets. See the
-// interface contract in `packages/platform/src/dump-store.ts` for the
-// metadata-in-SQL / bytes-in-FileProvider split.
+// interface contract in `packages/gateway/src/runtime/dump-store-contract.ts`
+// for the metadata-in-SQL / bytes-in-FileProvider split.
 //
 // Concrete layout: bodies live under hour-bucketed FileProvider keys
 // `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`. The hour bucket
@@ -226,10 +223,6 @@ export class FileDumpStore implements DumpStore {
       };
     }
 
-    // No response headers row means the request never produced an upstream
-    // response (capture middleware writes the row even on synthesized 500s,
-    // where status comes from accounting but no real headers exist). Surface
-    // that as an empty header list — the wire shape requires the array.
     const response: DumpResponse & DumpResponseBody = {
       status: meta.status,
       headers: responseHeaders ?? [],

@@ -38,9 +38,8 @@ export class FsFileProvider implements FileProvider {
 
   async deletePrefix(prefix: string): Promise<void> {
     // Refuse to delete the entire root: a stray empty-string prefix would
-    // otherwise wipe every spilled payload, including ones from concurrent
-    // requests. Callers that genuinely want to clear everything should call
-    // deleteAllResponsesItemPayloadFiles or the equivalent at a higher layer.
+    // otherwise wipe every spilled payload across tenants. Callers wanting a
+    // full reset must enumerate prefixes explicitly.
     if (prefix === '') throw new Error('FsFileProvider.deletePrefix: refusing empty prefix');
     await rm(this.pathFor(prefix), { recursive: true, force: true });
   }

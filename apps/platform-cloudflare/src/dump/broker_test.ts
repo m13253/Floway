@@ -96,3 +96,73 @@ test('DurableObjectDumpBroker.notifyDisabled translates to closeAll with the doc
   assertEquals(closeAlls.length, 1);
   assertEquals(closeAlls[0], 'dump retention disabled');
 });
+
+test('DurableObjectDumpBroker.subscribe surfaces a frame with an unexpected event by throwing from .next()', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'unexpected', data: {} }) }));
+
+  let caught: unknown = null;
+  try {
+    await iter.next();
+  } catch (err) {
+    caught = err;
+  }
+  assertEquals(caught instanceof Error, true);
+  assertEquals((caught as Error).message.includes('unexpected'), true);
+});
+
+test('DurableObjectDumpBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  socket.emit('close', new Event('close'));
+
+  const result = await iter.next();
+  assertEquals(result.done, true);
+});
+
+test('DurableObjectDumpBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  socket.emit('error', new Event('error'));
+
+  let caught: unknown = null;
+  try {
+    await iter.next();
+  } catch (err) {
+    caught = err;
+  }
+  assertEquals(caught instanceof Error, true);
+  assertEquals((caught as Error).message, 'BroadcastDO socket error');
+});
+
+test('DurableObjectDumpBroker.subscribe delivers a frame buffered before the first .next() call', async () => {
+  const socket = new FakeServerSocket();
+  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const controller = new AbortController();
+  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
+
+  await Promise.resolve();
+  await Promise.resolve();
+  // Emit BEFORE the first .next(): the broker's eager listener attach must
+  // buffer the frame so the first read returns it instead of waiting on a
+  // future emit.
+  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'appended', data: fakeMeta({ id: 'B1' }) }) }));
+  const first = await iter.next();
+  assertEquals(first.value!.id, 'B1');
+});

@@ -1,10 +1,9 @@
 import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
 
-// Per-API-key request dump storage contract. Implementations live in the
-// platform-target apps (`apps/platform-*`), backed by D1 + FileProvider on
-// Cloudflare and by node:sqlite + filesystem on Node. The gateway core only
-// holds the abstract interface and binds to the concrete impl through
-// `initDumpStore` / `getDumpStore`.
+// Per-API-key request dump storage contract. The data plane writes through
+// this surface and the control plane reads through it; concrete impls live
+// in `apps/platform-*` (D1 + R2 on Cloudflare, node:sqlite + filesystem on
+// Node) and are wired into the gateway via `initDumpStore` / `getDumpStore`.
 //
 // The split is metadata-in-SQL, bytes-in-FileProvider. Each implementation
 // chooses its own path scheme under a per-key prefix — the concrete layout

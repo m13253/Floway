@@ -1,4 +1,4 @@
-import type { DumpBroker } from '@floway-dev/platform';
+import type { DumpBroker } from '@floway-dev/gateway';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 // In-process per-key fan-out backed by EventTarget. The Node deployment

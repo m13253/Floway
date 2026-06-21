@@ -315,9 +315,6 @@ importers:
 
   packages/platform:
     dependencies:
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
       image-size:
         specifier: ^2.0.2
         version: 2.0.2
@@ -455,15 +452,16 @@ importers:
 
   packages/test-utils:
     dependencies:
-      '@floway-dev/platform':
-        specifier: workspace:*
-        version: link:../platform
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+    devDependencies:
+      '@floway-dev/gateway':
+        specifier: workspace:*
+        version: link:../gateway
 
   packages/translate:
     dependencies:

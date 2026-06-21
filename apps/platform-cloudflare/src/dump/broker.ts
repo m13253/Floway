@@ -1,4 +1,4 @@
-import type { DumpBroker } from '@floway-dev/platform';
+import type { DumpBroker } from '@floway-dev/gateway';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 // Minimal namespace surface from the worker's BROADCAST_DO binding. Matches
@@ -120,15 +120,17 @@ const iterateFromBroadcastSocket = (stub: BroadcastStub, signal: AbortSignal): A
 
   // Symmetric termination — every path that flips `closed` also has to close
   // the upstream socket, otherwise an abort or parse-error leaks one WS in
-  // the DO's hibernation registry per subscriber session. Awaiting
-  // `openPromise` covers the still-handshaking case: a teardown that races
-  // the open still gets to close the socket once it materializes.
+  // the DO's hibernation registry per subscriber session. Flip `closed`
+  // first so a concurrent invocation short-circuits before either issues
+  // its own close; awaiting `openPromise` after that covers the still-
+  // handshaking case so a teardown that races the open still tears down
+  // the socket once it materializes.
   const closeAndEnd = async (): Promise<void> => {
-    const s = await openPromise.catch(() => null);
-    if (s) s.close(1000, 'subscriber done');
     if (closed) return;
     closed = true;
     deliver({ value: undefined as never, done: true });
+    const s = await openPromise.catch(() => null);
+    if (s) s.close(1000, 'subscriber done');
   };
 
   signal.addEventListener('abort', () => {

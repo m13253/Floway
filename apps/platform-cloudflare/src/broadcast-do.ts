@@ -1,12 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 
-// `BroadcastDO` is a stateless per-namespace WebSocket fan-out actor. Each
+// `BroadcastDO` is a stateless per-channel WebSocket fan-out actor. Each
 // instance (resolved via `namespace.idFromName(channelId)`) holds the live
 // WebSocket subscribers for one channel; the caller decides what `channelId`
-// means (e.g. an api-key id for the request-dump live feed, but the actor
-// itself stays content-agnostic). The producer calls `broadcast(payload)` to
-// fan a single string out to every subscriber; the producer also owns the
-// framing convention — the actor never inspects or validates `payload`.
+// means and owns any framing convention layered over `broadcast(payload)`.
+// The actor itself never inspects or validates the payload string.
 //
 // `extends DurableObject` is load-bearing: the CF runtime gates RPC method
 // dispatch (`stub.broadcast(...)`, `stub.closeAll(...)`) on the actor

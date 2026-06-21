@@ -30,11 +30,9 @@ export interface CloudflareEnv {
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 holds spilled payloads, Images compresses inline
 // images, KV memoises compressed image results, DUMP_BLOBS holds captured
-// dump bodies, BROADCAST_DO fans out live per-key WebSocket frames (used
-// today for dump notifications; content-agnostic so future features can
-// publish through the same actor). A missing binding means wrangler.jsonc
-// drifted from the code, so we refuse to initialise rather than 503 on
-// first use of the absent binding.
+// dump bodies, BROADCAST_DO fans out per-channel WebSocket frames. A missing
+// binding means wrangler.jsonc drifted from the code, so we refuse to
+// initialise rather than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'DUMP_BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {

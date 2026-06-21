@@ -13,9 +13,10 @@ export interface SizeCaps {
 
 // Maps a source image's pixel dimensions to the dimensions the compressor
 // should fit the output within. Returned dimensions are an upper bound — the
-// compressor scales down to fit but never enlarges past the source. This is
-// the one intentional knob the egress passes in: per-model tile budgets plug
-// in here (see `fitWithin`) without the processor learning any model specifics.
+// compressor scales down to fit but never enlarges past the source. The
+// calculator is the single configuration seam: callers pre-compute the
+// target through `fitWithin` (or any other policy) without the processor
+// learning what budget produced it.
 export type ImageSizeCalculator = (source: ImageDimensions) => ImageDimensions;
 
 export interface ImageProcessor {
@@ -80,10 +81,10 @@ export const compressBytesToWebp = async (
 
 // In-memory passthrough used by tests. There is no WebP codec available under
 // the test runtime, so this stub returns the input bytes unchanged; it exists
-// only to satisfy the ImageProcessor contract so the egress interceptors run
-// end-to-end. Interceptor behaviour (which images are rewritten, what target
-// is computed) is asserted against dedicated spy processors in the
-// interceptor tests, not against this stub.
+// only to satisfy the ImageProcessor contract so callers run end-to-end.
+// Caller-side behaviour (which images are rewritten, what target is
+// computed) is asserted against dedicated spy processors in those callers'
+// own tests, not against this stub.
 export const createInMemoryImageProcessor = (): ImageProcessor => ({
   compressToWebp: input => Promise.resolve(input),
 });

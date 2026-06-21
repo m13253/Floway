@@ -10,10 +10,11 @@ export class SqliteImageCache implements ImageCacheStore {
       .bind(key, now)
       .first<{ value: Uint8Array; last_refreshed_at: number }>();
     if (!row) return null;
-    // Migration 0032 backfills `last_refreshed_at = 0` on rows that predate
-    // the column; that maps to age = `now`, which crosses any sane threshold
-    // so the next hit refreshes the row with the current timestamp via a
-    // single UPDATE.
+    // Sliding TTL: each hit that's older than the refresh threshold pushes
+    // expires_at forward by one TTL window and stamps last_refreshed_at to
+    // now. A row whose last_refreshed_at is at the epoch (no prior refresh
+    // recorded) crosses any sane threshold on the first hit and gets
+    // updated in the same single UPDATE.
     if (now - row.last_refreshed_at >= this.policy.refreshIfOlderThanMs) {
       await this.db
         .prepare('UPDATE image_cache SET expires_at = ?, last_refreshed_at = ? WHERE key = ?')

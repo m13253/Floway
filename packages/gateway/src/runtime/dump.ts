@@ -1,4 +1,5 @@
-import type { DumpBroker, DumpStore } from '@floway-dev/platform';
+import type { DumpBroker } from './dump-broker-contract.ts';
+import type { DumpStore } from './dump-store-contract.ts';
 
 let _store: DumpStore | null = null;
 let _broker: DumpBroker | null = null;

@@ -2,14 +2,13 @@ import type { ImageDimensions, ImageProcessor } from '@floway-dev/platform';
 import { getImageCacheStore, sha256Hex } from '@floway-dev/platform';
 
 // Fixed WebP quality for every recompressed inline image. 82 sits above the
-// cwebp / photographic default of 75 so screenshots and text-heavy UI images —
-// the bulk of Copilot traffic — survive our lossy pass before the upstream
-// provider applies its own downscale and re-encode, while keeping the bandwidth
-// win. Confirmed on real traffic: the production Cloudflare Images encoder at
-// q82 matches local cwebp within <0.1 dB PSNR. References:
+// cwebp / photographic default of 75: the extra headroom keeps text and UI
+// edges visually intact when the recompressed bytes are themselves re-encoded
+// downstream (a model side that downscales and re-encodes again), at a
+// modest file-size premium over the default. Confirmed on real traffic: the
+// production Cloudflare Images encoder at q82 matches local cwebp within
+// <0.1 dB PSNR. References:
 // - https://developers.google.com/speed/webp/docs/cwebp (default quality 75)
-// - https://platform.claude.com/docs/en/build-with-claude/vision (multi-pass
-//   compression warning)
 // - https://getwebp.com/blog/screenshots-webp-settings-text-ui
 const WEBP_QUALITY = 82;
 

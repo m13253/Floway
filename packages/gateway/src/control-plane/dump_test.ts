@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../runtime/dump.ts';
 import { requestApp, setupAppTest } from '../test-helpers.ts';
-import type { DumpStore } from '@floway-dev/platform';
+import type { DumpStore } from '@floway-dev/gateway';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
 import { assertEquals, assertExists, fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '@floway-dev/test-utils';
 

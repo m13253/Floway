@@ -109,7 +109,6 @@ export const useDumpSubscription = (
     if (seen.has(meta.id)) return;
     records.value = [meta, ...records.value];
     seen.add(meta.id);
-    // Order matters: rebuild after the prepend so it picks up the just-added id.
     if (seen.size > DEDUP_REBUILD_THRESHOLD) rebuildSeen();
   };
 
@@ -190,10 +189,7 @@ export const useDumpSubscription = (
       reset();
       return;
     }
-    // open() closes any prior socket via close(), so a keyId change cleanly
-    // tears down the previous stream before opening a fresh one.
-    records.value = [];
-    seen.clear();
+    reset();
     open(id);
   }, { immediate: true });
 

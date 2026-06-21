@@ -12,7 +12,7 @@ import {
 // Re-exported here because the CF runtime resolves the DO class by its
 // exported name on the Worker module. The wrangler `migrations.new_sqlite_classes`
 // entry must match this export.
-export { BroadcastDO } from './src/broadcast/broadcast-do.ts';
+export { BroadcastDO } from './src/broadcast-do.ts';
 
 initBackgroundSchedulerResolver(c => promise => c.executionCtx.waitUntil(promise));
 

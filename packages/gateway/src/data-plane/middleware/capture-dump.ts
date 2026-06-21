@@ -67,13 +67,16 @@ export const errorDumpAccounting = (c: Context, error: unknown): void => {
   } satisfies DumpAccounting);
 };
 
+// `TokenUsage` carries each input dimension (base input plus cache-read and
+// cache-write) as an optional field. A missing dimension means "the upstream
+// did not report this dimension", which must not collapse to zero — that
+// would conflate "0 tokens" with "not measured". Return null only when
+// every dimension is genuinely absent; otherwise sum the present ones.
 const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   if (!usage) return null;
-  const input = usage.input ?? 0;
-  const cacheRead = usage.input_cache_read ?? 0;
-  const cacheWrite = usage.input_cache_write ?? 0;
-  const total = input + cacheRead + cacheWrite;
-  return total === 0 ? null : total;
+  const { input, input_cache_read, input_cache_write } = usage;
+  if (input === undefined && input_cache_read === undefined && input_cache_write === undefined) return null;
+  return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
 };
 
 // `TokenUsage` carries `output` as an optional dimension; a missing field

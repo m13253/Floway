@@ -1,9 +1,9 @@
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 // Real-time fan-out from the data plane (which captures records) to the
-// dashboard SSE subscribers. Implementations live in the platform-target
-// apps: Cloudflare wraps a per-key BroadcastDO (a generic WS fan-out actor)
-// over WebSocket Hibernation; Node uses an in-process EventTarget per key.
+// dashboard SSE subscribers. Concrete impls live in `apps/platform-*`:
+// Cloudflare wraps a per-key BroadcastDO (a generic WS fan-out actor) over
+// WebSocket Hibernation; Node uses an in-process EventTarget per key.
 //
 // The broker is intentionally separate from the DumpStore. The store owns
 // durable state; the broker only relays the "a new record just landed"
