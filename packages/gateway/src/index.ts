@@ -4,7 +4,7 @@ export { FileDumpStore } from './repo/dump-store.ts';
 export { SqlRepo } from './repo/sql.ts';
 export { initBackgroundSchedulerResolver } from './runtime/background.ts';
 export { initDumpBroker, initDumpStore } from './runtime/dump.ts';
-export type { DumpBroker } from './runtime/dump-broker-contract.ts';
+export type { DumpBroker } from './dump/broker.ts';
 export type { DumpListOptions, DumpStore } from './runtime/dump-store-contract.ts';
 export { initResponsesWebSocketUpgradeResolver, type ResponsesWebSocketEvents } from './data-plane/llm/responses/websocket.ts';
 export { runScheduledMaintenance } from './scheduled.ts';

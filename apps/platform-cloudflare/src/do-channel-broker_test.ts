@@ -1,8 +1,22 @@
 import { test } from 'vitest';
 
-import { DurableObjectDumpBroker, type BroadcastNamespace } from './broker.ts';
-import { fakeMeta } from '@floway-dev/gateway/dump/test-fixtures';
+import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
+import type { Codec } from '@floway-dev/gateway/dump';
 import { assertEquals } from '@floway-dev/test-utils';
+
+// String codec: encode passes through, decode rejects payloads prefixed with
+// `bad:` so the parse-fail path has a deterministic trigger. Every test below
+// drives the generic broker through this codec, so the broker's typing flows
+// without any reference to a higher-level payload shape.
+const stringCodec: Codec<string> = {
+  encode: value => value,
+  decode: payload => {
+    if (payload.startsWith('bad:')) {
+      throw new Error(`stringCodec rejected payload: ${payload}`);
+    }
+    return payload;
+  },
+};
 
 class FakeServerSocket {
   readonly listeners = new Map<string, Set<(e: Event) => void>>();
@@ -53,18 +67,18 @@ const buildNamespace = (socket: FakeServerSocket, broadcasts: string[] = [], clo
   return ns;
 };
 
-test('DurableObjectDumpBroker.subscribe drives metas through the broadcast socket', async () => {
+test('DurableObjectChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
   // Let the subscribe coroutine attach its listeners (one microtask is enough).
   await Promise.resolve();
   await Promise.resolve();
-  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'appended', data: fakeMeta({ id: 'A1' }) }) }));
+  socket.emit('message', new MessageEvent('message', { data: 'hello' }));
   const first = await iter.next();
-  assertEquals(first.value!.id, 'A1');
+  assertEquals(first.value, 'hello');
 
   // Abort alone must end the iterator AND close the upstream socket — without
   // the close, every SSE disconnect would orphan one WS in the DO hibernation
@@ -78,35 +92,33 @@ test('DurableObjectDumpBroker.subscribe drives metas through the broadcast socke
   assertEquals(socket.closed?.code, 1000);
 });
 
-test('DurableObjectDumpBroker.publish dispatches an appended frame through broadcast', async () => {
+test('DurableObjectChannelBroker.publish encodes the payload through the codec', async () => {
   const broadcasts: string[] = [];
   const ns = buildNamespace(new FakeServerSocket(), broadcasts);
-  const broker = new DurableObjectDumpBroker(ns);
-  await broker.publish('k', fakeMeta({ id: 'A1' }));
+  const broker = new DurableObjectChannelBroker<string>(ns, stringCodec);
+  await broker.publish('k', 'frame-a');
   assertEquals(broadcasts.length, 1);
-  const parsed = JSON.parse(broadcasts[0]!) as { event: string; data: { id: string } };
-  assertEquals(parsed.event, 'appended');
-  assertEquals(parsed.data.id, 'A1');
+  assertEquals(broadcasts[0], 'frame-a');
 });
 
-test('DurableObjectDumpBroker.notifyDisabled translates to closeAll with the documented reason', async () => {
+test('DurableObjectChannelBroker.closeChannel forwards the reason to the actor', async () => {
   const closeAlls: string[] = [];
   const ns = buildNamespace(new FakeServerSocket(), [], closeAlls);
-  const broker = new DurableObjectDumpBroker(ns);
-  await broker.notifyDisabled('k');
+  const broker = new DurableObjectChannelBroker<string>(ns, stringCodec);
+  await broker.closeChannel('k', 'custom-reason');
   assertEquals(closeAlls.length, 1);
-  assertEquals(closeAlls[0], 'dump retention disabled');
+  assertEquals(closeAlls[0], 'custom-reason');
 });
 
-test('DurableObjectDumpBroker.subscribe surfaces a frame with an unexpected event by throwing from .next()', async () => {
+test('DurableObjectChannelBroker.subscribe surfaces a codec decode failure by throwing from .next()', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
   await Promise.resolve();
   await Promise.resolve();
-  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'unexpected', data: {} }) }));
+  socket.emit('message', new MessageEvent('message', { data: 'bad:payload' }));
 
   let caught: unknown = null;
   try {
@@ -115,12 +127,12 @@ test('DurableObjectDumpBroker.subscribe surfaces a frame with an unexpected even
     caught = err;
   }
   assertEquals(caught instanceof Error, true);
-  assertEquals((caught as Error).message.includes('unexpected'), true);
+  assertEquals((caught as Error).message.includes('bad:payload'), true);
 });
 
-test('DurableObjectDumpBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
+test('DurableObjectChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -132,9 +144,9 @@ test('DurableObjectDumpBroker.subscribe ends the iterator on a server-initiated 
   assertEquals(result.done, true);
 });
 
-test('DurableObjectDumpBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
+test('DurableObjectChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -152,9 +164,9 @@ test('DurableObjectDumpBroker.subscribe surfaces a server-side socket error by t
   assertEquals((caught as Error).message, 'BroadcastDO socket error');
 });
 
-test('DurableObjectDumpBroker.subscribe delivers a frame buffered before the first .next() call', async () => {
+test('DurableObjectChannelBroker.subscribe delivers a frame buffered before the first .next() call', async () => {
   const socket = new FakeServerSocket();
-  const broker = new DurableObjectDumpBroker(buildNamespace(socket));
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -163,7 +175,7 @@ test('DurableObjectDumpBroker.subscribe delivers a frame buffered before the fir
   // Emit BEFORE the first .next(): the broker's eager listener attach must
   // buffer the frame so the first read returns it instead of waiting on a
   // future emit.
-  socket.emit('message', new MessageEvent('message', { data: JSON.stringify({ event: 'appended', data: fakeMeta({ id: 'B1' }) }) }));
+  socket.emit('message', new MessageEvent('message', { data: 'pre-buffered' }));
   const first = await iter.next();
-  assertEquals(first.value!.id, 'B1');
+  assertEquals(first.value, 'pre-buffered');
 });

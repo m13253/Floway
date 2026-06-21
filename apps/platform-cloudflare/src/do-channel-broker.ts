@@ -1,5 +1,4 @@
-import type { DumpBroker } from '@floway-dev/gateway';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
+import type { ChannelBroker, Codec } from '@floway-dev/gateway/dump';
 
 // Minimal namespace surface from the worker's BROADCAST_DO binding. Matches
 // the subset of `DurableObjectNamespace` we actually call — keeps this file
@@ -16,45 +15,31 @@ interface BroadcastStub {
   fetch(request: Request): Promise<Response>;
 }
 
-// The wire framing convention this broker chooses to layer over the actor's
-// content-agnostic `broadcast(string)`. The actor never inspects the
-// payload; the dump producer and dump subscriber are the only sides that
-// know about `event: 'appended'` and the `DumpMetadata` shape.
-const APPENDED_EVENT = 'appended';
-interface AppendedFrame {
-  event: typeof APPENDED_EVENT;
-  data: DumpMetadata;
-}
+// Per-channel publish/subscribe over a Durable Object: each channelId resolves
+// to one BroadcastDO instance via `namespace.idFromName(channelId)`. The actor
+// fans `broadcast(string)` out to every WebSocket subscriber; this class
+// applies the caller-supplied codec on both ends so the actor itself stays
+// content-agnostic.
+export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
+  constructor(
+    private readonly namespace: BroadcastNamespace,
+    private readonly codec: Codec<T>,
+  ) {}
 
-const encodeFrame = (meta: DumpMetadata): string =>
-  JSON.stringify({ event: APPENDED_EVENT, data: meta } satisfies AppendedFrame);
-
-const decodeFrame = (data: string | ArrayBuffer): AppendedFrame => {
-  const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-  const parsed = JSON.parse(text) as { event: unknown; data: unknown };
-  if (parsed.event !== APPENDED_EVENT) {
-    throw new Error(`broadcast frame had unexpected event ${String(parsed.event)}`);
-  }
-  return { event: APPENDED_EVENT, data: parsed.data as DumpMetadata };
-};
-
-export class DurableObjectDumpBroker implements DumpBroker {
-  constructor(private readonly namespace: BroadcastNamespace) {}
-
-  private stub(keyId: string): BroadcastStub {
-    return this.namespace.get(this.namespace.idFromName(keyId));
+  private stub(channelId: string): BroadcastStub {
+    return this.namespace.get(this.namespace.idFromName(channelId));
   }
 
-  async publish(keyId: string, meta: DumpMetadata): Promise<void> {
-    await this.stub(keyId).broadcast(encodeFrame(meta));
+  async publish(channelId: string, payload: T): Promise<void> {
+    await this.stub(channelId).broadcast(this.codec.encode(payload));
   }
 
-  async notifyDisabled(keyId: string): Promise<void> {
-    await this.stub(keyId).closeAll('dump retention disabled');
+  async closeChannel(channelId: string, reason: string): Promise<void> {
+    await this.stub(channelId).closeAll(reason);
   }
 
-  subscribe(keyId: string, signal: AbortSignal): AsyncIterable<DumpMetadata> {
-    return iterateFromBroadcastSocket(this.stub(keyId), signal);
+  subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
+    return iterateFromBroadcastSocket<T>(this.stub(channelId), signal, this.codec);
   }
 }
 
@@ -63,13 +48,17 @@ export class DurableObjectDumpBroker implements DumpBroker {
 // caller awaits the iterator's first `.next()` — so a broadcast that races
 // against the iterator drain still buffers into the queue and lands on the
 // next read.
-const iterateFromBroadcastSocket = (stub: BroadcastStub, signal: AbortSignal): AsyncIterable<DumpMetadata> => {
-  const queue: DumpMetadata[] = [];
-  let resolveNext: ((value: IteratorResult<DumpMetadata>) => void) | null = null;
+const iterateFromBroadcastSocket = <T>(
+  stub: BroadcastStub,
+  signal: AbortSignal,
+  codec: Codec<T>,
+): AsyncIterable<T> => {
+  const queue: T[] = [];
+  let resolveNext: ((value: IteratorResult<T>) => void) | null = null;
   let pendingError: unknown = null;
   let closed = false;
 
-  const deliver = (value: IteratorResult<DumpMetadata>): void => {
+  const deliver = (value: IteratorResult<T>): void => {
     if (resolveNext) {
       const r = resolveNext;
       resolveNext = null;
@@ -92,8 +81,9 @@ const iterateFromBroadcastSocket = (stub: BroadcastStub, signal: AbortSignal): A
     socket.addEventListener('message', event => {
       if (closed) return;
       try {
-        const frame = decodeFrame(event.data as string | ArrayBuffer);
-        deliver({ value: frame.data, done: false });
+        const raw = event.data as string | ArrayBuffer;
+        const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw);
+        deliver({ value: codec.decode(text), done: false });
       } catch (err) {
         pendingError = err;
         void closeAndEnd();
@@ -138,18 +128,18 @@ const iterateFromBroadcastSocket = (stub: BroadcastStub, signal: AbortSignal): A
   }, { once: true });
 
   return {
-    [Symbol.asyncIterator]: (): AsyncIterator<DumpMetadata> => ({
-      async next(): Promise<IteratorResult<DumpMetadata>> {
+    [Symbol.asyncIterator]: (): AsyncIterator<T> => ({
+      async next(): Promise<IteratorResult<T>> {
         if (queue.length > 0) return { value: queue.shift()!, done: false };
         if (closed) {
           if (pendingError) throw pendingError;
           return { value: undefined as never, done: true };
         }
-        const result = await new Promise<IteratorResult<DumpMetadata>>(resolve => { resolveNext = resolve; });
+        const result = await new Promise<IteratorResult<T>>(resolve => { resolveNext = resolve; });
         if (result.done && pendingError) throw pendingError;
         return result;
       },
-      async return(): Promise<IteratorResult<DumpMetadata>> {
+      async return(): Promise<IteratorResult<T>> {
         await closeAndEnd();
         return { value: undefined as never, done: true };
       },

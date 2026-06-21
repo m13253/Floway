@@ -1120,15 +1120,15 @@ test('replace-mode import purges every pre-existing key dump and cuts SSE subscr
   assertEquals(result.status, 200);
   assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
   assertEquals(stubs.purgedAll.includes(KEY_B.id), true);
-  assertEquals(stubs.notifiedDisabled.includes(KEY_A.id), true);
-  assertEquals(stubs.notifiedDisabled.includes(KEY_B.id), true);
+  assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
+  assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_B.id), true);
 });
 
-test('replace-mode import succeeds when notifyDisabled throws', async () => {
+test('replace-mode import succeeds when the broker close hook throws', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('notifyDisabled', new Error('broker down'));
+  stubs.failOn('closeChannel', new Error('broker down'));
 
   const result = await doImport(app, 'replace', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
@@ -1137,7 +1137,7 @@ test('replace-mode import succeeds when notifyDisabled throws', async () => {
   assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
 });
 
-test('merge-mode import flipping retention to null purges + notifies', async () => {
+test('merge-mode import flipping retention to null purges + closes the channel', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
@@ -1147,7 +1147,7 @@ test('merge-mode import flipping retention to null purges + notifies', async () 
   }));
   assertEquals(result.status, 200);
   assertEquals(stubs.purgedAll.includes(KEY_A.id), true);
-  assertEquals(stubs.notifiedDisabled.includes(KEY_A.id), true);
+  assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
 });
 
 test('merge-mode import shrinking retention purges expired with the new window', async () => {
@@ -1168,7 +1168,7 @@ test('merge-mode retention transition tolerates dump-broker failure', async () =
   const { app, repo } = setup();
   await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('notifyDisabled', new Error('broker down'));
+  stubs.failOn('closeChannel', new Error('broker down'));
 
   const result = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_A, dumpRetentionSeconds: null }],

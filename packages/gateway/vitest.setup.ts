@@ -1,5 +1,5 @@
+import type { DumpBroker } from './src/dump/broker.ts';
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
-import type { DumpBroker } from './src/runtime/dump-broker-contract.ts';
 import type { DumpStore } from './src/runtime/dump-store-contract.ts';
 import { initDumpBroker, initDumpStore } from './src/runtime/dump.ts';
 import { trackBackground } from './src/test-helpers/background-tracker.ts';
@@ -31,7 +31,7 @@ const noopStore: DumpStore = {
 };
 const noopBroker: DumpBroker = {
   async publish(): Promise<void> { /* noop */ },
-  async notifyDisabled(): Promise<void> { /* noop */ },
+  async closeChannel(): Promise<void> { /* noop */ },
   subscribe(): AsyncIterable<DumpMetadata> { return (async function*() {})(); },
 };
 initDumpStore(noopStore);

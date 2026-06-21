@@ -90,7 +90,7 @@ test('captureRequestDump publishes only after store.put resolves', async () => {
   };
   const broker: DumpBroker = {
     async publish() { order.push('publish'); },
-    async notifyDisabled() { /* noop */ },
+    async closeChannel() { /* noop */ },
     subscribe() { return (async function*() {})(); },
   };
   initDumpStore(store);

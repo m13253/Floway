@@ -1,10 +1,11 @@
-import { DurableObjectDumpBroker, type BroadcastNamespace } from './dump/broker.ts';
+import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
+import { dumpCodec } from '@floway-dev/gateway/dump';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
@@ -16,24 +17,25 @@ import {
   initSocketDial,
   type SqlDatabase,
 } from '@floway-dev/platform';
+import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 export interface CloudflareEnv {
   DB: SqlDatabase;
   FILES: R2BucketLike;
-  DUMP_BLOBS: R2BucketLike;
+  BLOBS: R2BucketLike;
   IMAGES: ImagesBinding;
   KV: KvNamespace;
   BROADCAST_DO: BroadcastNamespace;
   [key: string]: unknown;
 }
 
-// Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
-// config and telemetry, R2 holds spilled payloads, Images compresses inline
-// images, KV memoises compressed image results, DUMP_BLOBS holds captured
-// dump bodies, BROADCAST_DO fans out per-channel WebSocket frames. A missing
-// binding means wrangler.jsonc drifted from the code, so we refuse to
-// initialise rather than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'DUMP_BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
+// Every binding declared on CloudflareEnv is load-bearing — D1 holds all
+// config and telemetry, FILES holds spilled payloads, BLOBS holds an extra
+// payload-spill bucket, IMAGES compresses, KV memoises, BROADCAST_DO fans
+// out per-channel WS frames. A missing binding means wrangler.jsonc drifted
+// from the code, so we refuse to initialise rather than 503 on first use of
+// the absent binding.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined || env[name] === null);
@@ -55,7 +57,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
-  initDumpStore(new FileDumpStore(env.DB, new R2FileProvider(env.DUMP_BLOBS)));
-  initDumpBroker(new DurableObjectDumpBroker(env.BROADCAST_DO));
+  initDumpStore(new FileDumpStore(env.DB, new R2FileProvider(env.BLOBS)));
+  initDumpBroker(new DurableObjectChannelBroker<DumpMetadata>(env.BROADCAST_DO, dumpCodec));
   return { db: env.DB };
 };

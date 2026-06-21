@@ -132,16 +132,16 @@ test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () =>
   assertEquals((await repo.sessions.deleteByUserId(user.id)), 0);
 });
 
-test('DELETE /api/users/:id succeeds when notifyDisabled throws on a cascaded key', async () => {
+test('DELETE /api/users/:id succeeds when the broker close hook throws on a cascaded key', async () => {
   const { adminSession, repo } = await setupAppTest();
   const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
   const { user } = (await created.json()) as { user: { id: number } };
   const [defaultKey] = await repo.apiKeys.listByUserId(user.id);
-  // Enable retention on the cascaded key so notifyDisabled is exercised.
+  // Enable retention on the cascaded key so the broker close hook is exercised.
   await repo.apiKeys.save({ ...defaultKey, dumpRetentionSeconds: 3600 });
 
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('notifyDisabled', new Error('broker down'));
+  stubs.failOn('closeChannel', new Error('broker down'));
 
   const response = await adminDelete(adminSession, user.id);
   assertEquals(response.status, 200);

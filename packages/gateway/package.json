@@ -11,6 +11,10 @@
       "import": "./src/data-plane/tools/web-search/types.ts",
       "types": "./src/data-plane/tools/web-search/types.ts"
     },
+    "./dump": {
+      "import": "./src/dump/broker.ts",
+      "types": "./src/dump/broker.ts"
+    },
     "./dump/test-fixtures": {
       "import": "./src/dump/test-fixtures.ts",
       "types": "./src/dump/test-fixtures.ts"

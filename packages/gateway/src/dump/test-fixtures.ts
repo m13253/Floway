@@ -1,4 +1,4 @@
-import type { DumpBroker } from '../runtime/dump-broker-contract.ts';
+import type { DumpBroker } from './broker.ts';
 import type { DumpStore } from '../runtime/dump-store-contract.ts';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
 
@@ -36,7 +36,7 @@ export type DumpStubFailMethod =
   | 'purgeAll'
   | 'purgeExpired'
   | 'publish'
-  | 'notifyDisabled';
+  | 'closeChannel';
 
 export interface DumpStubHandle {
   store: DumpStore;
@@ -45,7 +45,7 @@ export interface DumpStubHandle {
   published: ReadonlyArray<{ keyId: string; meta: DumpMetadata }>;
   purgedAll: ReadonlyArray<string>;
   purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
-  notifiedDisabled: ReadonlyArray<string>;
+  closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
   seed: (keyId: string, record: DumpRecord) => void;
   // Inject a thrown error on the next (and subsequent) call to the named
   // method. One uniform seam over the seven store/broker methods so tests
@@ -60,7 +60,7 @@ const createDumpStubs = (): DumpStubHandle => {
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
   const purgedAll: string[] = [];
   const purgedExpired: Array<{ keyId: string; retentionSeconds: number }> = [];
-  const notifiedDisabled: string[] = [];
+  const closedChannels: Array<{ keyId: string; reason: string }> = [];
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
@@ -104,9 +104,9 @@ const createDumpStubs = (): DumpStubHandle => {
       published.push({ keyId, meta });
       for (const fn of subscribers.get(keyId) ?? []) fn(meta);
     },
-    async notifyDisabled(keyId) {
-      if (throws.notifyDisabled) throw throws.notifyDisabled;
-      notifiedDisabled.push(keyId);
+    async closeChannel(keyId, reason) {
+      if (throws.closeChannel) throw throws.closeChannel;
+      closedChannels.push({ keyId, reason });
       for (const fn of subscribers.get(keyId) ?? []) fn(null);
     },
     subscribe(keyId, signal) {
@@ -155,7 +155,7 @@ const createDumpStubs = (): DumpStubHandle => {
     published,
     purgedAll,
     purgedExpired,
-    notifiedDisabled,
+    closedChannels,
     seed: (keyId, record) => {
       const list = records.get(keyId) ?? [];
       list.unshift(record);

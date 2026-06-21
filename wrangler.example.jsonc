@@ -75,7 +75,7 @@
       "bucket_name": "<YOUR_R2_BUCKET_NAME>"
     },
     {
-      "binding": "DUMP_BLOBS",
+      "binding": "BLOBS",
       "bucket_name": "<YOUR_DUMP_R2_BUCKET_NAME>"
     }
   ],
@@ -95,11 +95,8 @@
       "id": "<YOUR_KV_NAMESPACE_ID>"
     }
   ],
-  // Per-key WebSocket fan-out actor. The DO has no persistent state of its
-  // own — it's content-agnostic infrastructure that the dump feature (and
-  // any future per-key live-event consumer) layers a framing convention on
-  // top of. `broadcast(payload)` fans a string out to every subscriber;
-  // `closeAll(reason)` ends every subscriber session.
+  // Per-key WebSocket fan-out actor. Content-agnostic — the actor never
+  // inspects the payload; callers layer their own framing via a codec.
   "durable_objects": {
     "bindings": [
       {

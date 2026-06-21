@@ -1,5 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
@@ -7,7 +8,7 @@ import { test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
 import { MemoryFileProvider } from '@floway-dev/platform';
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import type { FileProvider, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import type { DumpRecord } from '@floway-dev/protocols/dump';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -210,4 +211,68 @@ test('FileDumpStore.purgeExpired against a never-written key resolves without th
   await store.purgeExpired('never_written_key', 3600);
   assertEquals((await store.list('never_written_key', { limit: 10 })).length, 0);
   assertEquals((await files.listKeys('dumps/v1/never_written_key/')).length, 0);
+});
+
+// Smoke test: drive FileDumpStore against a real-filesystem FileProvider so a
+// regression where the store leans on MemoryFileProvider's stricter ordering /
+// instant durability surfaces here. The inline FileProvider mirrors the shape
+// of the Node platform-target app's `FsFileProvider` — keeping this test in
+// gateway, not in apps/platform-node, is what lets that app's src/ tree stay
+// free of business-domain knowledge.
+class TmpDirFileProvider implements FileProvider {
+  constructor(private readonly root: string) {}
+  async put(key: string, body: Uint8Array): Promise<void> {
+    const path = this.pathFor(key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body);
+  }
+  async get(key: string): Promise<Uint8Array | null> {
+    try {
+      return new Uint8Array(await readFile(this.pathFor(key)));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw e;
+    }
+  }
+  async deletePrefix(prefix: string): Promise<void> {
+    if (prefix === '') throw new Error('refusing empty prefix');
+    await rm(this.pathFor(prefix), { recursive: true, force: true });
+  }
+  async listKeys(prefix: string): Promise<string[]> {
+    let entries;
+    try {
+      entries = await readdir(this.pathFor(prefix), { withFileTypes: true, recursive: true });
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+      throw e;
+    }
+    const out: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      out.push(relative(this.root, join(entry.parentPath, entry.name)).split(sep).join('/'));
+    }
+    return out;
+  }
+  private pathFor(key: string): string {
+    return resolve(this.root, ...key.split('/'));
+  }
+}
+
+test('FileDumpStore: put + get round-trips through real-filesystem IO + node:sqlite', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dump-store-'));
+  try {
+    const db = await openDb();
+    const store = new FileDumpStore(db, new TmpDirFileProvider(join(root, 'files')));
+    const record = baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 12, 0, 0));
+
+    await store.put('key_x', record);
+    const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
+    assertExists(fetched);
+    assertEquals(fetched.request.body.data, '{"hello":"world"}');
+    if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
+    assertEquals(fetched.response.body.data, '{"id":"abc"}');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

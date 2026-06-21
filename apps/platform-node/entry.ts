@@ -37,9 +37,8 @@ initRepo(new SqlRepo(db));
 // Run the scheduled maintenance job once after a short startup delay and
 // then every hour. Without the startup run, a process that restarts more
 // often than the interval (crash loop, frequent deploys) would never run
-// maintenance and the scheduled sweeps (dump retention, responses items,
-// image cache, codex PKCE) would silently lag. The 30s delay keeps the
-// very first request after boot from racing the sweep.
+// maintenance and the scheduled sweeps would silently lag. The 30s delay
+// keeps the very first request after boot from racing the sweep.
 // unref() on both timers lets the process exit cleanly on SIGINT. A failure
 // here must not crash the process — one bad sweep should not stop future
 // sweeps — so log the error with a greppable tag and let the next tick try
