@@ -4,7 +4,7 @@ import { getImageCacheStore, sha256Hex } from '@floway-dev/platform';
 // Fixed WebP quality for every recompressed inline image. 82 sits above the
 // cwebp / photographic default of 75: the extra headroom keeps text and UI
 // edges visually intact when the recompressed bytes are themselves re-encoded
-// downstream (a model side that downscales and re-encodes again), at a
+// downstream (a downstream consumer that may re-encode), at a
 // modest file-size premium over the default. Confirmed on real traffic: the
 // production Cloudflare Images encoder at q82 matches local cwebp within
 // <0.1 dB PSNR. References:
@@ -46,7 +46,7 @@ export const createCloudflareImageProcessor = (images: ImagesBinding): ImageProc
   async compressToWebp(input: Uint8Array, target: ImageDimensions | null): Promise<Uint8Array> {
     // Key on the original bytes plus the exact transform we will request, so
     // every distinct (source, target size, encoder params) combination is a
-    // separate entry and a changed quality or per-model size never serves a
+    // separate entry and a changed quality or per-target size never serves a
     // stale result.
     const targetKey = target ? `${target.width}x${target.height}` : 'orig';
     const key = `imgwebp:${await sha256Hex(input)}:${targetKey}:webp:q${WEBP_QUALITY}`;

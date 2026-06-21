@@ -4,7 +4,7 @@ import { getImageCacheStore, sha256Hex } from '@floway-dev/platform';
 import type { ImageDimensions, ImageProcessor } from '@floway-dev/platform';
 
 // Fixed WebP quality matching the Cloudflare encoder so both deployment
-// targets pass the same lossy budget through to the upstream model. See
+// targets emit the same lossy budget. See
 // platform-cloudflare/src/image-processor.ts for the calibration notes.
 const WEBP_QUALITY = 82;
 

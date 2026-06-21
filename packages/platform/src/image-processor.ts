@@ -40,10 +40,8 @@ export const dimensionsFromBytes = (bytes: Uint8Array): ImageDimensions | null =
   }
 };
 
-// Scales `source` DOWN (never up) to satisfy every present cap while preserving
-// aspect ratio. This mirrors the server-side downscale each provider applies to
-// images, so we never ship pixels the model would discard. With no caps the
-// source passes through unchanged.
+// Scales source DOWN (never up) to satisfy every present cap while preserving
+// aspect ratio. With no caps the source passes through unchanged.
 export const fitWithin = ({ width, height }: ImageDimensions, caps: SizeCaps): ImageDimensions => {
   const longEdge = Math.max(width, height);
   const shortEdge = Math.min(width, height);
