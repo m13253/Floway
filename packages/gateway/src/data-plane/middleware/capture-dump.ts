@@ -115,13 +115,6 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const completedAt = Date.now();
   const upstream = c.res;
-  // Default to the plain "no upstream identified" shape when a respond path
-  // didn't stamp accounting. The data plane mounts capture-dump across every
-  // billable surface plus support routes (/models, /embeddings list, the
-  // Codex stub endpoints, the responses WS upgrade) — many of those never
-  // reach a respond layer and have no model/upstream to attribute. The dump
-  // viewer still wants to see them, just with null model/upstream.
-  const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
 
   let teedForClient: ReadableStream<Uint8Array> | null = null;
   let teedForCapture: ReadableStream<Uint8Array> | null = null;
@@ -148,6 +141,16 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
     const { bytes: requestBytes, streamError: requestStreamError } = await drainBody(requestClone.body, 'request');
     const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0 };
     const captureError = captured.kind !== 'none' ? captured.streamError : null;
+
+    // Read accounting AFTER the response stream has drained. Streaming respond
+    // paths stamp `dumpAccounting` from inside their `streamSSE` callback's
+    // `finally` block, which runs in parallel with `await next()` — by the
+    // time `collectResponse` resolves, that finally has executed and the
+    // identity-derived model/upstream/usage are present. Default to the plain
+    // "no upstream identified" shape for routes that never reach a respond
+    // layer (/models, /embeddings list, Codex stubs, the responses WS
+    // upgrade); those still get dumped, just with null model/upstream.
+    const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
 
     // ULID-from-completedAt keeps id-time and `created_at` agreeing on a row:
     // ordering off-cursor (decoded ULID timestamp == row creation) matches

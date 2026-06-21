@@ -91,7 +91,7 @@ export const useDumpSubscription = (
     // Preserve paged-in older history past the snapshot's tail. ULIDs are
     // lexically time-ordered, so a record older than the snapshot's oldest
     // id is exactly the one whose id sorts strictly less. This handles the
-    // long-disconnect case where the user paged backward and the snapshot's
+    // long-disconnect case where the operator paged backward and the snapshot's
     // own oldest id is no longer in memory.
     const snapshotIds = new Set(snapshot.map(r => r.id));
     const oldestSnapshotId = snapshot.length > 0 ? snapshot[snapshot.length - 1]!.id : null;

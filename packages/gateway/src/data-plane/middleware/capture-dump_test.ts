@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
 import { type DumpAccounting, captureRequestDump, errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from './capture-dump.ts';
@@ -227,6 +228,55 @@ test('captureRequestDump captures SSE response as parsed events', async () => {
   assertEquals(responseField.events.length, 2);
   assertEquals(responseField.events[0]!.data, 'hello');
   assertEquals(responseField.events[1]!.data, 'world');
+});
+
+// Streaming respond paths (chat-completions/respond.ts, messages/respond.ts,
+// responses/respond.ts, gemini/respond.ts) stamp accounting from inside the
+// `streamSSE(c, async stream => { try { ... } finally { ... } })` callback's
+// `finally` block. That callback runs in parallel with the middleware's
+// `await next()` — it only completes once the response body has been drained.
+// If capture-dump reads `dumpAccounting` eagerly (right after `await next()`),
+// it captures the pre-finally state and every streamed dump record lands with
+// null model/upstream/tokens. The read must happen after `collectResponse`
+// resolves so the deferred stamp is visible.
+test('captureRequestDump reads dumpAccounting stamped inside streamSSE finally on streaming responses', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const enabledKey = { ...apiKey, dumpRetentionSeconds: 3600 };
+  await repo.apiKeys.save(enabledKey);
+  await repo.upstreams.save({
+    id: 'up_stream', provider: 'custom', name: 'Stream Upstream', enabled: true, sortOrder: 0,
+    createdAt: '2026-03-15T00:00:00.000Z', updatedAt: '2026-03-15T00:00:00.000Z',
+    config: { baseUrl: 'https://x', bearerToken: 't', endpoints: { chatCompletions: {} } },
+    state: null, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [],
+  });
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+
+  const app = buildApp(c => c.set('apiKey', enabledKey));
+  app.post('/v1/streamed', c =>
+    streamSSE(c, async stream => {
+      try {
+        await stream.writeSSE({ event: 'chunk', data: 'one' });
+        await stream.writeSSE({ event: 'chunk', data: 'two' });
+      } finally {
+        setDumpAccountingFromIdentity(
+          c,
+          { model: 'm-stream', upstream: 'up_stream', modelKey: 'mk', cost: null },
+          { input: 11, output: 7 },
+        );
+      }
+    }));
+  const response = await app.request('/v1/streamed', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+  await response.text();
+  await flushBackground();
+
+  assertEquals(stubs.stored.length, 1);
+  const meta = stubs.stored[0]!.record.meta;
+  assertExists(meta.upstream);
+  assertEquals(meta.upstream!.id, 'up_stream');
+  assertEquals(meta.model, 'm-stream');
+  assertEquals(meta.inputTokens, 11);
+  assertEquals(meta.outputTokens, 7);
+  assertEquals(meta.error, null);
 });
 
 const failingRequestBody = (firstChunk: string, message: string): { body: ReadableStream<Uint8Array>; init: RequestInit } => {
