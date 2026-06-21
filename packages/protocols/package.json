@@ -12,10 +12,12 @@
     "./gemini": { "import": "./src/gemini/index.ts", "types": "./src/gemini/index.ts" },
     "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" },
     "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" },
-    "./dump": { "import": "./src/dump/index.ts", "types": "./src/dump/index.ts" }
+    "./dump": { "import": "./src/dump/index.ts", "types": "./src/dump/index.ts" },
+    "./dump-collect": { "import": "./src/dump-collect/index.ts", "types": "./src/dump-collect/index.ts" }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

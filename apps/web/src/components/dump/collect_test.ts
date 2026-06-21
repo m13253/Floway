@@ -9,51 +9,79 @@ const ev = (event: string | null, data: unknown, ts = 0): DumpStreamEvent => ({
   ts,
 });
 
+// The heavy folding logic lives in `@floway-dev/protocols/dump-collect` and
+// is exercised by that package's own tests; here we only verify that
+// `collectByKind` wires each kind to the right protocol collector and
+// returns the structured outcome the dashboard renders.
 describe('collect', () => {
-  it('folds Messages text_deltas and surfaces max_tokens', () => {
+  it('routes messages to the Anthropic collector and surfaces the structured result', () => {
     const out = collectByKind('messages', [
-      ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }),
-      ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ', world!' } }),
-      ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'max_tokens' } }),
-    ]);
-    expect(out.text).toBe('Hello, world!');
-    expect(out.truncated).toBe(true);
-    expect(out.error).toBeNull();
-  });
-
-  it('folds Chat Completions deltas and finish_reason length', () => {
-    const out = collectByKind('chat-completions', [
-      ev(null, { choices: [{ delta: { content: 'a' } }] }),
-      ev(null, { choices: [{ delta: { content: 'bc' } }] }),
-      ev(null, { choices: [{ delta: {}, finish_reason: 'length' }] }),
-    ]);
-    expect(out.text).toBe('abc');
-    expect(out.truncated).toBe(true);
-  });
-
-  it('prefers the response.completed snapshot over delta concatenation when both are present', () => {
-    const out = collectByKind('responses', [
-      ev('response.output_text.delta', { delta: 'partial' }),
-      ev('response.completed', {
-        response: {
-          output: [{
-            content: [
-              { type: 'output_text', text: 'partial complete' },
-            ],
-          }],
+      ev('message_start', {
+        type: 'message_start',
+        message: {
+          id: 'msg_1', type: 'message', role: 'assistant', content: [],
+          model: 'claude-test', stop_reason: null, stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 0 },
         },
       }),
+      ev('content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
+      ev('content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello' } }),
+      ev('content_block_stop', { type: 'content_block_stop', index: 0 }),
+      ev('message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 1 } }),
+      ev('message_stop', { type: 'message_stop' }),
     ]);
-    expect(out.text).toBe('partial complete');
+    expect(out.error).toBeNull();
+    expect(out.truncated).toBe(false);
+    const result = out.result as { id: string; content: { type: string; text: string }[] };
+    expect(result.id).toBe('msg_1');
+    expect(result.content).toEqual([{ type: 'text', text: 'Hello' }]);
   });
 
-  it('marks Gemini truncation on MAX_TOKENS', () => {
-    const out = collectByKind('gemini', [
-      ev(null, { candidates: [{ content: { parts: [{ text: 'hi' }] } }] }),
-      ev(null, { candidates: [{ content: { parts: [{ text: ' there' }] }, finishReason: 'MAX_TOKENS' }] }),
+  it('routes chat-completions to its collector and folds delta content', () => {
+    const out = collectByKind('chat-completions', [
+      ev(null, { id: 'c_1', object: 'chat.completion.chunk', created: 1, model: 'gpt-test', choices: [{ index: 0, delta: { content: 'abc' }, finish_reason: null }] }),
+      ev(null, { id: 'c_1', object: 'chat.completion.chunk', created: 1, model: 'gpt-test', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }),
+      ev(null, '[DONE]'),
     ]);
-    expect(out.text).toBe('hi there');
-    expect(out.truncated).toBe(true);
+    expect(out.truncated).toBe(false);
+    const result = out.result as { choices: { message: { content: string }; finish_reason: string }[] };
+    expect(result.choices[0].message.content).toBe('abc');
+    expect(result.choices[0].finish_reason).toBe('stop');
+  });
+
+  it('routes responses to its collector and adopts the terminal payload', () => {
+    const base = {
+      id: 'r_1', object: 'response', model: 'gpt-test', output: [],
+      status: 'in_progress', error: null, incomplete_details: null,
+    };
+    const out = collectByKind('responses', [
+      ev('response.created', { type: 'response.created', response: base }),
+      ev('response.completed', {
+        type: 'response.completed',
+        response: { ...base, status: 'completed', output: [{ type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'done' }] }] },
+      }),
+    ]);
+    expect(out.truncated).toBe(false);
+    const result = out.result as { status: string; output: { type: string; content: { type: string; text: string }[] }[] };
+    expect(result.status).toBe('completed');
+    expect(result.output[0].content[0]).toEqual({ type: 'output_text', text: 'done' });
+  });
+
+  it('routes gemini to its collector and concatenates candidate text', () => {
+    const out = collectByKind('gemini', [
+      ev(null, { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hi' }] } }] }),
+      ev(null, { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: ' there' }] }, finishReason: 'STOP' }] }),
+    ]);
+    expect(out.truncated).toBe(false);
+    const result = out.result as { candidates: { content: { parts: { text: string }[] } }[] };
+    expect(result.candidates[0].content.parts).toEqual([{ text: 'hi there' }]);
+  });
+
+  it('returns a null-result outcome when no collector matches the path', () => {
+    const out = collectByKind(null, []);
+    expect(out.result).toBeNull();
+    expect(out.error).toBeNull();
+    expect(out.truncated).toBe(false);
   });
 
   it('detects protocol from path', () => {
@@ -62,12 +90,5 @@ describe('collect', () => {
     expect(detectCollectKind('/v1/chat/completions')).toBe('chat-completions');
     expect(detectCollectKind('/v1beta/models/gemini-pro:streamGenerateContent')).toBe('gemini');
     expect(detectCollectKind('/v1/something-else')).toBeNull();
-  });
-
-  it('captures error frames into outcome.error', () => {
-    const out = collectByKind('messages', [
-      ev('error', { type: 'error', error: { type: 'overloaded_error', message: 'too busy' } }),
-    ]);
-    expect(out.error).toBe('too busy');
   });
 });

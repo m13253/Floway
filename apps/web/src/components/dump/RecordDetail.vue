@@ -161,6 +161,14 @@ const collected = computed<CollectOutcome | null>(() => {
   return collectByKind(collectKind.value, streamEvents.value);
 });
 
+// The collected JSON view renders the fully-reconstructed non-streaming
+// payload so the operator sees tool inputs, citations, thinking blocks,
+// finish reasons, usage, and model ids — not just the concatenated text.
+const collectedJson = computed<string | null>(() => {
+  if (collected.value === null || collected.value.result === null) return null;
+  return JSON.stringify(collected.value.result, null, 2);
+});
+
 const requestHeadersCopy = computed(() => record.value
   ? record.value.request.headers.map(([k, v]) => `${k}: ${v}`).join('\n')
   : '');
@@ -335,8 +343,8 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             <p v-else-if="collected.truncated" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Output truncated by the upstream (length cap).
             </p>
-            <Code v-if="collected.text" flush :code="collected.text" language="json" :copyable="false" />
-            <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No text recovered from the stream.</p>
+            <Code v-if="collectedJson !== null" flush :code="collectedJson" language="json" :copyable="false" />
+            <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No structured result recovered from the stream.</p>
           </template>
         </template>
 
