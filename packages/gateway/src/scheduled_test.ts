@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
+import { installDumpStubs } from './dump/test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from './runtime/dump.ts';
 import { runScheduledMaintenance } from './scheduled.ts';
 import { setupAppTest } from './test-helpers.ts';
 import { initImageCacheStore } from '@floway-dev/platform';
-import { assertEquals, installDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const noopImageCache = {
   get: async () => null,

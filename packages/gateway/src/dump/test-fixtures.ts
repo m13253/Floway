@@ -1,4 +1,5 @@
-import type { DumpBroker, DumpStore } from '@floway-dev/gateway';
+import type { DumpBroker } from '../runtime/dump-broker-contract.ts';
+import type { DumpStore } from '../runtime/dump-store-contract.ts';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({

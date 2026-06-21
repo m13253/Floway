@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
+import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../runtime/dump.ts';
 import { requestApp, setupAppTest } from '../test-helpers.ts';
 import type { DumpStore } from '@floway-dev/gateway';
 import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
-import { assertEquals, assertExists, fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
   baseFakeMeta({ id, completedAt, startedAt: completedAt - 1 });

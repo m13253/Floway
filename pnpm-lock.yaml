@@ -458,10 +458,6 @@ importers:
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
-    devDependencies:
-      '@floway-dev/gateway':
-        specifier: workspace:*
-        version: link:../gateway
 
   packages/translate:
     dependencies:

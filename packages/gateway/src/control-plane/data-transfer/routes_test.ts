@@ -13,6 +13,7 @@ vi.mock('../../data-plane/providers/models-cache.ts', () => ({
 
 import { exportData, importData } from './routes.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
@@ -21,7 +22,7 @@ import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, installDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 

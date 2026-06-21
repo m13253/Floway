@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { InProcessDumpBroker } from './broker.ts';
-import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
+import { fakeMeta } from '@floway-dev/gateway/dump/test-fixtures';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('InProcessDumpBroker delivers published metas to a live subscriber', async () => {
   const broker = new InProcessDumpBroker();

@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
-import { assertEquals, assertExists, installDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const ownerPatch = (id: string, body: unknown, rawKey: string) =>
   requestApp(`/api/keys/${id}`, {

@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { DurableObjectDumpBroker, type BroadcastNamespace } from './broker.ts';
-import { assertEquals, fakeMeta } from '@floway-dev/test-utils';
+import { fakeMeta } from '@floway-dev/gateway/dump/test-fixtures';
+import { assertEquals } from '@floway-dev/test-utils';
 
 class FakeServerSocket {
   readonly listeners = new Map<string, Set<(e: Event) => void>>();

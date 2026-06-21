@@ -3,12 +3,13 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { type DumpAccounting, captureRequestDump, errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from './capture-dump.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/gateway';
-import { assertEquals, assertExists, installDumpStubs } from '@floway-dev/test-utils';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // The capture middleware reads `apiKey` and `dumpAccounting` off the Hono
 // context. The default Hono Variables map is empty; widen it locally so

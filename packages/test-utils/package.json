@@ -12,8 +12,5 @@
   "dependencies": {
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*"
-  },
-  "devDependencies": {
-    "@floway-dev/gateway": "workspace:*"
   }
 }
