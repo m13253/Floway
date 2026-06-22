@@ -79,7 +79,7 @@ watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (visible && tab === 'callback') void prepareAuthorize();
 }, { immediate: true });
 
-type CallbackCredential = { code: string; verifier: string; state: string };
+type CallbackCredential = { code: string; verifier: string };
 
 const buildBody = (): { ok: true; value: { auth_json?: string; callback?: CallbackCredential } } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'auth_json') {
@@ -92,9 +92,11 @@ const buildBody = (): { ok: true; value: { auth_json?: string; callback?: Callba
   if (!text) return { ok: false, error: 'Paste the URL the browser was redirected to' };
   let parsed: { code: string; state: string };
   try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+  // state validates the round-trip locally (CSRF guard) but is NOT forwarded
+  // to the gateway — auth.openai.com 400s on a state parameter.
   const recalled = recallPkce(storageKey, parsed.state);
   if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
-  return { ok: true, value: { callback: { code: parsed.code, verifier: recalled.verifier, state: recalled.state } } };
+  return { ok: true, value: { callback: { code: parsed.code, verifier: recalled.verifier } } };
 };
 
 const submit = async () => {

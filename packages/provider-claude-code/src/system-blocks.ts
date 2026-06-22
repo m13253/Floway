@@ -11,15 +11,18 @@ import type { MessagesPayload, MessagesTextBlock } from '@floway-dev/protocols';
 // `system[2]` boilerplate and is intentionally a strict subset of the
 // v2.1.181 wire shape — see the comment on that constant for why.
 //
-// `cch=00000` is a literal, not a client-computed hash. Anthropic's CC build
-// for the firstParty / OAuth path emits `${" cch=00000;"}` verbatim from
-// cli.js (de-minified search for "cch=00000"); sub2api's optional
-// xxhash-based signer
+// `cch=00000` is a literal placeholder, not a client-computed hash.
+// Anthropic's CC 2.x native binary emits `x-anthropic-billing-header:
+// cc_version=…; cc_entrypoint=cli; cch=00000;` verbatim (confirmed via
+// `strings` extraction of @anthropic-ai/claude-code-darwin-arm64@2.1.185's
+// `package/claude`; the older 1.0.x JS bundle did not carry this header,
+// which is why earlier audits searching cli.js missed it). sub2api's
+// optional xxhash-based signer
 // (https://github.com/Wei-Shaw/sub2api/commit/e51c9e50b5376cb486a0b7123e5f1ec026d5c526)
 // defaults its `enable_cch_signing` toggle to OFF, and predecessor
 // claude-relay-service has never shipped signing at all. Per-request hash
-// mutation also poisons Anthropic's prompt cache (claude-code issues #40652,
-// #50085, #68900). We ship the placeholder unconditionally.
+// mutation also poisons Anthropic's prompt cache (claude-code issues
+// #40652, #50085, #68900). We ship the placeholder unconditionally.
 
 export const IDENTITY_BLOCK: MessagesTextBlock = {
   type: 'text',

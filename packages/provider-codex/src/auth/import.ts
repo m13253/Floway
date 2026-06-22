@@ -68,8 +68,12 @@ export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImp
   const idToken = pickNonEmptyString(t, 'id_token', 'auth.json.tokens');
 
   const identity = parseCodexIdTokenClaims(idToken);
-  // auth.json has no expires_in; conservative 7-day window so the next request
-  // refreshes via /oauth/token within the 5-min freshness gate.
+  // auth.json carries the access_token + refresh_token but no `expires_in`
+  // for the access_token. Stamp a conservative 7-day fallback so the
+  // freshness gate in access-token-cache forces a /oauth/token refresh on
+  // the first data-plane call rather than handing out a token of unknown
+  // remaining lifetime. The refresh_token's own lifetime is set by
+  // auth.openai.com and is unaffected by this fallback.
   const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
   return buildCodexImportResult({
     identity,
@@ -82,12 +86,13 @@ export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImp
 
 // Exchange the authorization code for tokens, then derive identity from the
 // returned id_token. The PKCE verifier was generated and held by the
-// dashboard alongside the round-tripped state; both are supplied here
-// verbatim. The token exchange is the only network hop on this path
-// (identity parses locally from the id_token), so `fetcher` is where the
-// caller picks egress for the whole import.
-export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; state: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
-  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, state: opts.state, fetcher: opts.fetcher });
+// dashboard alongside the round-tripped state, but only the verifier is
+// passed to auth.openai.com (the endpoint rejects state with 400). The
+// token exchange is the only network hop on this path (identity parses
+// locally from the id_token), so `fetcher` is where the caller picks
+// egress for the whole import.
+export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
+  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, fetcher: opts.fetcher });
   const identity = parseCodexIdTokenClaims(tokens.id_token);
   return buildCodexImportResult({
     identity,

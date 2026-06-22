@@ -211,7 +211,7 @@ export interface MessagesClientTool {
 }
 
 export interface MessagesNativeWebSearchTool {
-  type: 'web_search_20250305' | 'web_search_20260209';
+  type: 'web_search_20250305' | 'web_search_20260209' | 'web_search_20260318';
   name?: string;
   max_uses?: number;
   allowed_domains?: string[];

@@ -539,7 +539,7 @@ const ingestCodexCredential = async (
     }
     const cb = body.callback;
     if (!cb) return { ok: false, error: 'callback is required when auth_json is absent' };
-    const out = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, state: cb.state, fetcher });
+    const out = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -1223,7 +1223,8 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
   });
   // Spread the upstream body at the top level so the response shape
   // matches what real CC's `fetchUtilization` parses (five_hour,
-  // seven_day, seven_day_sonnet, optional overage fields). `fetched_at`
+  // seven_day, seven_day_sonnet, seven_day_opus, optional overage
+  // fields). `fetched_at`
   // rides alongside as the gateway-stamped wall-clock. The body is
   // typed unknown by the helper because Anthropic adds fields without
   // warning — surface as Record so Hono's c.json accepts it.

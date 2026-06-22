@@ -308,15 +308,18 @@ export const codexAuthorizeUrlBody = z.object({
 });
 
 // Path A — operator pastes `~/.codex/auth.json` verbatim. Path B — operator
-// supplies the SPA-validated OAuth callback as `{code, verifier, state}`.
-// The two paths are mutually exclusive; the refine below catches the both-
-// or-neither case before the handler runs.
+// supplies the SPA-validated OAuth callback as `{code, verifier}`. The two
+// paths are mutually exclusive; the refine below catches the both-or-neither
+// case before the handler runs. State is not threaded through here:
+// auth.openai.com rejects state on the token-exchange endpoint with 400
+// unknown_parameter (live-probed); the SPA still validates state before
+// sending the callback so CSRF protection is intact, but the gateway has
+// no reason to receive it.
 const codexCredentialFields = {
   auth_json: z.string().min(1).optional(),
   callback: z.object({
     code: z.string().min(1),
     verifier: z.string().min(1),
-    state: z.string().min(1),
   }).optional(),
   // Edit-form override carried through the import dialog. The PKCE token
   // exchange runs before the upstream record exists, so re-import uses the

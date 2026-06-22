@@ -34,10 +34,14 @@ export class CodexOAuthSessionTerminatedError extends Error {
   }
 }
 
-// Terminal codes accepted on the authorization-code exchange. `invalid_grant`
-// here typically means the operator pasted a stale or wrong callback URL,
-// which is recoverable by restarting the PKCE flow rather than re-importing,
-// so it stays out of this set.
+// Terminal codes accepted on the authorization-code exchange. This is OUR
+// classification (codex-rs/login/src/server.rs does not split errors into
+// terminal vs recoverable on this path), but `app_session_terminated`
+// observably means the upstream account is gone — there is nothing the
+// operator can do besides re-import after fixing the underlying account.
+// `invalid_grant` on exchange typically means the operator pasted a stale
+// or wrong callback URL, which is recoverable by restarting the PKCE flow
+// rather than re-importing, so it stays out of this set.
 const EXCHANGE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
   'app_session_terminated',
 ]);
@@ -128,18 +132,19 @@ const codexTokenRequest = async (
 // egress) keeps every call site honest: callers that want direct egress
 // pass `directFetcher` themselves, and the import path can't accidentally
 // bypass an operator-configured proxy.
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; state: string; fetcher: Fetcher }): Promise<CodexOAuthTokens> => {
+export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexOAuthTokens> => {
+  // auth.openai.com rejects exchanges that include a `state` parameter with
+  // 400 unknown_parameter (live-probed). The upstream Codex CLI's
+  // `exchange_code_for_tokens` in codex-rs/login/src/server.rs deliberately
+  // omits it — we mirror that. (Anthropic's analogous endpoint, by
+  // contrast, requires `state` on exchange — handled separately in
+  // provider-claude-code.)
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: CODEX_CLIENT_ID,
     code: opts.code,
     redirect_uri: CODEX_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
-    // The OAuth2 RFC treats `state` as a client-side CSRF guard only and does
-    // not require it on token exchange, but Anthropic's analogous endpoint
-    // rejects exchanges that omit it (and OpenAI tolerates it), so we send
-    // it on both for symmetry.
-    state: opts.state,
   });
   // Only `app_session_terminated` is terminal here — `invalid_grant` on
   // exchange typically means the operator pasted a stale or wrong callback

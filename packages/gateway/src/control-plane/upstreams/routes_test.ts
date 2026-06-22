@@ -685,7 +685,7 @@ test('POST /api/upstreams/codex-import (callback) exchanges the SPA-supplied ver
     async () => {
       const resp = await requestApp(
         '/api/upstreams/codex-import',
-        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
@@ -2066,7 +2066,7 @@ test('POST /api/upstreams/codex-import honors the proxy_fallback_list override o
   const resp = await requestApp(
     '/api/upstreams/codex-import',
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );
@@ -2084,7 +2084,7 @@ test('POST /api/upstreams/:id/codex-reimport honors the proxy_fallback_list over
   const resp = await requestApp(
     `/api/upstreams/${created.id}/codex-reimport`,
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );

@@ -13,7 +13,8 @@
 //
 // Wire format: per the upstream binary, the response is a JSON document
 // shaped roughly as `{five_hour: {utilization, resets_at}, seven_day: {...},
-// seven_day_sonnet: {...}}` plus optional overage fields. We do not assert
+// seven_day_sonnet: {...}, seven_day_opus: {...}}` plus optional overage
+// fields. We do not assert
 // the inner shape here — the control plane returns the upstream's body
 // verbatim. Anthropic has been adding fields (priorIsUsingOverage,
 // hadPriorUtilizationData, ...) without warning; a strict parser would

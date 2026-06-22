@@ -49,7 +49,8 @@ export interface ClaudeCodeQuotaSnapshotEntry {
 // `anthropic-ratelimit-unified-*` family parsed into a fixed schema, while
 // the live probe returns a free-form JSON document Anthropic ships from
 // the /api/oauth/usage endpoint (`five_hour`, `seven_day`,
-// `seven_day_sonnet`, optional overage fields, ...). We store the
+// `seven_day_sonnet`, `seven_day_opus`, optional overage fields, ...). We
+// store the
 // upstream's body verbatim — the dashboard renders by walking known
 // fields and ignores anything new, so a strict shape gate here would
 // reject a still-usable response the moment Anthropic adds a field.
