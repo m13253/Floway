@@ -13,12 +13,20 @@ const base64UrlEncode = (bytes: Uint8Array): string => {
   return btoa(bin).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 };
 
+// PKCE challenge is the base64url of SHA-256(verifier). Exported separately
+// so the in-flight resume path can rebuild the authorize URL from a stashed
+// verifier without re-minting, keeping the operator's already-opened
+// consent screen valid.
+export const deriveChallenge = async (verifier: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+};
+
 export const generatePkce = async (): Promise<{ verifier: string; challenge: string; state: string }> => {
   const verifierBytes = new Uint8Array(32);
   crypto.getRandomValues(verifierBytes);
   const verifier = base64UrlEncode(verifierBytes);
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  const challenge = base64UrlEncode(new Uint8Array(digest));
+  const challenge = await deriveChallenge(verifier);
   const state = crypto.randomUUID().replaceAll('-', '');
   return { verifier, challenge, state };
 };
@@ -73,11 +81,12 @@ export const parseCallbackPaste = (input: string): { code: string; state: string
   return { code, state };
 };
 
-// Only one in-flight authorize per provider is supported at a time. Codex
-// and claude-code each own one sessionStorage slot; for claude-code, the
-// oauth and setup-token flows share the same slot — the random `state`
-// echoed back from the consent screen disambiguates flows on its own.
-export const pkceStorageKey = (provider: 'codex' | 'claude-code'): string => `floway:pkce:${provider}`;
+// Each flow that the operator can run in parallel owns its own slot, so
+// preparing one does not overwrite another in-flight one. codex has a
+// single flow; claude-code has two (`oauth`, `setup-token`) — pass the
+// kind there.
+export const pkceStorageKey = (provider: 'codex' | 'claude-code', kind?: string): string =>
+  kind ? `floway:pkce:${provider}:${kind}` : `floway:pkce:${provider}`;
 
 interface StashedPkce {
   verifier: string;
@@ -86,6 +95,18 @@ interface StashedPkce {
 
 export const stashPkce = (key: string, payload: StashedPkce): void => {
   sessionStorage.setItem(key, JSON.stringify(payload));
+};
+
+// Read the stashed payload without consuming it. The mount-time resume
+// path uses this to recover an in-flight flow across component remounts
+// (Vite HMR, router navigation back to the same page) — it derives the
+// challenge from the stashed verifier and rebuilds the authorize URL
+// with the SAME state, instead of minting fresh and orphaning whatever
+// consent screen the operator may have already opened.
+export const peekStashedPkce = (key: string): StashedPkce | null => {
+  const raw = sessionStorage.getItem(key);
+  if (!raw) return null;
+  return JSON.parse(raw) as StashedPkce;
 };
 
 export const recallPkce = (key: string, returnedState: string): { verifier: string } | null => {

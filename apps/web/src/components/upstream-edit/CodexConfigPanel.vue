@@ -6,7 +6,7 @@ import CodexAccountCard from './CodexAccountCard.vue';
 import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
-import { generatePkce, parseCallbackPaste, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
+import { deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
@@ -40,16 +40,31 @@ const pkce = ref<CodexAuthorizeUrlResult | null>(null);
 const pkceLoading = ref(false);
 const pkceError = ref<string | null>(null);
 
-// The verifier + state are minted in-browser, stashed in sessionStorage, and
-// the server is asked only to stamp the matching challenge + state into its
-// authorize URL. The verifier never leaves the browser until the matching
-// callback comes back as `{code, verifier}` on import.
+// The verifier + state are minted in-browser, stashed in sessionStorage,
+// and the server is asked only to stamp the matching challenge + state
+// into its authorize URL. The verifier never leaves the browser until
+// the matching callback comes back as `{code, verifier}` on import.
+//
+// On re-mount (Vite HMR, router navigation back to this page) the
+// component sees a null `pkce` ref but an existing stash. We resume
+// from the stash — derive the challenge from the stored verifier and
+// rebuild the URL with the same state — so the operator's already-
+// opened consent screen stays valid.
 const prepareAuthorize = async () => {
   if (pkce.value || pkceLoading.value) return;
   pkceLoading.value = true;
   pkceError.value = null;
-  const { verifier, challenge, state } = await generatePkce();
-  stashPkce(storageKey, { verifier, state });
+  const stash = peekStashedPkce(storageKey);
+  let verifier: string;
+  let challenge: string;
+  let state: string;
+  if (stash) {
+    ({ verifier, state } = stash);
+    challenge = await deriveChallenge(verifier);
+  } else {
+    ({ verifier, challenge, state } = await generatePkce());
+    stashPkce(storageKey, { verifier, state });
+  }
   const { data, error } = await callApi<CodexAuthorizeUrlResult>(
     () => api.api.upstreams['codex-authorize-url'].$post({ json: { challenge, state } }),
   );

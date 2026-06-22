@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
-import { generatePkce, parseCallbackPaste, pkceStorageKey, recallPkce, stashPkce } from './pkce.ts';
+import { deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from './pkce.ts';
 
 // The web tests run in the default Vitest node environment, which has no
 // `sessionStorage`. Install a minimal in-memory shim so the storage helpers
@@ -126,5 +126,42 @@ describe('stashPkce / recallPkce', () => {
 
   test('codex and claude-code use distinct storage keys', () => {
     expect(pkceStorageKey('codex')).not.toBe(pkceStorageKey('claude-code'));
+  });
+
+  test('claude-code oauth and setup-token use distinct storage keys', () => {
+    expect(pkceStorageKey('claude-code', 'oauth')).not.toBe(pkceStorageKey('claude-code', 'setup-token'));
+  });
+
+  test('preparing one kind does not overwrite the other for claude-code', () => {
+    const oauthKey = pkceStorageKey('claude-code', 'oauth');
+    const setupTokenKey = pkceStorageKey('claude-code', 'setup-token');
+    stashPkce(oauthKey, { verifier: 'v_oauth', state: 's_oauth' });
+    stashPkce(setupTokenKey, { verifier: 'v_setup', state: 's_setup' });
+    expect(recallPkce(oauthKey, 's_oauth')).toEqual({ verifier: 'v_oauth' });
+    expect(recallPkce(setupTokenKey, 's_setup')).toEqual({ verifier: 'v_setup' });
+  });
+});
+
+describe('peekStashedPkce', () => {
+  beforeEach(() => { sessionStorage.clear(); });
+  const key = pkceStorageKey('codex');
+
+  test('returns the stash without removing it', () => {
+    stashPkce(key, { verifier: 'v1', state: 's1' });
+    expect(peekStashedPkce(key)).toEqual({ verifier: 'v1', state: 's1' });
+    expect(peekStashedPkce(key)).toEqual({ verifier: 'v1', state: 's1' });
+    expect(recallPkce(key, 's1')).toEqual({ verifier: 'v1' });
+  });
+
+  test('returns null when nothing is stashed', () => {
+    expect(peekStashedPkce(key)).toBeNull();
+  });
+});
+
+describe('deriveChallenge', () => {
+  test('matches what generatePkce produces for the same verifier', async () => {
+    const generated = await generatePkce();
+    const derived = await deriveChallenge(generated.verifier);
+    expect(derived).toBe(generated.challenge);
   });
 });

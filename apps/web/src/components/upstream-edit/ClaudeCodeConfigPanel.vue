@@ -6,7 +6,7 @@ import ClaudeCodeAccountCard from './ClaudeCodeAccountCard.vue';
 import ClaudeCodeImportTabs from './ClaudeCodeImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
-import { generatePkce, parseCallbackPaste, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
+import { deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
@@ -33,10 +33,6 @@ const emit = defineEmits<{
 }>();
 
 const api = useApi();
-// Both flows share one sessionStorage slot per provider; the random `state`
-// echoed back from the consent screen disambiguates oauth from setup-token
-// on its own because each `prepareAuthorize` call mints fresh state.
-const storageKey = pkceStorageKey('claude-code');
 
 const draft = ref<{
   activeTab: ClaudeCodeImportTab;
@@ -59,10 +55,17 @@ const setupTokenPkce = ref<ClaudeCodeAuthorizeUrlResult | null>(null);
 const setupTokenPkceLoading = ref(false);
 const setupTokenPkceError = ref<string | null>(null);
 
-// The verifier + state are minted in-browser, stashed in sessionStorage, and
-// the server is asked only to stamp the matching challenge + state into its
-// authorize URL. The verifier never leaves the browser until the matching
-// callback comes back as `{code, verifier}` on import.
+// The verifier + state are minted in-browser, stashed in sessionStorage,
+// and the server is asked only to stamp the matching challenge + state
+// into its authorize URL. The verifier never leaves the browser until
+// the matching callback comes back as `{code, verifier}` on import.
+//
+// On re-mount (Vite HMR, router navigation back to this page) the
+// component sees a null `pkce` ref but an existing stash. We resume
+// from the stash — derive the challenge from the stored verifier and
+// rebuild the URL with the same state — so the operator's already-
+// opened consent screen stays valid. Each kind owns its own storage
+// slot so preparing one flow never invalidates the other.
 const prepareAuthorize = async (kind: 'oauth' | 'setup-token') => {
   const target = kind === 'oauth' ? pkce : setupTokenPkce;
   const loadingFlag = kind === 'oauth' ? pkceLoading : setupTokenPkceLoading;
@@ -70,8 +73,18 @@ const prepareAuthorize = async (kind: 'oauth' | 'setup-token') => {
   if (target.value || loadingFlag.value) return;
   loadingFlag.value = true;
   errorFlag.value = null;
-  const { verifier, challenge, state } = await generatePkce();
-  stashPkce(storageKey, { verifier, state });
+  const storageKey = pkceStorageKey('claude-code', kind);
+  const stash = peekStashedPkce(storageKey);
+  let verifier: string;
+  let challenge: string;
+  let state: string;
+  if (stash) {
+    ({ verifier, state } = stash);
+    challenge = await deriveChallenge(verifier);
+  } else {
+    ({ verifier, challenge, state } = await generatePkce());
+    stashPkce(storageKey, { verifier, state });
+  }
   const { data, error } = await callApi<ClaudeCodeAuthorizeUrlResult>(
     () => api.api.upstreams['claude-code-authorize-url'].$post({ json: { challenge, state, kind } }),
   );
@@ -82,10 +95,6 @@ const prepareAuthorize = async (kind: 'oauth' | 'setup-token') => {
 
 const importFormVisible = computed(() => props.mode === 'create' || reimportOpen.value);
 
-// Each authorize URL bakes Anthropic's scope server-side, so we cannot share
-// a single in-flight session between tabs. The shared sessionStorage slot is
-// safe because every `prepareAuthorize` call mints fresh state — the most
-// recently prepared flow wins the recall when its callback comes back.
 watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (!visible) return;
   if (tab === 'callback') void prepareAuthorize('oauth');
@@ -99,12 +108,12 @@ type SubmitPayload =
   | { kind: 'oauth-callback'; callback: CallbackCredential }
   | { kind: 'setup-token-callback'; callback: CallbackCredential };
 
-const buildCallbackCredential = (pasteText: string): { ok: true; value: CallbackCredential } | { ok: false; error: string } => {
+const buildCallbackCredential = (pasteText: string, kind: 'oauth' | 'setup-token'): { ok: true; value: CallbackCredential } | { ok: false; error: string } => {
   const text = pasteText.trim();
   if (!text) return { ok: false, error: 'Paste the URL the browser was redirected to' };
   let parsed: { code: string; state: string };
   try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
-  const recalled = recallPkce(storageKey, parsed.state);
+  const recalled = recallPkce(pkceStorageKey('claude-code', kind), parsed.state);
   if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
   return { ok: true, value: { code: parsed.code, verifier: recalled.verifier } };
 };
@@ -120,11 +129,11 @@ const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: s
     return { ok: true, value: { kind: 'oauth-credentials_json', credentials_json: text } };
   }
   if (draft.value.activeTab === 'setup_token_callback') {
-    const credential = buildCallbackCredential(draft.value.setupTokenCallbackUrlText);
+    const credential = buildCallbackCredential(draft.value.setupTokenCallbackUrlText, 'setup-token');
     if (!credential.ok) return credential;
     return { ok: true, value: { kind: 'setup-token-callback', callback: credential.value } };
   }
-  const credential = buildCallbackCredential(draft.value.callbackUrlText);
+  const credential = buildCallbackCredential(draft.value.callbackUrlText, 'oauth');
   if (!credential.ok) return credential;
   return { ok: true, value: { kind: 'oauth-callback', callback: credential.value } };
 };
