@@ -150,3 +150,4 @@ export { parseChatCompletionsStream, type ParseChatCompletionsStreamOptions } fr
 
 export { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { reassembleChatCompletionsEvents } from './reassemble.ts';
+export { chatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

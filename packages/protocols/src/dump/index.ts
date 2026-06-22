@@ -1,6 +1,8 @@
 // Wire-level shapes for the per-API-key request dump feature, shared by
 // the gateway, platform impls, and the dashboard SPA.
 
+import type { ProtocolFrame } from '../common/index.ts';
+
 export type DumpRecordId = string;
 
 export interface DumpUpstreamRef {
@@ -27,10 +29,17 @@ export interface DumpMetadata {
   error: string | null;     // single-line summary
 }
 
+// Canonical protocol frame the gateway's respond layer fans out to every
+// dump-enabled key. Stored as ProtocolFrame (not the SSE-serialized form)
+// so the gateway's live fold and the dashboard's cold fold can share the
+// same `collectXProtocolEventsToResult` reducer; the SSE wire view is
+// derived on demand by the dashboard via `XProtocolFrameToSSEFrame`.
+//
+// `unknown` for the event payload because the storage layer is protocol-
+// agnostic — the dashboard dispatches the right per-protocol serializer
+// based on `meta.path`.
 export interface DumpStreamEvent {
-  // SSE "event:" line; null for a frame with only a "data:" line.
-  event: string | null;
-  data: string;
+  frame: ProtocolFrame<unknown>;
   ts: number;               // ms relative to startedAt
 }
 

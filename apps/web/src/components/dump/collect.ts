@@ -19,7 +19,7 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
-export const collectByKind = (kind: CollectKind, events: DumpStreamEvent[]): CollectOutcome => {
+export const collectByKind = (kind: CollectKind, events: DumpStreamEvent[]): Promise<CollectOutcome> => {
   switch (kind) {
   case 'messages': return collectMessagesStream(events);
   case 'chat-completions': return collectChatCompletionsStream(events);

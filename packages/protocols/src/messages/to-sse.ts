@@ -1,5 +1,5 @@
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEvent, MessagesTextCitation, MessagesWebSearchResultLocation } from '@floway-dev/protocols/messages';
+import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEvent, MessagesTextCitation, MessagesWebSearchResultLocation } from './index.ts';
+import { type ProtocolFrame, type SseFrame, sseFrame } from '../common/index.ts';
 
 // Anthropic's Messages SSE wire format renames `search_result_location` fields
 // (url -> source, drops the discriminator's typed fields the SDK type

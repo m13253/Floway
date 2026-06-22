@@ -15,7 +15,7 @@ import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   DumpMetadata,
   DumpRecord,
@@ -149,20 +149,13 @@ export class DumpAccumulator {
     this.accounting = plainAccounting;
   }
 
-  // Records one protocol frame in its SSE-serialized form. Each respond
-  // layer passes its own ProtocolFrame → SseFrame serializer; a serializer
-  // throw surfaces as a synthetic `serialize_error` SSE frame so the gap
-  // is visible in the dump rather than silently dropping the rest of the
-  // stream.
-  frame<TEvent>(frame: TEvent, toSSE: (f: TEvent) => SseFrame | null): void {
-    let sse: SseFrame | null;
-    try {
-      sse = toSSE(frame);
-    } catch (err) {
-      sse = { type: 'sse', event: 'serialize_error', data: err instanceof Error ? err.message : String(err) };
-    }
-    if (!sse) return;
-    this.events.push({ event: sse.event ?? null, data: sse.data, ts: Date.now() - this.startedAt });
+  // Records one protocol frame. Stored as the canonical ProtocolFrame —
+  // the dashboard derives the SSE wire view on demand via the per-protocol
+  // `XProtocolFrameToSSEFrame` and folds via the shared
+  // `collectXProtocolEventsToResult`, so neither serialization nor parsing
+  // happens on this path.
+  frame(frame: ProtocolFrame<unknown>): void {
+    this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {

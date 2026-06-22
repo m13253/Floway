@@ -156,8 +156,8 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
       headers: [['content-type', 'text/event-stream']],
       type: 'stream',
       events: [
-        { event: 'ping', data: 'hi', ts: 10 },
-        { event: null, data: 'done', ts: 20 },
+        { frame: { type: 'event', event: { type: 'message_start' } }, ts: 10 },
+        { frame: { type: 'done' }, ts: 20 },
       ],
     },
   };
@@ -166,7 +166,7 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   assertExists(fetched);
   if (fetched.response.type !== 'stream') throw new Error('expected stream');
   assertEquals(fetched.response.events.length, 2);
-  assertEquals(fetched.response.events[0]!.data, 'hi');
+  assertEquals(fetched.response.events[0]!.frame.type, 'event');
 });
 
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {

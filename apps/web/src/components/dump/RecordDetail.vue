@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
 import { statusBadgeClass } from './badge.ts';
-import { collectByKind, detectCollectKind, type CollectOutcome } from './collect.ts';
+import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from './collect.ts';
 import HeaderTable from './HeaderTable.vue';
 import { authFetch } from '../../api/client.ts';
+import { chatCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/chat-completions';
+import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
+import { geminiProtocolFrameToSSEFrame } from '@floway-dev/protocols/gemini';
+import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
+import { responsesProtocolFrameToSSEFrame } from '@floway-dev/protocols/responses';
 import { Code, OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -128,32 +133,78 @@ const streamEvents = computed<DumpStreamEvent[]>(() => {
   return r.type === 'stream' ? r.events : [];
 });
 
-// Pretty-print each event's `data` as JSON when it parses; otherwise pass
-// the raw payload through with the parse-error captured. Computed once per
-// record so the v-for doesn't re-parse on every render. Most upstream SSE
-// protocols (Messages, Responses, chat-completions) frame every data line
-// as JSON, so a parse failure is operator-actionable — surface it via a
-// chip in the event header rather than silently rendering as raw text.
-const eventsRendered = computed(() => streamEvents.value.map(ev => {
+// Per-protocol SSE serializer. Stored frames are protocol-typed but
+// `DumpStreamEvent.frame` carries them as `ProtocolFrame<unknown>`; the
+// serializer dispatch + per-frame call is the cold reverse of what the
+// gateway's respond layer does live.
+const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
   try {
-    return { event: ev.event, ts: ev.ts, pretty: JSON.stringify(JSON.parse(ev.data), null, 2), parseError: null as string | null };
+    switch (kind) {
+    case 'messages':         return messagesProtocolFrameToSSEFrame(frame as Parameters<typeof messagesProtocolFrameToSSEFrame>[0]);
+    case 'chat-completions': return chatCompletionsProtocolFrameToSSEFrame(frame as Parameters<typeof chatCompletionsProtocolFrameToSSEFrame>[0], { includeUsageChunk: true });
+    case 'responses':        return responsesProtocolFrameToSSEFrame(frame as Parameters<typeof responsesProtocolFrameToSSEFrame>[0]);
+    case 'gemini':           return geminiProtocolFrameToSSEFrame(frame as Parameters<typeof geminiProtocolFrameToSSEFrame>[0]);
+    default:                 return null;
+    }
   } catch (e) {
-    return { event: ev.event, ts: ev.ts, pretty: ev.data, parseError: e instanceof Error ? e.message : String(e) };
+    return { type: 'sse', event: 'serialize_error', data: e instanceof Error ? e.message : String(e) };
   }
-}));
+};
+
+// Pretty-print each event's serialized SSE data as JSON when it parses;
+// otherwise pass the raw payload through with the parse-error captured.
+// Computed once per record so the v-for doesn't re-parse on every render.
+// Most upstream SSE protocols (Messages, Responses, chat-completions)
+// frame every data line as JSON, so a parse failure is operator-actionable
+// — surface it via a chip in the event header rather than silently
+// rendering as raw text.
+const eventsRendered = computed(() => {
+  const kind = collectKind.value;
+  return streamEvents.value.map(ev => {
+    const sse = frameToSse(kind, ev.frame);
+    if (sse === null) return { event: null, ts: ev.ts, pretty: '', parseError: null as string | null };
+    try {
+      return { event: sse.event, ts: ev.ts, pretty: JSON.stringify(JSON.parse(sse.data), null, 2), parseError: null as string | null };
+    } catch (e) {
+      return { event: sse.event, ts: ev.ts, pretty: sse.data, parseError: e instanceof Error ? e.message : String(e) };
+    }
+  });
+});
 
 // A frame with no event name is an SSE 'message'-typed event, so omit
 // the `event:` line entirely rather than emitting `event: \n`.
-const eventsCopyText = computed(() => streamEvents.value
-  .map(ev => `${ev.event ? `event: ${ev.event}\n` : ''}data: ${ev.data}\n`)
-  .join('\n'));
+const eventsCopyText = computed(() => {
+  const kind = collectKind.value;
+  return streamEvents.value
+    .map(ev => {
+      const sse = frameToSse(kind, ev.frame);
+      if (sse === null) return '';
+      return `${sse.event ? `event: ${sse.event}\n` : ''}data: ${sse.data}\n`;
+    })
+    .filter(s => s.length > 0)
+    .join('\n');
+});
 
 const collectKind = computed(() => record.value ? detectCollectKind(record.value.meta.path) : null);
 
-const collected = computed<CollectOutcome | null>(() => {
-  if (record.value?.response.type !== 'stream') return null;
-  if (collectKind.value === null) return null;
-  return collectByKind(collectKind.value, streamEvents.value);
+// Folding is async (the shared reassembler consumes an AsyncIterable);
+// drive it through a watch so the `collected` ref settles on each event
+// or kind change.
+const collected = shallowRef<CollectOutcome | null>(null);
+watchEffect(() => {
+  if (record.value?.response.type !== 'stream' || collectKind.value === null) {
+    collected.value = null;
+    return;
+  }
+  const kind = collectKind.value;
+  const events = streamEvents.value;
+  void collectByKind(kind, events).then(outcome => {
+    // Skip stale settlements: a newer trigger may have already kicked off
+    // another fold for a different record.
+    if (collectKind.value === kind && streamEvents.value === events) {
+      collected.value = outcome;
+    }
+  });
 });
 
 const collectedJson = computed<string | null>(() => {

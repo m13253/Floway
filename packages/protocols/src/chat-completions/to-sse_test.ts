@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
+import type { ChatCompletionsStreamEvent } from './index.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame } from '../common/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const includeUsageChunk = { includeUsageChunk: true };

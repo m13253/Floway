@@ -16,8 +16,8 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../../tools/web-search/search-config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { messagesProtocolFrameToSSEFrame } from '../events/to-sse.ts';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
+import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
 import type {
   MessagesAssistantContentBlock,
   MessagesClientTool,

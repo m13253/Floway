@@ -1,5 +1,5 @@
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { ChatCompletionsStreamEvent } from './index.ts';
+import { type ProtocolFrame, type SseFrame, sseFrame } from '../common/index.ts';
 
 interface ChatCompletionsSseFrameOptions {
   includeUsageChunk: boolean;
