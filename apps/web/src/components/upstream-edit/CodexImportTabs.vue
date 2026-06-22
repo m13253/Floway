@@ -58,8 +58,8 @@ const copyAuthorizeUrl = async () => {
 
         <div v-else-if="pkce" class="space-y-2">
           <p class="text-xs font-medium text-gray-500">Authorize URL</p>
-          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
-            {{ truncateMiddle(pkce.authorize_url, 80) }}
+          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block overflow-hidden whitespace-nowrap text-xs text-accent-cyan hover:underline">
+            {{ truncateMiddle(pkce.authorize_url, 55) }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
             <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
