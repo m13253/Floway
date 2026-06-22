@@ -44,11 +44,6 @@ const copilotUserField = (value: unknown): CopilotUpstreamUser => {
   };
 };
 
-// Tolerates an unread `accountType` field surviving in legacy config_json
-// rows: that field used to drive the per-tier base URL, but the data-plane
-// host now travels with the bearer token (state.copilotToken.baseUrl) per
-// vscode-copilot-chat 5863f5a7 domainServiceImpl.ts. New writes never emit
-// it; a follow-up data migration will strip it from existing rows.
 export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
   if (record.provider !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.provider}`);
   if (!isRecord(record.config)) throw new Error('Malformed copilot upstream config: config must be an object');

@@ -1,11 +1,13 @@
 import type { CopilotUpstreamState } from '../api/types.ts';
 
 // Map the per-tier baseUrl GitHub returns from /copilot_internal/v2/token's
-// `endpoints.api` to the marketing label the dashboard renders. Null when
-// state has never been seeded (freshly imported and not yet usable) or when
-// GitHub routes us to a host we don't have a label for yet — the latter is
-// fine to surface as "Copilot" without breaking the page.
+// `endpoints.api` to the marketing label the dashboard renders. Returns
+// null when state has never been seeded (freshly imported and not yet
+// usable) or when GitHub routes us to a host we don't have a label for
+// yet — callers fall back to `COPILOT_GENERIC_LABEL` for display.
 export type CopilotAccountTypeLabel = 'individual' | 'business' | 'enterprise';
+
+export const COPILOT_GENERIC_LABEL = 'copilot';
 
 const BASE_URL_TO_LABEL: Record<string, CopilotAccountTypeLabel> = {
   'https://api.individual.githubcopilot.com': 'individual',
@@ -17,3 +19,8 @@ export const copilotAccountTypeLabel = (state: CopilotUpstreamState | null | und
   const baseUrl = state?.copilotToken?.baseUrl;
   return baseUrl ? BASE_URL_TO_LABEL[baseUrl] ?? null : null;
 };
+
+// Display label with the generic-fallback applied for callers that render
+// a non-empty string unconditionally (badge text, settings-row subtitle).
+export const copilotAccountTypeDisplay = (state: CopilotUpstreamState | null | undefined): string =>
+  copilotAccountTypeLabel(state) ?? COPILOT_GENERIC_LABEL;
