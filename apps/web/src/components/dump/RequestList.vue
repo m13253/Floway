@@ -86,7 +86,11 @@ const upstreamKindTextClass = (kind: string | undefined): string => {
   }
 };
 
-const statusLabel = (status: number) => status === 0 ? 'ERR' : String(status);
+// `status === 0` is the gateway's sentinel for "no response was produced"
+// (transport failure, abort before bytes, dial error). Spell it out the
+// same way the detail pane does so the row and the detail use one
+// vocabulary for the same state.
+const statusLabel = (status: number) => status === 0 ? 'No response' : String(status);
 
 // `inputTokens`/`outputTokens` are `null` when the upstream didn't report
 // that dimension (preserved deliberately by capture-dump's token accounting).
