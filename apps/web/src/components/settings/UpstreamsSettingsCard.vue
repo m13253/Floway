@@ -24,10 +24,7 @@ const api = useApi();
 // the other providers count public models that have a binding pointing at this
 // upstream row.
 const modelCountFor = (record: UpstreamRecord): number => {
-  if (record.provider === 'azure') {
-    const cfg = record.config as { models?: unknown[] };
-    return cfg.models?.length ?? 0;
-  }
+  if (record.provider === 'azure') return record.config.models.length;
   const list = props.models ?? [];
   return list.filter(m => m.upstreams.some(b => b.id === record.id)).length;
 };

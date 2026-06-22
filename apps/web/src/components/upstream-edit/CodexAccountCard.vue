@@ -4,26 +4,33 @@
 
 import { computed } from 'vue';
 
-import type { CodexAccountCredentialState, CodexAccountIdentity, CodexUpstreamConfig, CodexUpstreamState, UpstreamRecord } from '../../api/types.ts';
+import type { CodexAccountCredentialState, CodexAccountIdentity, UpstreamRecord } from '../../api/types.ts';
 import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
   record: UpstreamRecord;
 }>();
 
-const account = computed<CodexAccountIdentity | null>(() => {
-  const cfg = props.record.config as CodexUpstreamConfig;
-  return cfg.accounts[0] ?? null;
+// Narrow once: this card only renders inside a codex upstream's edit page.
+// Pinning the narrow at the script-setup boundary lets every computed below
+// reach `config` / `state` / `codex_quota` without `as` casts.
+const codexRecord = computed(() => {
+  if (props.record.provider !== 'codex') {
+    throw new Error(`CodexAccountCard requires a codex upstream, got ${props.record.provider}`);
+  }
+  return props.record;
 });
 
+const account = computed<CodexAccountIdentity | null>(() => codexRecord.value.config.accounts[0] ?? null);
+
 const credential = computed<CodexAccountCredentialState | null>(() => {
-  const raw = props.record.state as CodexUpstreamState | null;
+  const raw = codexRecord.value.state;
   if (!raw || !Array.isArray(raw.accounts)) return null;
   if (!account.value) return raw.accounts[0] ?? null;
   return raw.accounts.find(a => a.chatgptAccountId === account.value!.chatgptAccountId) ?? raw.accounts[0] ?? null;
 });
 
-const quota = computed(() => props.record.codex_quota ?? null);
+const quota = computed(() => codexRecord.value.codex_quota ?? null);
 
 const formatTimestamp = (iso: string): string => {
   const d = new Date(iso);
