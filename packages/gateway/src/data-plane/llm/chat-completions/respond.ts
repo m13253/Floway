@@ -6,7 +6,7 @@ import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, tapDumpEvents } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -44,7 +44,15 @@ export const respondChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  const frames = observeChatCompletionsFrames(result.events, state, wantsStream);
+  // Tee every protocol frame to the request-dump buffer so the dashboard
+  // always sees the gateway's internal event view, regardless of whether
+  // the client ends up receiving SSE or a folded JSON body. The tap runs
+  // first; the observer reads the same frames downstream for its own
+  // state-tracking. Pass `includeUsageChunk: true` so the dump always
+  // captures the trailing usage frame, independent of the wire-level
+  // option the client requested.
+  const dumpTapped = tapDumpEvents(result.events, c, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
+  const frames = observeChatCompletionsFrames(dumpTapped, state, wantsStream);
 
   if (!wantsStream) {
     try {

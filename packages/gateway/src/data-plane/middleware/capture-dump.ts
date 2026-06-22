@@ -67,6 +67,40 @@ export const errorDumpAccounting = (c: Context, error: unknown): void => {
   } satisfies DumpAccounting);
 };
 
+// Tap state for the in-flight request's event capture. Initialised by the
+// middleware when retention is on; left undefined otherwise so the per-source
+// `appendDumpEvent` call short-circuits at zero cost on opt-out keys.
+//
+// The gateway treats every successful LLM request as an internal event
+// stream — the upstream call is SSE in shape regardless of whether the
+// client asked for `stream: true` or `application/json`. We tap that event
+// stream so the dump always carries the gateway's own view of the response,
+// not whatever wire shape the client happened to negotiate. The per-source
+// `respond` layer wraps `result.events` with `tapDumpEvents` (in
+// shared/respond.ts) before its frame observer; that wrapper calls
+// `appendDumpEvent` for every protocol frame, so the dump always sees the
+// full event sequence the upstream produced.
+interface DumpEventsCapture {
+  readonly events: DumpStreamEvent[];
+  readonly startedAt: number;
+}
+
+const DUMP_EVENTS_KEY = 'dumpEventsCapture';
+
+const initDumpEventsCapture = (c: Context, startedAt: number): void => {
+  c.set(DUMP_EVENTS_KEY, { events: [], startedAt });
+};
+
+const getDumpEventsCapture = (c: Context): DumpEventsCapture | undefined => {
+  return c.get(DUMP_EVENTS_KEY) as DumpEventsCapture | undefined;
+};
+
+export const appendDumpEvent = (c: Context, event: string | null, data: string): void => {
+  const capture = getDumpEventsCapture(c);
+  if (!capture) return;
+  capture.events.push({ event, data, ts: Date.now() - capture.startedAt });
+};
+
 // `TokenUsage` carries each input dimension (base input plus cache-read and
 // cache-write) as an optional field. A missing dimension means "the upstream
 // did not report this dimension", which must not collapse to zero — that
@@ -110,6 +144,7 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const startedAt = Date.now();
   const requestClone = c.req.raw.clone();
+  initDumpEventsCapture(c, startedAt);
 
   await next();
 
@@ -187,11 +222,21 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       status: responseStatus,
       headers: responseHeaders,
     };
-    const responseBody: DumpResponseBody = captured.kind === 'events'
-      ? { type: 'stream', events: captured.events }
-      : captured.kind === 'bytes'
-        ? { type: 'bytes', body: encodeBodyForWire(captured.bytes, responseContentType) }
-        : { type: 'none' };
+
+    // Internal-events tap wins over the outbound body. Every LLM endpoint
+    // hands `tapDumpEvents` the protocol frames it processed, so the dump
+    // sees the same event sequence regardless of whether the client got
+    // SSE or a folded JSON body. The bytes/none fallback covers non-LLM
+    // endpoints (count_tokens, /models, /embeddings) and pre-pipeline
+    // failures that never reached the per-source respond layer.
+    const tappedEvents = getDumpEventsCapture(c)?.events ?? [];
+    const responseBody: DumpResponseBody = tappedEvents.length > 0
+      ? { type: 'stream', events: tappedEvents }
+      : captured.kind === 'events'
+        ? { type: 'stream', events: captured.events }
+        : captured.kind === 'bytes'
+          ? { type: 'bytes', body: encodeBodyForWire(captured.bytes, responseContentType) }
+          : { type: 'none' };
 
     const record: DumpRecord = {
       meta,

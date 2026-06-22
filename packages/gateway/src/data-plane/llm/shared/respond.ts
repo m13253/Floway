@@ -2,10 +2,11 @@ import type { Context } from 'hono';
 
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import { appendDumpEvent } from '../../middleware/capture-dump.ts';
 import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
 import { hasTokenUsage, recordTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -61,6 +62,32 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
+};
+
+// Tee a source's `result.events` into the request-dump capture buffer while
+// passing the original frames through unchanged. Each per-source `respond`
+// layer applies this BEFORE its frame observer so the dump always carries
+// the gateway's internal event view — the buffer fills up identically
+// whether the client ends up receiving SSE or a folded JSON body. The
+// dump-capture writer short-circuits on opt-out keys, so requests whose
+// api key has no retention configured pay only the per-frame iteration
+// cost. A serialisation throw is contained so the data plane can still
+// deliver the client response; the failure surfaces as a synthetic event
+// in the captured stream.
+export const tapDumpEvents = async function* <TEvent>(
+  source: AsyncIterable<ProtocolFrame<TEvent>>,
+  c: Context,
+  toSSE: (frame: ProtocolFrame<TEvent>) => SseFrame | null,
+): AsyncIterable<ProtocolFrame<TEvent>> {
+  for await (const frame of source) {
+    try {
+      const sse = toSSE(frame);
+      if (sse) appendDumpEvent(c, sse.event ?? null, sse.data);
+    } catch (err) {
+      appendDumpEvent(c, 'dump_serialize_error', err instanceof Error ? err.message : String(err));
+    }
+    yield frame;
+  }
 };
 
 // Upstream response headers we propagate verbatim to the downstream client.

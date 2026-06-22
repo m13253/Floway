@@ -6,7 +6,7 @@ import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, tapDumpEvents } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
@@ -45,7 +45,11 @@ export const respondMessages = async (
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
+  // Tee every protocol frame to the request-dump buffer so the dashboard
+  // sees the gateway's internal event view regardless of whether the
+  // client ends up receiving SSE or a folded JSON body.
+  const dumpTapped = tapDumpEvents(result.events, c, messagesProtocolFrameToSSEFrame);
+  const frames = observeMessagesFrames(dumpTapped, state, usageState, wantsStream);
 
   if (!wantsStream) {
     try {

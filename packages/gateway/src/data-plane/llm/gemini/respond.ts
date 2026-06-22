@@ -7,7 +7,7 @@ import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, tapDumpEvents } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
@@ -43,7 +43,11 @@ export const respondGemini = async (
   }
 
   const state = new SourceStreamState();
-  const frames = observeGeminiFrames(result.events, state, wantsStream);
+  // Tee every protocol frame to the request-dump buffer so the dashboard
+  // sees the gateway's internal event view regardless of whether the
+  // client ends up receiving SSE or a folded JSON body.
+  const dumpTapped = tapDumpEvents(result.events, c, geminiProtocolFrameToSSEFrame);
+  const frames = observeGeminiFrames(dumpTapped, state, wantsStream);
 
   if (!wantsStream) {
     try {
