@@ -57,9 +57,6 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       break;
     case 'response.output_item.added':
     case 'response.output_item.done':
-      // Both events carry the full item; `.done` happens to override
-      // anything the per-event accumulators built, which is exactly what
-      // we want for the terminal case.
       output[event.output_index] = cloneOutputItem(event.item);
       break;
     case 'response.content_part.added':
@@ -156,19 +153,14 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       updateItem(event.output_index, item => setImageGenStatus(item, 'completed'));
       break;
     case 'response.image_generation_call.partial_image':
-      // Partial-image frames carry the b64 payload directly; native upstream
-      // surfaces it on `.completed` via the eventual `.done` item. Stash it
-      // on the in-flight item so a truncated stream still exposes what
-      // arrived.
+      // Surface the latest partial on the in-flight item so a truncated stream still carries one.
       updateItem(event.output_index, item => {
         if (item.type !== 'image_generation_call') return item;
         return { ...item, result: event.partial_image_b64 };
       });
       break;
     case 'response.output_text.annotation.added':
-      // Annotations only become first-class on the terminal `output_item.done`
-      // payload; accumulating them mid-stream would invent a wire shape no
-      // consumer expects.
+      // Annotations only attach on the terminal output_item.done payload; nothing to accumulate mid-stream.
       break;
     case 'response.completed':
     case 'response.incomplete':

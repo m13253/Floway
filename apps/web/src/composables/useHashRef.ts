@@ -1,11 +1,8 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue';
 
-// Mirror `location.hash` (sans leading `#`) into a Ref. Writes via
-// `history.replaceState` so updating the selection does not push a history
-// entry or trigger the browser's scroll-into-view-on-hash-change behavior.
-// External hash changes (back/forward, manual edits) flow back through
-// `hashchange`. Empty hash is exposed as `null` so callers can use a single
-// nullable type for "nothing selected".
+// Writes use `history.replaceState` so updating the selection does not push a
+// history entry or trigger the browser's scroll-into-view-on-hash-change
+// behavior.
 export const useHashRef = (): Ref<string | null> => {
   const read = (): string | null => {
     const raw = window.location.hash;
@@ -23,8 +20,6 @@ export const useHashRef = (): Ref<string | null> => {
 
   watch(value, next => {
     const encoded = next === null ? '' : `#${encodeURIComponent(next)}`;
-    // Preserve path + query; only swap the hash. Using `replaceState` with the
-    // assembled URL keeps the rest of the location intact across selections.
     const url = `${window.location.pathname}${window.location.search}${encoded}`;
     if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== url) {
       window.history.replaceState(window.history.state, '', url);

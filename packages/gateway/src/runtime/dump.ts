@@ -23,11 +23,8 @@ export const getDumpBroker = (): DumpBroker => {
   return _broker;
 };
 
-// `closeChannel` cuts any live SSE subscriber. Broker availability must
-// never block the surrounding write (soft-delete, retention transition,
-// cascade, import) — clients reconcile on the next reconnect/refetch
-// regardless. The contract is best-effort by design, so the swallow lives
-// here at one site rather than at every caller.
+// Best-effort by contract: a broker outage must never fail the surrounding
+// write, since clients reconcile on the next reconnect/refetch.
 export const notifyDisabledBestEffort = async (keyId: string, where: string): Promise<void> => {
   try {
     await getDumpBroker().closeChannel(keyId, DUMP_DISABLED_REASON);

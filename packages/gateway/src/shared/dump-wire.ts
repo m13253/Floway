@@ -1,10 +1,5 @@
 import type { DumpBody } from '@floway-dev/protocols/dump';
 
-// Wire format helpers shared between the dump capture middleware and the
-// persisted-row rehydrator. `DumpBody` discriminates the encoding directly,
-// so the original captured content-type header stays untouched on its
-// `headers` pair — operators see exactly what the upstream sent.
-
 const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
 
 const looksTextual = (contentType: string): boolean => {
@@ -25,10 +20,6 @@ const base64ToBytes = (b64: string): Uint8Array => {
   return bytes;
 };
 
-// UTF-8 text when the content-type claims textual AND the bytes actually
-// decode under strict UTF-8; base64 otherwise. A textual content-type with
-// non-UTF-8 bytes (upstream misreporting) falls through to base64 rather
-// than producing mojibake.
 export const encodeBodyForWire = (bytes: Uint8Array, contentType: string): DumpBody => {
   if (looksTextual(contentType)) {
     try {

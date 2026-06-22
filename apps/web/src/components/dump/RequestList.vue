@@ -21,10 +21,9 @@ const emit = defineEmits<{ loadOlder: [] }>();
 
 const sentinelRef = useTemplateRef<HTMLDivElement>('sentinel');
 
-// Single observer for the page lifetime. The sentinel only mounts inside the
-// scroll shell (which is itself gated by loading/empty branches), so attach
-// when the ref resolves rather than at onMounted — that way a slow first
-// load still arms infinite scroll once the shell finally appears.
+// The sentinel is gated by the loading/empty branches, so attach via watch
+// rather than onMounted — a slow first load still arms infinite scroll once
+// the scroll shell finally appears.
 let observer: IntersectionObserver | null = null;
 
 watch(sentinelRef, el => {
@@ -46,9 +45,8 @@ onBeforeUnmount(() => {
 
 const formatBytes = (n: number): string => {
   if (n < 1024) return `${n} B`;
-  // One decimal under 10 KB, integer above so the dense row doesn't carry
-  // a noisy trailing `.0` once the value is already round-ish. Same step
-  // at MB and GB boundaries.
+  // Drop the decimal once the value is round-ish (>= 10 in each unit) so the row
+  // doesn't carry a trailing `.0`.
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
@@ -56,20 +54,16 @@ const formatBytes = (n: number): string => {
 
 const formatDuration = (ms: number): string => {
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  // Keep the tenth-of-a-second precision up to a full minute — the
-  // 10–60s bucket is the most operator-actionable latency band, and
-  // rounding it to whole seconds throws away one significant figure
-  // exactly where it matters.
+  // Keep one decimal in the 1–60s band where the extra significant figure is
+  // most actionable.
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms / 1000)}s`;
 };
 
 const formatTokens = (n: number): string => {
   if (n < 1000) return n.toString();
-  // The space + uppercase ` K` gives the dense row's token chip the same
-  // shape as its `ms` / `B` / `KB` neighbors (digit + space + unit). Bucket
-  // at 10 K so a single noisy ".0" decimal drops off once the value is
-  // comfortably in thousands.
+  // Space + uppercase ` K` matches the row's `ms` / `B` / `KB` neighbors; drop
+  // the decimal at 10 K for the same reason as formatBytes.
   if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
   if (n < 1_000_000) return `${Math.round(n / 1000)} K`;
   return `${(n / 1_000_000).toFixed(1)} M`;
@@ -87,16 +81,12 @@ const upstreamKindTextClass = (kind: string | undefined): string => {
 };
 
 // `status === 0` is the gateway's sentinel for "no response was produced"
-// (transport failure, abort before bytes, dial error). Spell it out the
-// same way the detail pane does so the row and the detail use one
-// vocabulary for the same state.
+// (transport failure, abort before bytes, dial error).
 const statusLabel = (status: number) => status === 0 ? 'No response' : String(status);
 
-// `inputTokens`/`outputTokens` are `null` when the upstream didn't report
-// that dimension (preserved deliberately by capture-dump's token accounting).
-// Collapsing both to 0 would conflate "not measured" with "zero tokens", so
-// return null when neither side has a number and let the template render an
-// em-dash for that case.
+// `inputTokens` / `outputTokens` are null when the upstream didn't report
+// that dimension. Collapsing both to 0 would conflate "not measured" with
+// "zero tokens".
 const totalTokens = (meta: DumpMetadata): number | null => {
   if (meta.inputTokens === null && meta.outputTokens === null) return null;
   return (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0);
@@ -107,9 +97,6 @@ const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
 const onRowKey = (id: string) => { selectedId.value = id; };
 
-// Roving tabindex: only the currently-selected (or, when nothing is selected,
-// the first) row is in the tab order. The listbox itself is one Tab stop;
-// arrow keys move focus within it.
 const rovingTabIndex = (record: DumpMetadata, position: number): 0 | -1 => {
   if (selectedId.value === record.id) return 0;
   if (selectedId.value === null && position === 0) return 0;
@@ -117,8 +104,6 @@ const rovingTabIndex = (record: DumpMetadata, position: number): 0 | -1 => {
 };
 
 const moveSelection = (event: KeyboardEvent, delta: 1 | -1): void => {
-  // The handler binds on each `<li>` so `currentTarget` is always that
-  // element; arrow keys on edge rows just have no sibling to move to.
   const current = event.currentTarget as HTMLElement;
   const sibling = (delta === 1 ? current.nextElementSibling : current.previousElementSibling) as HTMLElement | null;
   if (!sibling) return;

@@ -13,11 +13,6 @@ interface BroadcastStub {
   fetch(request: Request): Promise<Response>;
 }
 
-// Per-channel publish/subscribe over a Durable Object: each channelId resolves
-// to one BroadcastDO instance via `namespace.idFromName(channelId)`. The actor
-// fans `broadcast(string)` out to every WebSocket subscriber; this class
-// applies the caller-supplied codec on both ends so the actor itself stays
-// content-agnostic.
 export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   constructor(
     private readonly namespace: BroadcastNamespace,
@@ -90,7 +85,6 @@ const iterateFromBroadcastSocket = <T>(
       deliver({ value: undefined as never, done: true });
     });
     socket.addEventListener('error', () => {
-      // Error events carry no useful payload; preserve any earlier pendingError.
       if (pendingError === null) pendingError = new Error('BroadcastDO socket error');
       void closeAndEnd();
     });
@@ -102,13 +96,10 @@ const iterateFromBroadcastSocket = <T>(
     deliver({ value: undefined as never, done: true });
   });
 
-  // Symmetric termination — every path that flips `closed` also has to close
-  // the upstream socket, otherwise an abort or parse-error leaks one WS in
-  // the DO's hibernation registry per subscriber session. Flip `closed`
-  // first so a concurrent invocation short-circuits before either issues
-  // its own close; awaiting `openPromise` after that covers the still-
-  // handshaking case so a teardown that races the open still tears down
-  // the socket once it materializes.
+  // Every path that flips `closed` must close the upstream socket too,
+  // otherwise each aborted or errored subscriber leaks one WS in the DO's
+  // hibernation registry. Awaiting `openPromise` handles a teardown that
+  // races the still-handshaking open.
   const closeAndEnd = async (): Promise<void> => {
     if (closed) return;
     closed = true;

@@ -65,10 +65,7 @@ const finalizeJsonBuffer = (block: MessagesAssistantContentBlock, buffered: stri
   try {
     return { block: { ...block, input: JSON.parse(buffered) as Record<string, unknown> }, warning: null };
   } catch (err) {
-    // A truncated stream can leave the partial_json buffer mid-token. Hand
-    // the typed `input` back as `{}` rather than synthesising a key the
-    // shape does not declare, and surface the unparseable fragment as a
-    // warning so the dashboard can show what actually arrived.
+    // Truncated stream: return {} so the typed `input` shape stays honest, and surface the raw fragment as a warning.
     const reason = err instanceof Error ? err.message : String(err);
     const preview = buffered.length > 80 ? `${buffered.slice(0, 80)}…` : buffered;
     return {
@@ -113,15 +110,13 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Colle
     }
 
     if (event.type === 'error') {
-      // Capture the upstream-reported error verbatim and keep folding so any
-      // partial content already streamed before the error is still preserved.
+      // Keep folding after an error frame so any partial content streamed before it is still preserved.
       error ??= event.error.message;
       continue;
     }
 
     if (result === null) {
-      // Child frames before message_start cannot be folded; record and keep
-      // scanning so a later error frame is still surfaced.
+      // Keep scanning so a later error frame is still surfaced.
       error ??= `unexpected '${event.type}' before message_start`;
       continue;
     }
@@ -161,8 +156,7 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Colle
     return { result: null, error: error ?? 'no message_start event in stream', truncated: true, warnings };
   }
 
-  // Any tool_use block whose `input_json_delta` buffer was never closed by a
-  // `content_block_stop` is still folded so the partial buffer is visible.
+  // Fold any tool_use buffers left open by a truncated stream so the partial JSON is still visible.
   for (const [index, buffered] of jsonBuffers) {
     const block = content[index];
     if (block !== undefined) {

@@ -1,24 +1,17 @@
 // Per-protocol stream collectors fold a recorded `DumpStreamEvent[]` back into
-// the underlying non-streaming result shape. Because the Request Dump feature
-// exists to inspect BROKEN streams (truncated mid-flight, ended with an
-// upstream error frame, missing the terminal envelope), each collector returns
-// a `CollectOutcome` envelope instead of the bare result:
+// the non-streaming result shape. Streams may be broken (truncated, ended with
+// an upstream error frame, missing the terminal envelope), so the envelope
+// reports partial state instead of throwing:
 //
-//   - happy path:           result populated, error null, truncated false
-//   - truncated:            result populated (best-effort), error null,
-//                           truncated true
-//   - mid-stream error:     result populated (best-effort), error set to the
-//                           upstream message, truncated true
-//   - catastrophic:         result null, error set, truncated true (e.g. no
-//                           envelope frame at all so nothing to fall back on)
+//   - happy path:        result populated, error null, truncated false
+//   - truncated:         result populated (best-effort), error null, truncated true
+//   - mid-stream error:  result populated (best-effort), error set, truncated true
+//   - catastrophic:      result null, error set, truncated true
 //
-// `warnings` carries per-record diagnostics the collector observed while
-// folding but did not promote to the top-level `error` — e.g. an
-// `input_json_delta` buffer that truncated mid-token and could not be parsed
-// back into the tool_use's typed `input`. The dashboard surfaces them so an
-// operator inspecting a broken stream can tell which folded fields are
-// honest reconstructions vs. best-effort approximations. Always populated;
-// an empty array is the happy-path signal.
+// `warnings` is always present (empty array on the happy path) and carries
+// per-record folding diagnostics that did not warrant promoting to `error` —
+// e.g. an `input_json_delta` buffer that truncated mid-token and could not be
+// parsed back into a tool_use's typed `input`.
 
 export interface CollectOutcome<TResult> {
   result: TResult | null;

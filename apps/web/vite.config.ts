@@ -20,7 +20,7 @@ import { defineConfig } from 'vite';
 //
 // Bare LLM paths (without `/v1` prefix) are listed because the gateway
 // accepts both forms.
-const wranglerOrigin = 'http://127.0.0.1:8788';
+const wranglerOrigin = 'http://127.0.0.1:8889';
 const wranglerProxiedPaths = [
   '/api',
   '/auth',
@@ -46,7 +46,7 @@ export default defineConfig({
     Unocss(),
   ],
   server: {
-    port: 5174,
+    port: 5274,
     proxy: Object.fromEntries(wranglerProxiedPaths.map(p => [p, { target: wranglerOrigin, changeOrigin: true }])),
   },
   build: {

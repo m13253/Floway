@@ -11,9 +11,6 @@ export type CollectOutcome = ProtocolCollectOutcome<unknown>;
 
 export type CollectKind = 'messages' | 'chat-completions' | 'responses' | 'gemini';
 
-// Sniff the protocol from the request path. Returns null when the path
-// doesn't match any known protocol so callers can short-circuit before
-// invoking `collectByKind`.
 export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/messages')) return 'messages';
   if (path.includes('/responses')) return 'responses';

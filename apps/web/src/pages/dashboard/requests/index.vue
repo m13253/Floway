@@ -6,12 +6,6 @@ import { useRouter } from 'vue-router';
 import { callApi, useApi } from '../../../api/client.ts';
 import type { ApiKey } from '../../../api/types.ts';
 
-// Auto-redirect /dashboard/requests to /dashboard/requests/<first-dump-key>.
-// The "Requests" top-nav tab lands here when the operator hasn't chosen a key
-// yet; we pick the first dump-enabled key so the deep-linkable per-key URL
-// is what the operator's address bar shows. When no dump-enabled key exists,
-// stay on the index and explain how to enable retention — there is nothing
-// useful to redirect into.
 export const useRequestsIndexData = defineBasicLoader(async () => {
   const api = useApi();
   const keysRes = await callApi<ApiKey[]>(() => api.api.keys.$get());

@@ -1,34 +1,23 @@
--- D1 table backing the per-key request dump feature. Same schema on both
--- runtimes — node:sqlite (Node deploy) and Cloudflare D1 (Worker deploy)
--- read and write through the same DumpStore contract.
+-- D1/sqlite table backing the per-key request dump feature.
 --
--- The record bodies (request body, response body) live as separate files
--- in the FileProvider (R2 on Cloudflare, fs on Node). The DB row carries
--- only metadata + headers + per-side body descriptors that point at the
--- files. The split avoids JSON-in-blob base64 inflation and keeps bodies
--- out of the row so the DB stays small and fast to scan.
+-- Bodies live in the FileProvider; the row carries only descriptors that
+-- point at them. Keeps the row small and avoids base64 inflation.
 --
--- `upstream_id` is stored as its own column rather than embedded in
--- `meta_json`. The dashboard wants to display the upstream's current name
--- and kind, so list/get queries LEFT JOIN against `upstreams` to resolve
--- them at read time. Freezing those values into `meta_json` would let an
--- admin rename go silently un-honored on every historical record. A
--- delete drops the join row, which the list/get codecs surface as a null
--- upstream — the same shape used when no upstream was identified.
+-- `upstream_id` is its own column so list/get queries can LEFT JOIN against
+-- `upstreams` and surface the current name and kind. Freezing those values
+-- into `meta_json` would let an admin rename go silently un-honored on every
+-- historical record.
 CREATE TABLE dump_records (
   key_id TEXT NOT NULL,
-  id TEXT NOT NULL,            -- ULID; lexically sortable, time-ordered
-  created_at INTEGER NOT NULL, -- unix ms; mirrors meta_json.completedAt
-  upstream_id TEXT,            -- NULL when no upstream was identified
+  id TEXT NOT NULL,            -- ULID
+  created_at INTEGER NOT NULL, -- unix ms
+  upstream_id TEXT,
   meta_json TEXT NOT NULL,
   request_headers_json TEXT NOT NULL,
-  response_headers_json TEXT,  -- NULL when no response was produced
-  -- Each descriptor is either NULL (no body for that side) or a JSON
-  -- pointer into the FileProvider (the gzipped body file's key) plus the
-  -- captured content-type and an optional `type` that discriminates 'bytes'
-  -- vs 'events' on the response side. The body files themselves are gzipped
-  -- at rest; the descriptor doesn't carry a hash because we don't
-  -- deduplicate across keys.
+  response_headers_json TEXT,
+  -- Either NULL or a JSON descriptor pointing at the gzipped body file in
+  -- the FileProvider. Response side carries a `type` discriminator for
+  -- bytes vs events. No content hash — we do not deduplicate across keys.
   request_body_descriptor TEXT,
   response_body_descriptor TEXT,
   PRIMARY KEY (key_id, id)

@@ -51,13 +51,7 @@ export const dumpRoutes = new Hono()
     if (owned instanceof Response) return owned;
 
     // Subscribe first, then read the snapshot, so the live broker covers
-    // anything new while the snapshot supplies history. The broker contract
-    // (see DumpBroker) is best-effort: on Cloudflare `subscribe()` returns
-    // synchronously but the WS handshake to the per-key DO is async, so a
-    // publish that races the in-flight subscribe RPC may be dropped from
-    // this session. The dashboard's next snapshot read (page reload, focus
-    // refetch, infinite-scroll fetch) is the durable source of truth and
-    // catches anything the live stream missed.
+    // anything new while the snapshot supplies history.
     const controller = new AbortController();
     const subscription = getDumpBroker().subscribe(owned, controller.signal);
     let snapshot;

@@ -26,11 +26,9 @@ export interface DumpAccounting {
   error: string | null;
 }
 
-// The "no upstream identified" accounting shape used by handlers that
-// completed without producing a model identity (plain echoes, non-LLM
-// routes, etc.). Kept module-private so the `'dumpAccounting'` Hono context
-// key only ever lives inside this file — call `setPlainDumpAccounting(c)`
-// from the respond paths instead of leaking the key name.
+// Default shape for routes that complete without identifying an upstream
+// (plain echoes, non-LLM routes). Module-private so the `'dumpAccounting'`
+// key name stays inside this file — callers go through the setters.
 const plainDumpAccounting: DumpAccounting = {
   upstreamId: null,
   model: null,
@@ -67,19 +65,8 @@ export const errorDumpAccounting = (c: Context, error: unknown): void => {
   } satisfies DumpAccounting);
 };
 
-// Tap state for the in-flight request's event capture. Initialised by the
-// middleware when retention is on; left undefined otherwise so the per-source
-// `appendDumpEvent` call short-circuits at zero cost on opt-out keys.
-//
-// The gateway treats every successful LLM request as an internal event
-// stream — the upstream call is SSE in shape regardless of whether the
-// client asked for `stream: true` or `application/json`. We tap that event
-// stream so the dump always carries the gateway's own view of the response,
-// not whatever wire shape the client happened to negotiate. The per-source
-// `respond` layer wraps `result.events` with `tapDumpEvents` (in
-// shared/respond.ts) before its frame observer; that wrapper calls
-// `appendDumpEvent` for every protocol frame, so the dump always sees the
-// full event sequence the upstream produced.
+// Initialised by the middleware when retention is on; left undefined
+// otherwise so `appendDumpEvent` short-circuits at zero cost on opt-out keys.
 interface DumpEventsCapture {
   readonly events: DumpStreamEvent[];
   readonly startedAt: number;
@@ -101,11 +88,8 @@ export const appendDumpEvent = (c: Context, event: string | null, data: string):
   capture.events.push({ event, data, ts: Date.now() - capture.startedAt });
 };
 
-// `TokenUsage` carries each input dimension (base input plus cache-read and
-// cache-write) as an optional field. A missing dimension means "the upstream
-// did not report this dimension", which must not collapse to zero — that
-// would conflate "0 tokens" with "not measured". Return null only when
-// every dimension is genuinely absent; otherwise sum the present ones.
+// Missing dimensions stay null (not measured); sum only the present ones.
+// Collapsing to 0 would conflate "no data" with "0 tokens".
 const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   if (!usage) return null;
   const { input, input_cache_read, input_cache_write } = usage;
@@ -113,10 +97,6 @@ const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
 };
 
-// `TokenUsage` carries `output` as an optional dimension; a missing field
-// means "the upstream did not report output tokens for this request". Map
-// that to null on the dump row rather than dropping it through `?? 0`,
-// which would conflate "0 tokens" with "not measured".
 const tokenUsageOutput = (usage: TokenUsage | null): number | null => {
   if (!usage) return null;
   return usage.output ?? null;
@@ -127,11 +107,6 @@ const oneLineError = (err: unknown): string => {
   return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
 };
 
-// Hono middleware factory. Mounted on the data plane in `mountDataPlane` so
-// every billable request flows through it. The middleware short-circuits when
-// the request's api key has no retention configured (the common case for keys
-// the operator hasn't opted in) — no body cloning, no res-body teeing,
-// effectively zero overhead.
 export const captureRequestDump = () => async (c: Context, next: Next): Promise<void> => {
   const apiKey = c.get('apiKey') as ApiKey | undefined;
   if (!apiKey) {
@@ -168,23 +143,16 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
   const requestHeaders = headersToPairs(c.req.raw.headers);
   const requestContentType = c.req.raw.headers.get('content-type') ?? '';
 
-  // Run finalize as a background task so a slow capture cannot delay the
-  // client response. backgroundSchedulerFromContext routes rejections through
-  // the runtime's own error sink (CF waitUntil swallows + we log; Node logs
-  // explicitly) — we let them propagate rather than wrapping in try/catch.
+  // Schedule as a background task so capture cannot delay the client response.
   const finalize = async (): Promise<void> => {
     const { bytes: requestBytes, streamError: requestStreamError } = await drainBody(requestClone.body, 'request');
     const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0 };
     const captureError = captured.kind !== 'none' ? captured.streamError : null;
 
-    // Read accounting AFTER the response stream has drained. Streaming respond
-    // paths stamp `dumpAccounting` from inside their `streamSSE` callback's
-    // `finally` block, which runs in parallel with `await next()` — by the
-    // time `collectResponse` resolves, that finally has executed and the
-    // identity-derived model/upstream/usage are present. Default to the plain
-    // "no upstream identified" shape for routes that never reach a respond
-    // layer (/models, /embeddings list, Codex stubs, the responses WS
-    // upgrade); those still get dumped, just with null model/upstream.
+    // Read accounting after the response drains: streaming respond paths
+    // stamp `dumpAccounting` from the streamSSE callback's finally, which
+    // only completes once `collectResponse` resolves. Routes that never
+    // reach a respond layer fall back to the plain shape.
     const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
 
     // ULID-from-completedAt keeps id-time and `created_at` agreeing on a row:
@@ -205,9 +173,6 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       requestBytes: requestBytes.byteLength,
       responseBytes: captured.byteLength,
       durationMs: completedAt - startedAt,
-      // Precedence: explicit upstream-side errors raised by the respond path
-      // come first; otherwise a request-body read failure (operator-side
-      // payload didn't arrive intact) outranks a response-body read failure.
       error: accounting.error ?? requestStreamError ?? captureError,
     };
 
@@ -223,12 +188,8 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       headers: responseHeaders,
     };
 
-    // Internal-events tap wins over the outbound body. Every LLM endpoint
-    // hands `tapDumpEvents` the protocol frames it processed, so the dump
-    // sees the same event sequence regardless of whether the client got
-    // SSE or a folded JSON body. The bytes/none fallback covers non-LLM
-    // endpoints (count_tokens, /models, /embeddings) and pre-pipeline
-    // failures that never reached the per-source respond layer.
+    // Prefer the internal-events tap over the outbound body so dumps reflect
+    // the gateway's own frame sequence regardless of the negotiated wire shape.
     const tappedEvents = getDumpEventsCapture(c)?.events ?? [];
     const responseBody: DumpResponseBody = tappedEvents.length > 0
       ? { type: 'stream', events: tappedEvents }
@@ -244,8 +205,7 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       response: { ...responseHead, ...responseBody },
     };
 
-    // Strict ordering: the row must commit before we publish, so a subscriber
-    // that races to fetch detail on the meta frame finds the row.
+    // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     await getDumpStore().put(apiKey.id, record);
     await getDumpBroker().publish(apiKey.id, meta);
   };
@@ -264,10 +224,8 @@ const pathWithQuery = (rawUrl: string): string => {
   return `${url.pathname}${url.search}`;
 };
 
-// Drain a ReadableStream<Uint8Array> to a single Uint8Array. Returns the
-// best-effort prefix on a mid-read failure plus a labelled streamError; both
-// the request side and the bytes branch of the response side share this so
-// `meta.error` describes a short body symmetrically.
+// Returns the best-effort prefix on a mid-read failure plus a labelled
+// streamError so request and response surfaces feed `meta.error` symmetrically.
 const drainBody = async (
   body: ReadableStream<Uint8Array> | null,
   label: 'request' | 'response',
@@ -288,10 +246,6 @@ const drainBody = async (
   return { bytes: concatChunks(chunks), streamError };
 };
 
-// Shared error-message shape so every stream-failure surface routes through
-// the same `"<label> failed: <one-line cause>"` format. The SSE branch and
-// the body-drain branch both feed `meta.error`; a divergent free-form prefix
-// here would surface as inconsistent dashboard text.
 const streamErrorMessage = (label: string, err: unknown): string =>
   `${label} failed: ${oneLineError(err)}`;
 
@@ -325,9 +279,8 @@ const collectResponse = async (
   const events: DumpStreamEvent[] = [];
   let byteLength = 0;
   let streamError: string | null = null;
-  // Count bytes off the tee separately from SSE parsing because parseSSEStream
-  // consumes the stream — the byte counter on the other branch keeps the
-  // wire-byte total honest.
+  // parseSSEStream consumes the stream, so count bytes off a separate tee
+  // branch to keep the wire-byte total honest.
   const [forCount, forParse] = body.tee();
   const countingPromise = (async () => {
     const reader = forCount.getReader();
@@ -338,8 +291,7 @@ const collectResponse = async (
         if (value) byteLength += value.byteLength;
       }
     } catch {
-      // The parser path reports the real error if the stream broke; counting
-      // failure is non-fatal on its own.
+      // Parser branch reports the real error; counting failure is non-fatal.
     }
   })();
   try {

@@ -11,10 +11,8 @@ import type {
   DumpStreamEvent,
 } from '@floway-dev/protocols/dump';
 
-// Bodies live under hour-bucketed FileProvider keys
-// `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`. The hour bucket
-// lets the cron sweep `deletePrefix` whole expired hours without per-record
-// file enumeration.
+// Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
+// The hour bucket lets the cron sweep `deletePrefix` whole expired hours.
 
 const ROOT = 'dumps/v1';
 const HOUR_MS = 60 * 60 * 1000;
@@ -22,8 +20,6 @@ const HOUR_MS = 60 * 60 * 1000;
 interface BodyDescriptor {
   key: string;
   contentType: string;
-  // 'bytes' for raw bodies; 'events' when the body file holds a JSON array
-  // of DumpStreamEvent for an SSE-parsed response.
   type: 'bytes' | 'events';
 }
 
@@ -40,15 +36,10 @@ interface DumpRow {
   response_body_descriptor: string | null;
 }
 
-// The JOIN against `upstreams` provides three nullable columns. A null
-// `upstream_id` means the row was captured without an identified upstream
-// (auth error, validation rejection, no candidate matched); a non-null
-// `upstream_id` with a null `upstream_name` means the referenced upstream
-// has since been deleted. (Checking `upstream_name` alone is enough on the
-// delete side because `upstreams.name`/`provider` are both NOT NULL — a
-// real row never has one without the other.) Both surface as a null
-// DumpUpstreamRef so the dashboard's "no upstream" branch handles them
-// uniformly.
+// A null `upstream_id` means no upstream was identified at capture time
+// (auth/validation reject, no candidate matched); a non-null id with a null
+// joined `upstream_name` means the referenced upstream was since deleted.
+// `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
 const hydrateUpstream = (row: { upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }) => {
   if (row.upstream_id === null || row.upstream_name === null) return null;
   return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind! };
@@ -136,14 +127,12 @@ export class FileDumpStore implements DumpStore {
       responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, contentTypeOf(record.response.headers), 'events');
     }
 
-    // Strip the in-memory `upstream` field before storage; the ref is
-    // rebuilt from the join at read time so an admin rename (or delete)
-    // is honored on every historical record.
+    // Strip the in-memory `upstream` field; the ref is rebuilt from the join
+    // at read time so renames and deletes are honored on historical rows.
     const { upstream: _upstream, ...metaToStore } = record.meta;
 
-    // Files first, then the row — a partial failure leaves orphan files the
-    // hour-bucket sweep collects, never an orphan row whose detail fetch
-    // would 404 after a successful list.
+    // Files before row — a partial failure leaves orphan files the sweep
+    // collects, never an orphan row whose detail fetch would 404.
     await this.db.prepare(
       `INSERT INTO dump_records
        (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
@@ -170,12 +159,9 @@ export class FileDumpStore implements DumpStore {
       : null;
     const beforeTs = beforeRow?.created_at ?? null;
 
-    // Newest-first with a compound (created_at, id) cursor so two rows that
-    // share a millisecond still page deterministically. ULID lex order
-    // matches creation order within the millisecond. The LEFT JOIN brings
-    // each row's current upstream name+kind in one round trip; a deleted
-    // upstream resolves to null columns and the codec hands back a null
-    // ref.
+    // Newest-first with a compound (created_at, id) cursor so rows sharing a
+    // millisecond still page deterministically — ULID lex order matches
+    // creation order within the ms.
     const select
       = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id';
@@ -219,13 +205,9 @@ export class FileDumpStore implements DumpStore {
         : { encoding: 'utf8', data: '' },
     };
 
-    // Header presence is the response-existence discriminator: `put` writes
-    // `response_headers_json` for every `bytes`/`stream` response (including
-    // legitimate empty-body 200/204s, where the body descriptor stays null
-    // because there are no bytes to gzip) and leaves headers null only for
-    // `type: 'none'`. A null descriptor with headers therefore means an
-    // empty-body `bytes` response — reconstruct it from a zero-length buffer
-    // so the wire shape's discriminator survives the round trip.
+    // Headers null iff `type: 'none'`; a null descriptor with headers is a
+    // legitimate empty-body `bytes` response (nothing to gzip), reconstructed
+    // here from a zero-length buffer so the wire discriminator round-trips.
     let responseBody: DumpResponseBody;
     if (responseHeaders === null) {
       responseBody = { type: 'none' };
@@ -249,11 +231,7 @@ export class FileDumpStore implements DumpStore {
   }
 
   async purgeAll(keyId: string): Promise<void> {
-    // Files first, then the rows — matches `put`'s ordering invariant. A
-    // partial failure leaves rows pointing at gone files (detail-fetch then
-    // throws `dump body missing`, the documented loud-failure path) and the
-    // next sweep retries cleanly. The reverse order would orphan files no
-    // row references, which the cron sweep (metadata-driven) could never reach.
+    // Files before rows, matching `put`'s ordering invariant.
     await this.files.deletePrefix(keyPrefix(keyId));
     await this.db.prepare('DELETE FROM dump_records WHERE key_id = ?').bind(keyId).run();
   }
@@ -261,11 +239,8 @@ export class FileDumpStore implements DumpStore {
   async purgeExpired(keyId: string, retentionSeconds: number): Promise<void> {
     const cutoff = Date.now() - retentionSeconds * 1000;
 
-    // Enumerate the immediate hour-bucket subprefixes by listing every file
-    // under the key root and grouping by the bucket segment. R2 doesn't ship a
-    // generic FileProvider `list(delimiter)` so we derive buckets from keys
-    // directly — overkill for hot keys but bounded by the FileProvider's own
-    // listKeys pagination.
+    // FileProvider has no delimiter-aware list, so derive the hour buckets by
+    // scanning all keys under the prefix and grouping on the first segment.
     const prefix = keyPrefix(keyId);
     const buckets = new Set<string>();
     for (const file of await this.files.listKeys(prefix)) {
@@ -276,8 +251,6 @@ export class FileDumpStore implements DumpStore {
     for (const bucket of buckets) {
       const bucketStart = hourBucketToMs(bucket);
       if (bucketStart === null) continue;
-      // A bucket whose newest possible record is still within the window must
-      // stay: bucketEnd is the first millisecond of the next hour.
       const bucketEnd = bucketStart + HOUR_MS;
       if (bucketEnd <= cutoff) await this.files.deletePrefix(bucketPrefix(keyId, bucket));
     }

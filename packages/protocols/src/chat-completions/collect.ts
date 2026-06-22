@@ -7,10 +7,9 @@ import type {
 import type { DumpStreamEvent } from '../dump/index.ts';
 import type { CollectOutcome } from '../dump-collect/index.ts';
 
-// OpenAI Chat Completions SSE has no dedicated error event type — upstream
-// errors land as an ordinary `data:` JSON whose body lacks `choices` and
-// instead carries `{ error: { message, code, ... } }`. Detect that shape
-// before attempting to fold the chunk as a normal event.
+// Chat Completions SSE has no error event type; upstream errors arrive as a
+// regular `data:` JSON of shape `{ error: { message, ... } }` instead of a
+// chunk with `choices`.
 interface ChatCompletionsErrorChunk {
   error: { message: string; code?: string; type?: string };
 }
@@ -69,9 +68,7 @@ const buildToolCalls = (choice: ChoiceAccumulator): ChatCompletionsToolCall[] | 
   return indices.map(i => {
     const acc = choice.toolCalls.get(i)!;
     // A truncated stream can drop the chunk carrying `id` entirely; surface a
-    // placeholder rather than throwing so the partial tool call is still
-    // visible. Tool calls that received an id chunk will have set `acc.id` to
-    // a real value before reaching here.
+    // placeholder rather than throwing so the partial tool call is still visible.
     const id = acc.id ?? `__missing_id_${i}__`;
     return {
       id,
@@ -130,8 +127,6 @@ export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[])
     };
   }
 
-  // Any choice still missing its `finish_reason` (or, more obviously, the
-  // entire stream missing `[DONE]`) is a sign of an interrupted stream.
   const anyChoiceMissingFinish = [...choices.values()].some(c => c.finish_reason === null);
   const truncated = !sawDone || anyChoiceMissingFinish || error !== null;
 

@@ -44,13 +44,8 @@ export const respondChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  // Tee every protocol frame to the request-dump buffer so the dashboard
-  // always sees the gateway's internal event view, regardless of whether
-  // the client ends up receiving SSE or a folded JSON body. The tap runs
-  // first; the observer reads the same frames downstream for its own
-  // state-tracking. Pass `includeUsageChunk: true` so the dump always
-  // captures the trailing usage frame, independent of the wire-level
-  // option the client requested.
+  // Force `includeUsageChunk: true` on the dump tap so the dashboard always sees
+  // the trailing usage frame, independent of the wire-level option the client requested.
   const dumpTapped = tapDumpEvents(result.events, c, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
   const frames = observeChatCompletionsFrames(dumpTapped, state, wantsStream);
 

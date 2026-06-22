@@ -3,11 +3,6 @@ import type { ChannelBroker, Codec } from '@floway-dev/gateway/channel-broker';
 // In-process per-channel fan-out backed by EventTarget. The Node deployment
 // target only ever runs one worker process per gateway instance, so a Map of
 // plain emitters is enough — no IPC, no cross-process broadcast.
-//
-// Entries live until `closeChannel` drops them; a future publish on the same
-// channelId allocates a fresh EventTarget on demand. The total number of
-// distinct channels held at any moment is bounded by whatever the caller
-// chooses as the channel-id space.
 export class EventTargetChannelBroker<T> implements ChannelBroker<T> {
   private readonly targets = new Map<string, EventTarget>();
 

@@ -93,10 +93,6 @@ const proposedRetentionSeconds = computed<number | null | 'invalid'>(() => {
 
 const previousRetention = computed(() => props.apiKey.dump_retention_seconds);
 
-// Whether the dialog's current (proposed) selection enables retention.
-// Drives the "View captured requests" link, which must react to the local
-// form value rather than the persisted prop — otherwise enabling retention
-// from 'off' → '1h' wouldn't reveal the link until the dialog reopens.
 const retentionEnabled = computed(() => {
   const proposed = proposedRetentionSeconds.value;
   return proposed !== null && proposed !== 'invalid';

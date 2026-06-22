@@ -1,14 +1,7 @@
 import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
 
-// Per-API-key request dump storage contract. The data plane writes through
-// this surface and the control plane reads through it; concrete impls live
-// in `apps/platform-*` (D1 + R2 on Cloudflare, node:sqlite + filesystem on
-// Node) and are wired into the gateway via `initDumpStore` / `getDumpStore`.
-//
-// The split is metadata-in-SQL, bytes-in-FileProvider. Each implementation
-// chooses its own path scheme under a per-key prefix — the concrete layout
-// (and the hour-bucket strategy that makes prefix-sweep cheap) lives with
-// the `FileDumpStore` impl in `packages/gateway/src/repo/dump-store.ts`.
+// Per-API-key request dump storage contract: metadata in SQL, bytes in
+// FileProvider. Concrete impls live in `apps/platform-*`.
 
 export interface DumpListOptions {
   before?: DumpRecordId;
@@ -16,31 +9,20 @@ export interface DumpListOptions {
 }
 
 export interface DumpStore {
-  // Persist a freshly-captured record. Implementations must write the body
-  // files BEFORE inserting the metadata row, so a partial failure leaves
-  // orphan files (which the sweep will catch) rather than orphan rows
-  // (which would surface as broken records in list/get).
+  // Write body files BEFORE the metadata row so a partial failure leaves
+  // orphan files (sweep-collectable), not orphan rows (broken records).
   put(keyId: string, record: DumpRecord): Promise<void>;
 
-  // Newest-first metadata-only list, paginated by ULID cursor. Implementations
-  // return every stored record matching the cursor/limit; physical retention
-  // enforcement is the cron sweep's responsibility, not list's. Between sweeps
-  // the dashboard may briefly show records that have aged past retention; the
-  // next sweep window will drop them.
+  // Newest-first, paginated by ULID cursor. Retention is enforced by the
+  // cron sweep, not here, so the dashboard may briefly show records that
+  // have aged past retention until the next sweep window drops them.
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
 
-  // Full record fetch: rehydrates body files from the FileProvider, ungzips,
-  // and assembles the wire-shape `DumpRecord` (wraps each body in a `DumpBody`
-  // discriminated union — utf8 for text, base64 otherwise; the captured
-  // content-type header is preserved verbatim). Returns null when the record
-  // does not exist (deleted, expired, or never existed).
   get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null>;
 
-  // Drop every record (rows + files) for this key. Used by api-key delete,
-  // user delete cascade, and PATCH retention=null. Idempotent.
+  // Drop every record (rows + files) for this key. Idempotent.
   purgeAll(keyId: string): Promise<void>;
 
-  // Drop records older than `now - retentionSeconds*1000` for this key. Used
-  // by the cron sweep and by PATCH retention-shrink. Idempotent.
+  // Drop records older than `retentionSeconds` for this key. Idempotent.
   purgeExpired(keyId: string, retentionSeconds: number): Promise<void>;
 }

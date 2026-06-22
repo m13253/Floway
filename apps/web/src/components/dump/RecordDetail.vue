@@ -17,14 +17,10 @@ const record = shallowRef<DumpRecord | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
-// Declared up front so `fetchRecord` can reset it from the first watch fire
-// without hitting the const TDZ. The toggle persists across record switches
-// otherwise — a streaming record opened after an Events-mode session would
-// land on Events even though the operator's typical entry is Collected.
 const streamView = ref<'collected' | 'events'>('collected');
 
-// Per-fetch token: only the latest call is allowed to commit. Stale A→B clicks
-// must not paint A's response on top of B's.
+// Stale A->B clicks must not paint A's response on top of B's.
+// Only the latest call commits.
 let activeToken = 0;
 
 const fetchRecord = async () => {
@@ -81,14 +77,7 @@ const decodeBase64Utf8 = (b64: string): { text: string; error: string | null } =
 
 interface RenderedBody {
   text: string;
-  // Filled when a "textual" content-type carried non-UTF-8 bytes — the
-  // banner surfaces the exact TextDecoder message so an operator can tell
-  // a wrong charset apart from a genuinely binary payload.
   decodeError: string | null;
-  // Filled when the body's content-type announced JSON but `JSON.parse`
-  // threw on it. The dashboard exists to inspect broken upstream
-  // responses, so this case must be visible rather than silently rendered
-  // as raw text.
   parseError: string | null;
   isJson: boolean;
 }
@@ -153,12 +142,8 @@ const eventsRendered = computed(() => streamEvents.value.map(ev => {
   }
 }));
 
-// One-click "copy the whole SSE wire" affordance for the Events view. Joins
-// every captured frame back into `event: …\ndata: …\n` form so an operator
-// can replay the captured stream against a different gateway or pipe it into
-// a logger. Skipped on the `event:` line when the frame had no event name —
-// SSE semantics: a frame with only a `data:` line is a "message"-typed
-// event, which is what the encoder produces.
+// A frame with no event name is an SSE 'message'-typed event, so omit
+// the `event:` line entirely rather than emitting `event: \n`.
 const eventsCopyText = computed(() => streamEvents.value
   .map(ev => `${ev.event ? `event: ${ev.event}\n` : ''}data: ${ev.data}\n`)
   .join('\n'));
@@ -171,9 +156,6 @@ const collected = computed<CollectOutcome | null>(() => {
   return collectByKind(collectKind.value, streamEvents.value);
 });
 
-// The collected JSON view renders the fully-reconstructed non-streaming
-// payload so the operator sees tool inputs, citations, thinking blocks,
-// finish reasons, usage, and model ids — not just the concatenated text.
 const collectedJson = computed<string | null>(() => {
   if (collected.value === null || collected.value.result === null) return null;
   return JSON.stringify(collected.value.result, null, 2);
@@ -187,10 +169,6 @@ const responseHeadersCopy = computed(() => record.value
   ? record.value.response.headers.map(([k, v]) => `${k}: ${v}`).join('\n')
   : '');
 
-// Match the KeysTable copy-button convention: surface clipboard write failures
-// so the operator knows the click did nothing rather than silently dropping
-// it. `null` is idle; `${section}` is a successful copy; `error:${section}`
-// is a failed one — the button renders distinct copy in each state.
 const copyState = ref<string | null>(null);
 const copy = async (text: string, section: string) => {
   try {
@@ -217,9 +195,7 @@ const formatTs = (ms: number) => {
 };
 
 // `status === 0` is the gateway's sentinel for "no response was produced"
-// (transport failure, abort before bytes, dial error). Distinguish it from
-// a real 4xx/5xx so the operator can tell the upstream rejected the
-// request from "the request never reached an upstream at all."
+// (transport failure, abort before bytes, dial error).
 const statusLabel = (status: number): string => status === 0 ? 'No response' : String(status);
 
 const sectionHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-white/[0.06] bg-surface-900/85 px-4 py-2.5 backdrop-blur-md';

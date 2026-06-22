@@ -45,9 +45,7 @@ export const respondMessages = async (
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  // Tee every protocol frame to the request-dump buffer so the dashboard
-  // sees the gateway's internal event view regardless of whether the
-  // client ends up receiving SSE or a folded JSON body.
+  // Tap before the wantsStream branch so the dump captures the protocol event view in both folded-JSON and SSE modes.
   const dumpTapped = tapDumpEvents(result.events, c, messagesProtocolFrameToSSEFrame);
   const frames = observeMessagesFrames(dumpTapped, state, usageState, wantsStream);
 

@@ -26,11 +26,6 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): DumpRecord =>
   response: { status: 200, headers: [], type: 'none' },
 });
 
-// Shared in-memory stubs for the dump store + broker. Used by every dump
-// test that needs a controllable pair: the control-plane SSE route tests,
-// the capture middleware tests, the cascade-safety tests. Threading the
-// gateway's init functions in as parameters keeps this helper out of the
-// gateway-package dependency graph.
 type DumpStubFailMethod =
   | 'put'
   | 'list'
@@ -49,9 +44,6 @@ export interface DumpStubHandle {
   purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
   seed: (keyId: string, record: DumpRecord) => void;
-  // Inject a thrown error on the next (and subsequent) call to the named
-  // method. One uniform seam over the seven store/broker methods so tests
-  // don't have to chase per-method `failX` accessors.
   failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 

@@ -4,18 +4,13 @@ import { authFetch } from '../api/client.ts';
 import { useAuthStore } from '../stores/auth.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Bound the dedup set so a long-lived subscription doesn't accumulate ids
-// forever. Comfortably above the snapshot limit and the typical "back-pressure
-// during a burst" window; rebuild is cheap relative to the network roundtrip.
+// Rebuild the dedup set after this many ids to bound memory on long-lived subscriptions.
 const DEDUP_REBUILD_THRESHOLD = 10_000;
 
-// Re-fetched per page. Matches the server's LIST_LIMIT_DEFAULT.
+// Matches the server's LIST_LIMIT_DEFAULT.
 const OLDER_PAGE_LIMIT = 100;
 
-// `EventSource.CLOSED` is `2` per the HTML spec. We reach for the literal
-// rather than the named property because the unit-test environment is
-// `node`, which exposes no `EventSource` global, so a reference at this
-// line would crash with `EventSource is not defined` inside the listener.
+// Literal of `EventSource.CLOSED`; named property would ReferenceError under the `node` test env.
 const EVENT_SOURCE_CLOSED = 2;
 
 interface DumpSubscription {
@@ -37,10 +32,7 @@ interface ListResponse {
   records: DumpMetadata[];
 }
 
-// Test seam: the unit-test environment is `node`, which exposes no
-// `EventSource` global. The factory exists so tests can inject a
-// controllable stub without standing up any DOM-shimmed `EventSource`,
-// and defaults to the global ctor in the browser.
+// Injectable so node-env tests can stub without a DOM EventSource shim.
 type EventSourceFactory = (url: string) => EventSource;
 
 export interface UseDumpSubscriptionOptions {
@@ -88,11 +80,9 @@ export const useDumpSubscription = (
   };
 
   const handleSnapshot = (snapshot: DumpMetadata[]) => {
-    // Preserve paged-in older history past the snapshot's tail. ULIDs are
-    // lexically time-ordered, so a record older than the snapshot's oldest
-    // id is exactly the one whose id sorts strictly less. This handles the
-    // long-disconnect case where the operator paged backward and the snapshot's
-    // own oldest id is no longer in memory.
+    // Preserve paged-in older history past the snapshot's tail. ULIDs sort
+    // lexically by time, so anything with id strictly less than the snapshot's
+    // oldest id is older than the snapshot.
     const snapshotIds = new Set(snapshot.map(r => r.id));
     const oldestSnapshotId = snapshot.length > 0 ? snapshot[snapshot.length - 1]!.id : null;
     const olderTail = oldestSnapshotId === null
@@ -101,7 +91,6 @@ export const useDumpSubscription = (
     records.value = [...snapshot, ...olderTail];
     rebuildSeen();
     loading.value = false;
-    // A successful (re)snapshot dismisses any stale transport-error banner.
     error.value = null;
   };
 
@@ -117,9 +106,6 @@ export const useDumpSubscription = (
     currentKeyId = id;
     loading.value = true;
     error.value = null;
-    // The composable is mounted only inside the authenticated dashboard
-    // layout, so an empty authToken would be a routing wiring bug rather
-    // than a runtime state — fail loud.
     const token = auth.authToken;
     if (!token) {
       throw new Error('useDumpSubscription invoked without an authenticated session');
@@ -138,23 +124,18 @@ export const useDumpSubscription = (
     });
     es.addEventListener('error', rawEv => {
       const ev = rawEv as MessageEvent;
-      // The server sends explicit `event: error` frames with a JSON body; the
-      // browser dispatches those as `error` MessageEvents that carry `data`.
-      // Native transport errors arrive on the same listener with empty data.
+      // Server-sent `event: error` frames arrive here as MessageEvents with `data`;
+      // native transport errors arrive on the same listener with empty data.
       if (typeof ev.data === 'string' && ev.data.length > 0) {
         let message = ev.data;
         try {
           const payload = JSON.parse(ev.data) as ServerErrorPayload;
           message = payload.message;
         } catch {
-          // Non-JSON payload — surface verbatim so the broken-protocol case
-          // doesn't render an empty error banner.
         }
         error.value = message;
         loading.value = false;
-        // A server-sent error frame is terminal — stop the EventSource so the
-        // browser doesn't keep auto-reconnecting against a stream the gateway
-        // already gave up on. Selecting the key again reopens via the watcher.
+        // Terminal: stop the EventSource so the browser doesn't auto-reconnect.
         close();
         return;
       }

@@ -11,15 +11,7 @@ const props = withDefaults(defineProps<{
   code: string;
   language?: 'bash' | 'toml' | 'json' | 'text';
   copyable?: boolean;
-  // "flush" mode embeds the code edge-to-edge inside an ancestor that
-  // owns its own framing (a section card, a panel header). The rounded
-  // card chrome (border + bg + rounded-xl) and the extra right-pad that
-  // makes room for the absolute copy button are dropped; the inner
-  // OverlayScrollbars still owns horizontal overflow so the scrollbar
-  // style stays consistent with every other scrollable surface in the
-  // app. Use this anywhere the code lives inside a panel that scrolls
-  // vertically as a whole; the default (chromed) render is for
-  // standalone code samples that need their own framed surface.
+  // Drop the card chrome (border, bg, rounded-xl, copy-button pad) so the code sits edge-to-edge inside an ancestor that already frames it.
   flush?: boolean;
 }>(), {
   copyable: true,

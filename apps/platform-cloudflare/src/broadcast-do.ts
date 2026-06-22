@@ -1,11 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
 
-// `BroadcastDO` is a stateless per-channel WebSocket fan-out actor. Each
-// instance (resolved via `namespace.idFromName(channelId)`) holds the live
-// WebSocket subscribers for one channel; the caller decides what `channelId`
-// means and owns any framing convention layered over `broadcast(payload)`.
-// The actor itself never inspects or validates the payload string.
-//
 // `extends DurableObject` is load-bearing: the CF runtime gates RPC method
 // dispatch (`stub.broadcast(...)`, `stub.closeAll(...)`) on the actor
 // extending this base class. Without it the runtime rejects the call with
@@ -13,9 +7,8 @@ import { DurableObject } from 'cloudflare:workers';
 // direct method invocation silently fails.
 
 export class BroadcastDO extends DurableObject {
-  // The base class's constructor signature is what the CF runtime invokes;
-  // declared explicitly here so the type-check sees `(ctx, env)` even when
-  // the `cloudflare:workers` types resolve to a parameterless base.
+  // Declared explicitly so the type-check sees `(ctx, env)` even when the
+  // `cloudflare:workers` types resolve to a parameterless base.
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
   }
@@ -41,8 +34,7 @@ export class BroadcastDO extends DurableObject {
   // and `webSocketClose` must call `ws.close(code, reason)` to complete the
   // close handshake from the actor side — without it the client sees a
   // `1006 abnormal closure` and the actor holds the dead socket until the
-  // hibernation timeout. `webSocketError` is a no-op; the runtime drops the
-  // socket from `getWebSockets()` once the hook returns.
+  // hibernation timeout.
   async webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): Promise<void> {
     ws.close(code, reason);
   }

@@ -1,7 +1,6 @@
 import type { ChannelBroker, Codec } from '../runtime/channel-broker-contract.ts';
 import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
-// Composes with `dumpCodec` below; concrete brokers live in apps/platform-*.
 export type DumpBroker = ChannelBroker<DumpMetadata>;
 
 const APPENDED_EVENT = 'appended';
@@ -22,5 +21,4 @@ export const dumpCodec: Codec<DumpMetadata> = {
   },
 };
 
-// Reason string surfaced to dashboard subscribers on a clean close.
 export const DUMP_DISABLED_REASON = 'dump retention disabled';

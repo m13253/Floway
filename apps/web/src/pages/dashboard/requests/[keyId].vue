@@ -15,9 +15,8 @@ export const useRequestsPageData = defineBasicLoader(async () => {
   const api = useApi();
   const keysRes = await callApi<ApiKey[]>(() => api.api.keys.$get());
   if (keysRes.error) {
-    // Surface the loader error rather than swallowing it into an empty list:
-    // "no dump-enabled keys" and "we failed to load the key list" are
-    // different states and the operator needs to see which one this is.
+    // Distinguish "failed to load keys" from "no dump-enabled keys" — the
+    // empty-list branch must not absorb load failures.
     return { keys: null as ApiKey[] | null, error: keysRes.error.message };
   }
   return { keys: keysRes.data, error: null as string | null };
@@ -35,11 +34,6 @@ const loadError = ref<string | null>(initialData.data.value.error);
 
 const dumpKeys = computed(() => keys.value === null ? null : keys.value.filter(k => k.dump_retention_seconds !== null));
 
-// The URL is the single source of truth for the active key. unplugin-vue-router
-// hands route params through `useRoute('<path>').params`; using the typed
-// path narrows `params.keyId` to a string. Picker changes flow back through
-// `router.replace` so the address bar always shows the currently-inspected
-// key.
 const selectedKeyId = computed(() => route.params.keyId);
 const selectedRecordId = useHashRef();
 
@@ -47,10 +41,8 @@ const subscription = useDumpSubscription(selectedKeyId);
 
 const selectKey = (id: string) => {
   if (id === selectedKeyId.value) return;
-  // Drop the record-id hash in the same navigation: a record id from key A
-  // would 404 against key B and the API endpoint enforces the (keyId,
-  // recordId) pair, so carrying the hash across would render as the same
-  // "Record not found" the explicit cross-key paste produces.
+  // Record ids are scoped to one key — carrying the hash across keys would
+  // render as "Record not found".
   selectedRecordId.value = null;
   void router.replace({ path: `/dashboard/requests/${id}` });
 };
@@ -67,11 +59,6 @@ const reloadKeys = async () => {
 
 useEventListener(window, 'focus', () => { void reloadKeys(); });
 
-// True when the URL points at a key that either no longer exists or no
-// longer has dump retention enabled. Distinct from "list is loading" —
-// only flagged once `dumpKeys` is a real array. The page renders a
-// not-found block in that case rather than letting the subscription chase
-// an upstream 404.
 const keyNotFound = computed(() => dumpKeys.value !== null && !dumpKeys.value.some(k => k.id === selectedKeyId.value));
 </script>
 

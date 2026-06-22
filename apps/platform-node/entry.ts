@@ -30,10 +30,10 @@ const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-// Run once at startup (so processes that restart faster than the interval
-// still sweep) and then hourly. unref() lets SIGINT exit; failures are
-// logged so one bad sweep doesn't kill future ones. The 30s delay keeps
-// the very first request after boot from racing the sweep.
+// Startup run covers processes that restart faster than the interval
+// (crash loop, frequent deploys) so the sweep doesn't silently lag.
+// unref() lets SIGINT exit cleanly; the 30s delay keeps the very first
+// request after boot from racing the sweep.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
   runScheduledMaintenance().catch(err => {

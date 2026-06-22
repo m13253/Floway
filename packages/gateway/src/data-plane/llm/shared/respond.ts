@@ -64,16 +64,10 @@ export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata[
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
-// Tee a source's `result.events` into the request-dump capture buffer while
-// passing the original frames through unchanged. Each per-source `respond`
-// layer applies this BEFORE its frame observer so the dump always carries
-// the gateway's internal event view — the buffer fills up identically
-// whether the client ends up receiving SSE or a folded JSON body. The
-// dump-capture writer short-circuits on opt-out keys, so requests whose
-// api key has no retention configured pay only the per-frame iteration
-// cost. A serialisation throw is contained so the data plane can still
-// deliver the client response; the failure surfaces as a synthetic event
-// in the captured stream.
+// Tees frames into the dump capture buffer. Each per-source `respond` layer
+// applies this BEFORE its frame observer so the dump always carries the
+// gateway's internal event view — identical whether the client ultimately
+// receives SSE or a folded JSON body.
 export const tapDumpEvents = async function* <TEvent>(
   source: AsyncIterable<ProtocolFrame<TEvent>>,
   c: Context,

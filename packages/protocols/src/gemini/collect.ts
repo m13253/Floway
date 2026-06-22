@@ -2,11 +2,9 @@ import type { GeminiCandidate, GeminiErrorResponse, GeminiPart, GeminiResult } f
 import type { DumpStreamEvent } from '../dump/index.ts';
 import type { CollectOutcome } from '../dump-collect/index.ts';
 
-// Gemini's stream protocol has no dedicated terminal frame and no dedicated
-// error event type — upstream errors arrive as a chunked-JSON object whose
-// body is `{ error: { code, message, status } }` instead of the normal
-// `GeminiResult` shape. Detect that shape before treating the chunk as a
-// result chunk.
+// Gemini has no dedicated error event type: upstream errors arrive as a
+// chunked-JSON `{ error: { code, message, status } }` object instead of a
+// `GeminiResult`. Distinguish before treating a chunk as a result.
 type ParsedChunk =
   | { kind: 'result'; chunk: GeminiResult }
   | { kind: 'error'; message: string }

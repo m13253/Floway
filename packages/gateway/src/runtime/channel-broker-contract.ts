@@ -1,7 +1,5 @@
-// Per-channel publish/subscribe with content-agnostic payload. The codec
-// is supplied at construction so the channel transport stays unaware of
-// the payload shape; callers compose this with a typed wrapper that knows
-// the payload.
+// Per-channel publish/subscribe. The codec is supplied at construction so
+// the channel transport stays unaware of the payload shape.
 
 export interface Codec<T> {
   encode(value: T): string;

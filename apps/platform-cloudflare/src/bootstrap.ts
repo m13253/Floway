@@ -29,8 +29,6 @@ export interface CloudflareEnv {
   [key: string]: unknown;
 }
 
-// A missing binding means wrangler.jsonc drifted from the code; refuse to
-// initialise rather than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {

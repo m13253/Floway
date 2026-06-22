@@ -3,11 +3,6 @@ import { ref } from 'vue';
 
 import { isSensitiveHeader, redactHeaderValue } from './header-redact.ts';
 
-// Renders a header pair list with a per-row reveal toggle for sensitive
-// values. Used for both the request and response sides — request `cookie`
-// values and response `set-cookie` / upstream-echoed `authorization` headers
-// are equally sensitive, so the same redact + reveal logic applies to both
-// directions.
 defineProps<{
   headers: ReadonlyArray<readonly [string, string]>;
 }>();
