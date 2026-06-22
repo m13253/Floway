@@ -82,9 +82,7 @@ interface ClaudeCodeAccountCredentialBase {
 
 // The credential class. `oauth` carries a non-empty rotating refresh token
 // that the cache rotates on every refresh round-trip; `setup-token` is the
-// long-lived inference-only bearer with no refresh counterpart. Old records
-// (written before this discriminator existed) are normalized to `oauth`
-// on read.
+// long-lived inference-only bearer with no refresh counterpart.
 type ClaudeCodeAccountCredentialTokenKind =
   | { tokenKind: 'oauth'; refreshToken: string }
   | { tokenKind: 'setup-token'; refreshToken: null };

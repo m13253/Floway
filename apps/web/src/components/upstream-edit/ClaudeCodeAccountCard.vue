@@ -57,8 +57,6 @@ const credentialLookup = computed<CredentialLookup>(() => {
 
 const credential = computed<ClaudeCodeAccountCredentialSummary | null>(() => credentialLookup.value.kind === 'present' ? credentialLookup.value.credential : null);
 
-// `tokenKind` is omitted on legacy serializations (records written before
-// the discriminator existed). Treat absence as the historic `oauth` flow.
 const isSetupToken = computed<boolean>(() => credential.value?.tokenKind === 'setup-token');
 
 const quota = computed(() => credential.value?.quotaSnapshot?.data ?? null);
