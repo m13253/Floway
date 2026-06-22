@@ -1,6 +1,6 @@
+import { getDumpStore } from './dump/registry.ts';
 import { getRepo } from './repo/index.ts';
 import { RESPONSES_ITEM_PAYLOAD_TTL_MS, startOfUtcHour, sweepExpiredResponsesItemPayloadFiles } from './repo/responses-payload.ts';
-import { getDumpStore } from './runtime/dump.ts';
 import { getImageCacheStore } from '@floway-dev/platform';
 
 // Read only by this scheduled cleanup (deleteOlderThan). Lookups never filter

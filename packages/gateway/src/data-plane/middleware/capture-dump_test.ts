@@ -4,9 +4,9 @@ import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
 import { type DumpAccounting, captureRequestDump, errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from './capture-dump.ts';
+import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/gateway';

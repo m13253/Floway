@@ -1,9 +1,9 @@
 import type { Context, Next } from 'hono';
 
+import { getDumpBroker, getDumpStore } from '../../dump/registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getDumpBroker, getDumpStore } from '../../runtime/dump.ts';
 import { encodeBodyForWire } from '../../shared/dump-wire.ts';
 import { ulid } from '../../shared/ulid.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';

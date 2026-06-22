@@ -73,10 +73,6 @@
     {
       "binding": "FILES",
       "bucket_name": "<YOUR_R2_BUCKET_NAME>"
-    },
-    {
-      "binding": "BLOBS",
-      "bucket_name": "<YOUR_DUMP_R2_BUCKET_NAME>"
     }
   ],
   // Cloudflare Images binding. Inline base64 images on the Copilot egress are

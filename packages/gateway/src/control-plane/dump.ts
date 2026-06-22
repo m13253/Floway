@@ -4,8 +4,8 @@ import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 
 import { ownedKeyOr404 } from './shared/owned-key.ts';
+import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
-import { getDumpBroker, getDumpStore } from '../runtime/dump.ts';
 
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;

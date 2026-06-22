@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import { initDumpBroker, initDumpStore } from '../../runtime/dump.ts';
 import { hashPassword } from '../../shared/passwords.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';

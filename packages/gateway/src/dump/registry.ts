@@ -1,6 +1,5 @@
-import type { DumpStore } from './dump-store-contract.ts';
-import type { DumpBroker } from '../dump/broker.ts';
-import { DUMP_DISABLED_REASON } from '../dump/broker.ts';
+import { DUMP_DISABLED_REASON, type DumpBroker } from './broker.ts';
+import type { DumpStore } from './store-contract.ts';
 
 let _store: DumpStore | null = null;
 let _broker: DumpBroker | null = null;

@@ -1,7 +1,7 @@
 import type { DumpBroker } from './src/dump/broker.ts';
+import { initDumpBroker, initDumpStore } from './src/dump/registry.ts';
+import type { DumpStore } from './src/dump/store-contract.ts';
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
-import type { DumpStore } from './src/runtime/dump-store-contract.ts';
-import { initDumpBroker, initDumpStore } from './src/runtime/dump.ts';
 import { trackBackground } from './src/test-helpers/background-tracker.ts';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
 import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';

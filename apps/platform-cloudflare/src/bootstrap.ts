@@ -22,7 +22,6 @@ import type { DumpMetadata } from '@floway-dev/protocols/dump';
 export interface CloudflareEnv {
   DB: SqlDatabase;
   FILES: R2BucketLike;
-  BLOBS: R2BucketLike;
   IMAGES: ImagesBinding;
   KV: KvNamespace;
   BROADCAST_DO: BroadcastNamespace;
@@ -34,7 +33,7 @@ export interface CloudflareEnv {
 // images, KV memoises compressed image results. A missing binding means
 // wrangler.jsonc drifted from the code, so we refuse to initialise rather
 // than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined);
@@ -51,12 +50,13 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
     return value;
   });
   initRuntimeKind('cloudflare');
-  initFileProvider(new R2FileProvider(env.FILES));
+  const files = new R2FileProvider(env.FILES);
+  initFileProvider(files);
   initImageCacheStore(new KvImageCache(env.KV, IMAGE_CACHE_POLICY));
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
-  initDumpStore(new FileDumpStore(env.DB, new R2FileProvider(env.BLOBS)));
+  initDumpStore(new FileDumpStore(env.DB, files));
   initDumpBroker(new DurableObjectChannelBroker<DumpMetadata>(env.BROADCAST_DO, dumpCodec));
   return { db: env.DB };
 };

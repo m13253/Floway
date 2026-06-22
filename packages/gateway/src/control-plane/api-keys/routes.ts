@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
 
+import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { getDumpStore, notifyDisabledBestEffort } from '../../runtime/dump.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
