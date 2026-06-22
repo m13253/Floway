@@ -1,6 +1,4 @@
-import type { Context } from 'hono';
-
-import { userUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
@@ -17,7 +15,7 @@ const apiKeyToJson = (key: ApiKey) => ({
 });
 
 const validateUpstreamIdsAgainstUserCap = async (
-  c: Context,
+  c: AuthedContext,
   proposed: readonly string[] | null,
 ): Promise<string | null> => {
   if (proposed === null) return null;
@@ -35,8 +33,8 @@ const validateUpstreamIdsAgainstUserCap = async (
     : null;
 };
 
-const ownedKeyOr404 = async (c: Context, id: string): Promise<ApiKey | Response> => {
-  const userId = c.get('userId') as number;
+const ownedKeyOr404 = async (c: AuthedContext, id: string): Promise<ApiKey | Response> => {
+  const userId = userFromContext(c).id;
   const key = await getRepo().apiKeys.getById(id);
   // Returning 404 on foreign keys (rather than 403) avoids leaking the
   // existence of another user's key id to the actor.
@@ -44,14 +42,14 @@ const ownedKeyOr404 = async (c: Context, id: string): Promise<ApiKey | Response>
   return key;
 };
 
-export const listKeys = async (c: Context) => {
-  const userId = c.get('userId') as number;
+export const listKeys = async (c: AuthedContext) => {
+  const userId = userFromContext(c).id;
   const keys = await getRepo().apiKeys.listByUserId(userId);
   return c.json(keys.map(apiKeyToJson));
 };
 
 export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
-  const userId = c.get('userId') as number;
+  const userId = userFromContext(c).id;
   const body = c.req.valid('json');
 
   const upstreamErr = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null);
@@ -70,7 +68,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   return c.json(apiKeyToJson(key), 201);
 };
 
-export const deleteKey = async (c: Context) => {
+export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
@@ -78,7 +76,7 @@ export const deleteKey = async (c: Context) => {
   return c.json({ ok: true });
 };
 
-export const rotateKey = async (c: Context) => {
+export const rotateKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;

@@ -5,8 +5,9 @@ import { geminiHttp } from './gemini/http.ts';
 import { messagesHttp } from './messages/http.ts';
 import { responsesHttp } from './responses/http.ts';
 import { responsesWebSocket } from './responses/websocket.ts';
+import type { AuthVars } from '../../middleware/auth.ts';
 
-export const mountLlmRoutes = (app: Hono) => {
+export const mountLlmRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post('/v1/chat/completions', chatCompletionsHttp.generate);
   app.post('/chat/completions', chatCompletionsHttp.generate);
   app.post('/v1/responses', responsesHttp.generate);

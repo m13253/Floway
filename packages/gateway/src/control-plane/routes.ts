@@ -1,4 +1,4 @@
-import { type Context, Hono, type Next } from 'hono';
+import { Hono, type Next } from 'hono';
 
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
@@ -13,11 +13,12 @@ import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
 import { codexImport, codexPkceStart, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
+import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 import { getRuntimeInfo } from '../runtime/runtime-info.ts';
 
-const adminOnlyMiddleware = async (c: Context, next: Next) => {
-  if (!c.get('isAdmin')) {
+const adminOnlyMiddleware = async (c: AuthedContext, next: Next) => {
+  if (!userFromContext(c).isAdmin) {
     return c.json({ error: 'Admin privileges required' }, 403);
   }
   await next();
@@ -25,8 +26,10 @@ const adminOnlyMiddleware = async (c: Context, next: Next) => {
 
 // Chained route registration is required so Hono flows per-path types into
 // the exported `controlPlaneRoutes` type; RPC clients consume it for path/
-// method autocomplete and request/response inference.
-export const controlPlaneRoutes = new Hono()
+// method autocomplete and request/response inference. The `Variables` generic
+// mirrors `app.ts` so c.set / c.get stay type-checked inside every handler
+// registered here (and inside the inner admin-gated sub-app).
+export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .get('/api/health', c => c.json({ status: 'ok', service: 'floway' }))
   // Quiet 204 to suppress 404 noise from favicon probes; the path is
   // already in PUBLIC_PATHS so auth lets it through.
@@ -55,7 +58,7 @@ export const controlPlaneRoutes = new Hono()
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.
   .patch('/api/users/me/password', zValidator('json', changeOwnPasswordBody), changeOwnPassword)
-  .route('/api', new Hono()
+  .route('/api', new Hono<{ Variables: AuthVars }>()
     .use('*', adminOnlyMiddleware)
     .get('/users', listUsers)
     .post('/users', zValidator('json', createUserBody), createUser)

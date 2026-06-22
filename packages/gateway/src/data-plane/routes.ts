@@ -6,8 +6,9 @@ import { imagesEdits, imagesGenerations } from './images/serve.ts';
 import { mountLlmRoutes } from './llm/routes.ts';
 import { serveGeminiModelInfo, serveGeminiModels } from './models/gemini.ts';
 import { models } from './models/serve.ts';
+import type { AuthVars } from '../middleware/auth.ts';
 
-export const mountDataPlane = (app: Hono) => {
+export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   mountLlmRoutes(app);
   mountCodexRoutes(app);
 

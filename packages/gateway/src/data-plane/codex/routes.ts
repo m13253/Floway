@@ -57,12 +57,13 @@ import {
   codexWhamAgentIdentitiesJwks,
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
+import type { AuthVars } from '../../middleware/auth.ts';
 import { responsesHttp } from '../llm/responses/http.ts';
 import { responsesWebSocket } from '../llm/responses/websocket.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 
-export const mountCodexRoutes = (app: Hono) => {
+export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
   app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
   app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);

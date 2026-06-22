@@ -21,7 +21,7 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
@@ -87,7 +87,7 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 };
 
 export interface PassthroughServeContext {
-  readonly c: Context;
+  readonly c: AuthedContext;
   readonly sourceApi: NonLlmServeApiName;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
@@ -114,7 +114,7 @@ export interface PassthroughServeContext {
 export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Response> => {
   const { c, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = ctx;
   const requestStartedAt = performance.now();
-  const apiKeyId = c.get('apiKeyId') as string;
+  const apiKeyId = apiKeyFromContext(c).id;
   const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
   const backgroundScheduler = backgroundSchedulerFromContext(c);
   let lastPerformance: PerformanceTelemetryContext | undefined;

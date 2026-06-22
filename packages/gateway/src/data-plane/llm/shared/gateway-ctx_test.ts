@@ -1,19 +1,43 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono, type GatewayCtxAuthVars } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono } from './gateway-ctx.ts';
+import type { AuthVars } from '../../../middleware/auth.ts';
+import type { ApiKey, User } from '../../../repo/types.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
+const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
+  id: 'test-key',
+  userId: 1,
+  name: 'test',
+  key: 'sk-test',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+const buildUser = (overrides: Partial<User> = {}): User => ({
+  id: 1,
+  username: 'tester',
+  passwordHash: null,
+  isAdmin: false,
+  upstreamIds: null,
+  canViewGlobalTelemetry: false,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  deletedAt: null,
+  ...overrides,
+});
+
 // Mirrors the production guarantee: by the time a data-plane handler runs,
-// auth middleware has stamped all three vars on the context. Tests that want
-// to model an unrestricted key on an uncapped user can rely on the defaults;
+// auth middleware has stamped apiKey + user on the context. Tests that want to
+// model an unrestricted key on an uncapped user can rely on the defaults;
 // tests that want to model a capped key or user override at the handler.
-const makeApp = (): Hono<{ Variables: GatewayCtxAuthVars }> => {
-  const app = new Hono<{ Variables: GatewayCtxAuthVars }>();
+const makeApp = (): Hono<{ Variables: AuthVars }> => {
+  const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
-    c.set('apiKeyId', 'test-key');
-    c.set('apiKeyUpstreamIds', null);
-    c.set('userUpstreamIds', null);
+    c.set('apiKey', buildApiKey());
+    c.set('user', buildUser());
     await next();
   });
   return app;
@@ -24,8 +48,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      c.set('apiKeyId', 'key-1');
-      c.set('apiKeyUpstreamIds', ['up-1', 'up-2']);
+      c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'] }));
       ctx = createGatewayCtxFromHono(c, { wantsStream: true });
       return c.text('ok');
     });
@@ -134,18 +157,22 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     const collected: { capOnly?: readonly string[] | null; both?: readonly string[] | null; keyOnly?: readonly string[] | null } = {};
     app.get('/cap-only', c => {
-      c.set('userUpstreamIds', ['up-a']);
+      // Unrestricted key (apiKey.upstreamIds null) under a capped user.
+      c.set('user', buildUser({ upstreamIds: ['up-a'] }));
       collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
       return c.text('ok');
     });
     app.get('/both', c => {
-      c.set('userUpstreamIds', ['up-a', 'up-b']);
-      c.set('apiKeyUpstreamIds', ['up-b', 'up-c']);
+      // Per-key whitelist further narrows the user cap and preserves per-key order.
+      c.set('user', buildUser({ upstreamIds: ['up-a', 'up-b'] }));
+      c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
       collected.both = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
       return c.text('ok');
     });
     app.get('/key-only', c => {
-      c.set('apiKeyUpstreamIds', ['up-x']);
+      // Uncapped user with a per-key whitelist falls through to the per-key
+      // list verbatim.
+      c.set('apiKey', buildApiKey({ upstreamIds: ['up-x'] }));
       collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
       return c.text('ok');
     });
