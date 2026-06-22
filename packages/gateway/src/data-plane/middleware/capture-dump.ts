@@ -6,6 +6,7 @@ import type { ApiKey, TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { encodeBodyForWire } from '../../shared/dump-wire.ts';
 import { ulid } from '../../shared/ulid.ts';
+import { addRespondObserver, type RespondObserver } from '../llm/shared/respond-observer.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import {
   type DumpMetadata,
@@ -16,9 +17,8 @@ import {
   type DumpStreamEvent,
   type DumpUpstreamRef,
 } from '@floway-dev/protocols/dump';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-export interface DumpAccounting {
+interface DumpAccounting {
   upstreamId: string | null;
   model: string | null;
   inputTokens: number | null;
@@ -26,66 +26,12 @@ export interface DumpAccounting {
   error: string | null;
 }
 
-// Default shape for routes that complete without identifying an upstream
-// (plain echoes, non-LLM routes). Module-private so the `'dumpAccounting'`
-// key name stays inside this file — callers go through the setters.
-const plainDumpAccounting: DumpAccounting = {
+const plainAccounting: DumpAccounting = {
   upstreamId: null,
   model: null,
   inputTokens: null,
   outputTokens: null,
   error: null,
-};
-
-export const setPlainDumpAccounting = (c: Context): void => {
-  c.set('dumpAccounting', plainDumpAccounting);
-};
-
-export const setDumpAccountingFromIdentity = (
-  c: Context,
-  identity: TelemetryModelIdentity,
-  usage: TokenUsage | null,
-): void => {
-  c.set('dumpAccounting', {
-    upstreamId: identity.upstream,
-    model: identity.model,
-    inputTokens: tokenUsageInput(usage),
-    outputTokens: tokenUsageOutput(usage),
-    error: null,
-  } satisfies DumpAccounting);
-};
-
-export const errorDumpAccounting = (c: Context, error: unknown): void => {
-  c.set('dumpAccounting', {
-    upstreamId: null,
-    model: null,
-    inputTokens: null,
-    outputTokens: null,
-    error: oneLineError(error),
-  } satisfies DumpAccounting);
-};
-
-// Initialised by the middleware when retention is on; left undefined
-// otherwise so `appendDumpEvent` short-circuits at zero cost on opt-out keys.
-interface DumpEventsCapture {
-  readonly events: DumpStreamEvent[];
-  readonly startedAt: number;
-}
-
-const DUMP_EVENTS_KEY = 'dumpEventsCapture';
-
-const initDumpEventsCapture = (c: Context, startedAt: number): void => {
-  c.set(DUMP_EVENTS_KEY, { events: [], startedAt });
-};
-
-const getDumpEventsCapture = (c: Context): DumpEventsCapture | undefined => {
-  return c.get(DUMP_EVENTS_KEY) as DumpEventsCapture | undefined;
-};
-
-export const appendDumpEvent = (c: Context, event: string | null, data: string): void => {
-  const capture = getDumpEventsCapture(c);
-  if (!capture) return;
-  capture.events.push({ event, data, ts: Date.now() - capture.startedAt });
 };
 
 // Missing dimensions stay null (not measured); sum only the present ones.
@@ -102,10 +48,49 @@ const tokenUsageOutput = (usage: TokenUsage | null): number | null => {
   return usage.output ?? null;
 };
 
-const oneLineError = (err: unknown): string => {
-  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
-  return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
-};
+// Translates `RespondObserver` lifecycle events into the dump record's
+// accounting + event stream. Created per-request by the middleware when
+// retention is on, registered against the Hono context, and read back in
+// `finalize()` to assemble the persisted `DumpRecord`. Holding state inside
+// the observer (rather than on context keys) keeps the dump-specific logic
+// out of the respond layer entirely — the source-side `respond.ts` only
+// emits lifecycle events and never names "dump" again.
+class DumpRespondObserver implements RespondObserver {
+  readonly events: DumpStreamEvent[] = [];
+  accounting: DumpAccounting = plainAccounting;
+  constructor(private readonly startedAt: number) {}
+
+  upstreamError(result: { status: number }): void {
+    this.accounting = { ...plainAccounting, error: `upstream error ${result.status}` };
+  }
+
+  internalError(result: { error: { message: string } }): void {
+    this.accounting = { ...plainAccounting, error: result.error.message };
+  }
+
+  plain(): void {
+    this.accounting = plainAccounting;
+  }
+
+  frame(sse: { event?: string; data: string } | null): void {
+    if (!sse) return;
+    this.events.push({ event: sse.event ?? null, data: sse.data, ts: Date.now() - this.startedAt });
+  }
+
+  success(identity: { upstream: string; model: string }, usage: TokenUsage | null): void {
+    this.accounting = {
+      upstreamId: identity.upstream,
+      model: identity.model,
+      inputTokens: tokenUsageInput(usage),
+      outputTokens: tokenUsageOutput(usage),
+      error: null,
+    };
+  }
+
+  error(reason: string): void {
+    this.accounting = { ...plainAccounting, error: reason };
+  }
+}
 
 export const captureRequestDump = () => async (c: Context, next: Next): Promise<void> => {
   const apiKey = c.get('apiKey') as ApiKey | undefined;
@@ -119,7 +104,8 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const startedAt = Date.now();
   const requestClone = c.req.raw.clone();
-  initDumpEventsCapture(c, startedAt);
+  const observer = new DumpRespondObserver(startedAt);
+  addRespondObserver(c, observer);
 
   await next();
 
@@ -149,12 +135,6 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
     const captured = teedForCapture ? await collectResponse(teedForCapture, isStream, startedAt) : { kind: 'none' as const, byteLength: 0 };
     const captureError = captured.kind !== 'none' ? captured.streamError : null;
 
-    // Read accounting after the response drains: streaming respond paths
-    // stamp `dumpAccounting` from the streamSSE callback's finally, which
-    // only completes once `collectResponse` resolves. Routes that never
-    // reach a respond layer fall back to the plain shape.
-    const accounting = (c.get('dumpAccounting') as DumpAccounting | undefined) ?? plainDumpAccounting;
-
     // ULID-from-completedAt keeps id-time and `created_at` agreeing on a row:
     // ordering off-cursor (decoded ULID timestamp == row creation) matches
     // ordering on-cursor (the ORDER BY (created_at, id) tie-breaker).
@@ -166,14 +146,14 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       method: c.req.method,
       path: pathWithQuery(c.req.raw.url),
       status: responseStatus,
-      upstream: await resolveUpstreamRef(accounting.upstreamId),
-      model: accounting.model,
-      inputTokens: accounting.inputTokens,
-      outputTokens: accounting.outputTokens,
+      upstream: await resolveUpstreamRef(observer.accounting.upstreamId),
+      model: observer.accounting.model,
+      inputTokens: observer.accounting.inputTokens,
+      outputTokens: observer.accounting.outputTokens,
       requestBytes: requestBytes.byteLength,
       responseBytes: captured.byteLength,
       durationMs: completedAt - startedAt,
-      error: accounting.error ?? requestStreamError ?? captureError,
+      error: observer.accounting.error ?? requestStreamError ?? captureError,
     };
 
     const request: DumpRequest = {
@@ -188,11 +168,10 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       headers: responseHeaders,
     };
 
-    // Prefer the internal-events tap over the outbound body so dumps reflect
+    // Prefer the observer's frame log over the outbound body so dumps reflect
     // the gateway's own frame sequence regardless of the negotiated wire shape.
-    const tappedEvents = getDumpEventsCapture(c)?.events ?? [];
-    const responseBody: DumpResponseBody = tappedEvents.length > 0
-      ? { type: 'stream', events: tappedEvents }
+    const responseBody: DumpResponseBody = observer.events.length > 0
+      ? { type: 'stream', events: observer.events }
       : captured.kind === 'events'
         ? { type: 'stream', events: captured.events }
         : captured.kind === 'bytes'
@@ -224,8 +203,10 @@ const pathWithQuery = (rawUrl: string): string => {
   return `${url.pathname}${url.search}`;
 };
 
-// Returns the best-effort prefix on a mid-read failure plus a labelled
-// streamError so request and response surfaces feed `meta.error` symmetrically.
+// Drain a ReadableStream<Uint8Array> to a single Uint8Array. Returns the
+// best-effort prefix on a mid-read failure plus a labelled streamError; both
+// the request side and the bytes branch of the response side share this so
+// `meta.error` describes a short body symmetrically.
 const drainBody = async (
   body: ReadableStream<Uint8Array> | null,
   label: 'request' | 'response',
@@ -246,8 +227,17 @@ const drainBody = async (
   return { bytes: concatChunks(chunks), streamError };
 };
 
+// Shared error-message shape so every stream-failure surface routes through
+// the same `"<label> failed: <one-line cause>"` format. The SSE branch and
+// the body-drain branch both feed `meta.error`; a divergent free-form prefix
+// here would surface as inconsistent dashboard text.
 const streamErrorMessage = (label: string, err: unknown): string =>
   `${label} failed: ${oneLineError(err)}`;
+
+const oneLineError = (err: unknown): string => {
+  const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
+  return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
+};
 
 const concatChunks = (chunks: readonly Uint8Array[]): Uint8Array => {
   let total = 0;
@@ -279,8 +269,9 @@ const collectResponse = async (
   const events: DumpStreamEvent[] = [];
   let byteLength = 0;
   let streamError: string | null = null;
-  // parseSSEStream consumes the stream, so count bytes off a separate tee
-  // branch to keep the wire-byte total honest.
+  // Count bytes off the tee separately from SSE parsing because parseSSEStream
+  // consumes the stream — the byte counter on the other branch keeps the
+  // wire-byte total honest.
   const [forCount, forParse] = body.tee();
   const countingPromise = (async () => {
     const reader = forCount.getReader();

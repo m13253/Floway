@@ -3,10 +3,10 @@ import { streamSSE } from 'hono/streaming';
 
 import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, tapDumpEvents } from '../shared/respond.ts';
+import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../shared/respond-observer.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
@@ -28,39 +28,39 @@ export const respondMessages = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    errorDumpAccounting(c, `upstream error ${result.status}`);
+    notifyUpstreamError(c, result); void (`upstream error ${result.status}`);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    errorDumpAccounting(c, result.error.message);
+    notifyInternalError(c, result);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
   // Tap before the wantsStream branch so the dump captures the protocol event view in both folded-JSON and SSE modes.
-  const dumpTapped = tapDumpEvents(result.events, c, messagesProtocolFrameToSSEFrame);
-  const frames = observeMessagesFrames(dumpTapped, state, usageState, wantsStream);
+  const tapped = tapFrames(result.events, c, messagesProtocolFrameToSSEFrame);
+  const frames = observeMessagesFrames(tapped, state, usageState, wantsStream);
 
   if (!wantsStream) {
     try {
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
+      notifySuccess(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      errorDumpAccounting(c, error);
+      notifyError(c, error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
@@ -77,9 +77,9 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        errorDumpAccounting(c, `messages stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(c, 'messages stream failed (completion=${completion}, source-failed=${state.failed})');
       } else {
-        setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
+        notifySuccess(c, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

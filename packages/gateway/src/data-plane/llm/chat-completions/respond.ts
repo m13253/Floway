@@ -3,10 +3,10 @@ import { streamSSE } from 'hono/streaming';
 
 import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './events/to-result.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../../middleware/capture-dump.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, tapDumpEvents } from '../shared/respond.ts';
+import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../shared/respond-observer.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -14,11 +14,6 @@ import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/proto
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
-// Renders an upstream Chat Completions result into the client HTTP/SSE
-// response. An error-typed result is a pre-stream failure and always answers as
-// HTTP; an events result drains to one JSON body (non-streaming) or is proxied
-// frame by frame (streaming). `success` reports whether a non-streaming body was
-// produced, so the orchestrator knows whether to flush stored items.
 export const respondChatCompletions = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> | PlainResult,
@@ -28,39 +23,40 @@ export const respondChatCompletions = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    errorDumpAccounting(c, `upstream error ${result.status}`);
+    notifyUpstreamError(c, result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    errorDumpAccounting(c, result.error.message);
+    notifyInternalError(c, result);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
-  // Force `includeUsageChunk: true` on the dump tap so the dashboard always sees
-  // the trailing usage frame, independent of the wire-level option the client requested.
-  const dumpTapped = tapDumpEvents(result.events, c, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
-  const frames = observeChatCompletionsFrames(dumpTapped, state, wantsStream);
+  // Force `includeUsageChunk: true` on the observer tap so the dashboard
+  // always sees the trailing usage frame, independent of the wire-level
+  // option the client requested.
+  const tapped = tapFrames(result.events, c, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
+  const frames = observeChatCompletionsFrames(tapped, state, wantsStream);
 
   if (!wantsStream) {
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage) : null;
-      setDumpAccountingFromIdentity(c, metadata.modelIdentity, usage);
+      notifySuccess(c, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      errorDumpAccounting(c, error);
+      notifyError(c, error);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error, 'chat-completions')) };
     }
   }
@@ -77,9 +73,9 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        errorDumpAccounting(c, `chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(c, `chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        setDumpAccountingFromIdentity(c, metadata.modelIdentity, state.usage);
+        notifySuccess(c, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

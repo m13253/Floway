@@ -3,19 +3,20 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
-import { type DumpAccounting, captureRequestDump, errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from './capture-dump.ts';
+import { captureRequestDump } from './capture-dump.ts';
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
+import { notifyError, notifyPlain, notifySuccess } from '../llm/shared/respond-observer.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/gateway';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // The capture middleware reads `apiKey` and `dumpAccounting` off the Hono
 // context. The default Hono Variables map is empty; widen it locally so
 // `c.set(...)` typechecks in the test wiring.
-type TestVars = { apiKey: ApiKey; dumpAccounting: DumpAccounting };
+type TestVars = { apiKey: ApiKey };
 
 const buildApp = (setApiKey: (c: Context<{ Variables: TestVars }>) => void) => {
   const app = new Hono<{ Variables: TestVars }>();
@@ -52,7 +53,7 @@ test('captureRequestDump records a JSON request and JSON response on a retention
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/chat/completions', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return c.json({ id: 'resp', choices: [] });
   });
 
@@ -98,7 +99,7 @@ test('captureRequestDump publishes only after store.put resolves', async () => {
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/x', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/x', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -116,7 +117,7 @@ test('captureRequestDump surfaces accounting.error onto meta.error', async () =>
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/err', async c => {
-    errorDumpAccounting(c, new Error('upstream blew up'));
+    notifyError(c, new Error('upstream blew up'));
     return c.json({ error: 'oops' }, 502);
   });
   const response = await app.request('/v1/err', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -166,7 +167,7 @@ test('captureRequestDump records identity-derived model + upstream on success', 
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/y', async c => {
-    setDumpAccountingFromIdentity(c, { model: 'm-1', upstream: 'up_test', modelKey: 'mk', cost: null }, { input: 100, output: 50 });
+    notifySuccess(c, { model: 'm-1', upstream: 'up_test', modelKey: 'mk', cost: null }, { input: 100, output: 50 });
     return c.json({ data: 'ok' });
   });
   const response = await app.request('/v1/y', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -192,7 +193,7 @@ test('captureRequestDump emits a null upstream ref when the upstream row no long
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/gone', async c => {
-    setDumpAccountingFromIdentity(c, { model: 'm', upstream: 'up_already_deleted', modelKey: 'mk', cost: null }, null);
+    notifySuccess(c, { model: 'm', upstream: 'up_already_deleted', modelKey: 'mk', cost: null }, null);
     return c.json({});
   });
   const response = await app.request('/v1/gone', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -211,7 +212,7 @@ test('captureRequestDump captures SSE response as parsed events', async () => {
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/stream', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return new Response('event: ping\ndata: hello\n\nevent: ping\ndata: world\n\n', {
       status: 200,
       headers: { 'content-type': 'text/event-stream' },
@@ -258,7 +259,7 @@ test('captureRequestDump reads dumpAccounting stamped inside streamSSE finally o
         await stream.writeSSE({ event: 'chunk', data: 'one' });
         await stream.writeSSE({ event: 'chunk', data: 'two' });
       } finally {
-        setDumpAccountingFromIdentity(
+        notifySuccess(
           c,
           { model: 'm-stream', upstream: 'up_stream', modelKey: 'mk', cost: null },
           { input: 11, output: 7 },
@@ -310,7 +311,7 @@ test('captureRequestDump captures partial request bytes and surfaces request bod
     // on the original side, masking the partial bytes the clone would otherwise
     // see. The handler returns immediately so finalize's drainBody is the only
     // consumer of the request body.
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return c.json({ ok: 1 });
   });
 
@@ -334,7 +335,7 @@ test('captureRequestDump surfaces response body read failure on meta.error when 
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/y', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         controller.error(new Error('response pipe broke'));
@@ -363,7 +364,7 @@ test('captureRequestDump surfaces SSE parse failure on meta.error when the strea
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/sse-err', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
         controller.error(new Error('sse pipe broke'));
@@ -389,7 +390,7 @@ test('captureRequestDump propagates DumpStore.put failures through the backgroun
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/put-fail', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/put-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
@@ -410,7 +411,7 @@ test('captureRequestDump stores the row even when broker.publish fails', async (
 
   const app = buildApp(c => c.set('apiKey', enabledKey));
   app.post('/v1/publish-fail', async c => {
-    setPlainDumpAccounting(c);
+    notifyPlain(c, { type: 'plain', status: 200, headers: new Headers(), body: new Uint8Array() });
     return c.json({ ok: 1 });
   });
   const response = await app.request('/v1/publish-fail', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });

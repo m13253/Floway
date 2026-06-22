@@ -2,11 +2,10 @@ import type { Context } from 'hono';
 
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { appendDumpEvent } from '../../middleware/capture-dump.ts';
 import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
 import { hasTokenUsage, recordTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
@@ -62,26 +61,6 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
 
 export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
-};
-
-// Tees frames into the dump capture buffer. Each per-source `respond` layer
-// applies this BEFORE its frame observer so the dump always carries the
-// gateway's internal event view — identical whether the client ultimately
-// receives SSE or a folded JSON body.
-export const tapDumpEvents = async function* <TEvent>(
-  source: AsyncIterable<ProtocolFrame<TEvent>>,
-  c: Context,
-  toSSE: (frame: ProtocolFrame<TEvent>) => SseFrame | null,
-): AsyncIterable<ProtocolFrame<TEvent>> {
-  for await (const frame of source) {
-    try {
-      const sse = toSSE(frame);
-      if (sse) appendDumpEvent(c, sse.event ?? null, sse.data);
-    } catch (err) {
-      appendDumpEvent(c, 'dump_serialize_error', err instanceof Error ? err.message : String(err));
-    }
-    yield frame;
-  }
 };
 
 // Upstream response headers we propagate verbatim to the downstream client.

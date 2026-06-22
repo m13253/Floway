@@ -25,7 +25,7 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { errorDumpAccounting, setDumpAccountingFromIdentity, setPlainDumpAccounting } from '../middleware/capture-dump.ts';
+import { notifyError, notifyPlain, notifySuccess, notifyUpstreamError } from '../llm/shared/respond-observer.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -151,7 +151,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       if (!response.ok) {
         recordUpstreamPerformance(backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        errorDumpAccounting(c, `upstream error ${response.status}`);
+        notifyUpstreamError(c, { type: 'upstream-error', status: response.status, headers: new Headers(), body: new Uint8Array() });
         return forwardUpstreamResponse(response);
       }
 
@@ -159,7 +159,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
-      setDumpAccountingFromIdentity(c, { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
+      notifySuccess(c, { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
       if (usage) {
         scheduleUsageRecord(
           backgroundScheduler,
@@ -184,12 +184,12 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) {
-        setPlainDumpAccounting(c);
+        notifyPlain(c, { type: 'plain', status: 0, headers: new Headers(), body: new Uint8Array() });
         return forwarded;
       }
     }
     recordRequestPerformance(backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
-    errorDumpAccounting(c, e);
+    notifyError(c, e);
     return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
   }
 };
