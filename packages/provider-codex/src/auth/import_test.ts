@@ -58,7 +58,7 @@ describe('importCodexFromCallback', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       access_token: 'at', refresh_token: 'rt', id_token: makeJwt(identityPayload), expires_in: 600,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher });
+    const result = await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
     expect(result.config.accounts[0].email).toBe('a@b.com');
     expect(result.state.accounts[0].refresh_token).toBe('rt');
     expect(result.state.accounts[0].accessToken?.token).toBe('at');
@@ -68,7 +68,7 @@ describe('importCodexFromCallback', () => {
     const fetcher = vi.fn<Fetcher>(async () => new Response(JSON.stringify({
       access_token: 'at', refresh_token: 'rt', id_token: makeJwt(identityPayload), expires_in: 600,
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher });
+    await importCodexFromCallback({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', fetcher });
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher.mock.calls[0][0]).toBe('https://auth.openai.com/oauth/token');
   });

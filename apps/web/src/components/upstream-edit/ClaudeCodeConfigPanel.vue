@@ -6,7 +6,7 @@ import ClaudeCodeAccountCard from './ClaudeCodeAccountCard.vue';
 import ClaudeCodeImportTabs from './ClaudeCodeImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
-import { deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
+import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
@@ -101,7 +101,7 @@ watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   else if (tab === 'setup_token_callback') void prepareAuthorize('setup-token');
 }, { immediate: true });
 
-type CallbackCredential = { code: string; verifier: string };
+type CallbackCredential = { code: string; verifier: string; state: string };
 
 type SubmitPayload =
   | { kind: 'oauth-credentials_json'; credentials_json: string }
@@ -115,7 +115,7 @@ const buildCallbackCredential = (pasteText: string, kind: 'oauth' | 'setup-token
   try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   const recalled = recallPkce(pkceStorageKey('claude-code', kind), parsed.state);
   if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
-  return { ok: true, value: { code: parsed.code, verifier: recalled.verifier } };
+  return { ok: true, value: { code: parsed.code, verifier: recalled.verifier, state: recalled.state } };
 };
 
 const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: string } => {
@@ -179,6 +179,14 @@ const submit = async () => {
   }
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
+  // Burn the in-flight stash only on success — the OAuth code is single-use
+  // upstream, so a successful exchange invalidates it anyway. On failure the
+  // stash survives so the operator can re-paste / retry without losing the
+  // verifier+state pair their authorize URL was built against. Only the
+  // stash for the kind we just exchanged is cleared; the other kind (if any)
+  // is left intact.
+  if (body.value.kind === 'oauth-callback') clearPkce(pkceStorageKey('claude-code', 'oauth'));
+  else if (body.value.kind === 'setup-token-callback') clearPkce(pkceStorageKey('claude-code', 'setup-token'));
   emit('imported', result.data);
   draft.value = { activeTab: 'callback', credentialsJsonText: '', callbackUrlText: '', setupTokenCallbackUrlText: '' };
   pkce.value = null;

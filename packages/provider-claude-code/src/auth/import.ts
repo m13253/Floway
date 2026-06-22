@@ -66,12 +66,14 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
 export const importClaudeCodeFromCallback = async (opts: {
   code: string;
   pkceVerifier: string;
+  state: string;
   fetcher?: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
   const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
+    state: opts.state,
     kind: 'oauth',
     fetcher,
   });
@@ -103,12 +105,14 @@ export const importClaudeCodeFromCallback = async (opts: {
 export const importClaudeCodeFromSetupTokenCallback = async (opts: {
   code: string;
   pkceVerifier: string;
+  state: string;
   fetcher?: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
   const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
+    state: opts.state,
     kind: 'setup-token',
     fetcher,
   });

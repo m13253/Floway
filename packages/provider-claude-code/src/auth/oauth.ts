@@ -174,6 +174,7 @@ const claudeCodeTokenRequest = async (
 export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   code: string;
   codeVerifier: string;
+  state: string;
   kind?: ClaudeCodeOAuthFlowKind;
   fetcher?: Fetcher;
 }): Promise<ClaudeOAuthTokenResponse> => {
@@ -184,6 +185,11 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
     client_id: CLAUDE_CODE_CLIENT_ID,
     redirect_uri: CLAUDE_CODE_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
+    // Anthropic's /v1/oauth/token rejects exchanges that omit `state` with
+    // 400 "Invalid request format", even though the standard OAuth2 RFC
+    // treats state as a client-side CSRF guard only. Mirrors sub2api +
+    // claude-relay-service, which both include it on every exchange.
+    state: opts.state,
   };
   if (kind === 'setup-token') {
     body.expires_in = CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS;

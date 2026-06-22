@@ -82,12 +82,12 @@ export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImp
 
 // Exchange the authorization code for tokens, then derive identity from the
 // returned id_token. The PKCE verifier was generated and held by the
-// dashboard alongside the round-tripped state; it is supplied here verbatim.
-// The token exchange is the only network hop on this path (identity parses
-// locally from the id_token), so `fetcher` is where the caller picks egress
-// for the whole import.
-export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
-  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, fetcher: opts.fetcher });
+// dashboard alongside the round-tripped state; both are supplied here
+// verbatim. The token exchange is the only network hop on this path
+// (identity parses locally from the id_token), so `fetcher` is where the
+// caller picks egress for the whole import.
+export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; state: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
+  const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, state: opts.state, fetcher: opts.fetcher });
   const identity = parseCodexIdTokenClaims(tokens.id_token);
   return buildCodexImportResult({
     identity,

@@ -685,7 +685,7 @@ test('POST /api/upstreams/codex-import (callback) exchanges the SPA-supplied ver
     async () => {
       const resp = await requestApp(
         '/api/upstreams/codex-import',
-        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
@@ -913,7 +913,7 @@ test('POST /api/upstreams/claude-code-import (callback) exchanges the SPA-suppli
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-import',
-        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
+        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> } };
@@ -1753,7 +1753,7 @@ test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a se
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as {
@@ -1789,7 +1789,7 @@ test('POST /api/upstreams/:id/claude-code-refresh-now rejects setup-token creden
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
       );
       if (resp.status !== 201) {
         const body = await resp.text();
@@ -1823,7 +1823,7 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE_1', verifier: 'VERIFIER_1' } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE_1', verifier: 'VERIFIER_1', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { id: string };
@@ -1840,7 +1840,7 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
     async () => {
       const resp = await requestApp(
         `/api/upstreams/${upstreamId}/claude-code-setup-token-reimport`,
-        authed(adminSession, { callback: { code: 'AUTH_CODE_2', verifier: 'VERIFIER_2' } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE_2', verifier: 'VERIFIER_2', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 200);
     },
@@ -2066,7 +2066,7 @@ test('POST /api/upstreams/codex-import honors the proxy_fallback_list override o
   const resp = await requestApp(
     '/api/upstreams/codex-import',
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );
@@ -2084,7 +2084,7 @@ test('POST /api/upstreams/:id/codex-reimport honors the proxy_fallback_list over
   const resp = await requestApp(
     `/api/upstreams/${created.id}/codex-reimport`,
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );

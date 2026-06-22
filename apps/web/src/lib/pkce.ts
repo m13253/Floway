@@ -109,13 +109,19 @@ export const peekStashedPkce = (key: string): StashedPkce | null => {
   return JSON.parse(raw) as StashedPkce;
 };
 
-export const recallPkce = (key: string, returnedState: string): { verifier: string } | null => {
+// Recall the stash and verify the round-tripped state matches. Non-
+// destructive: the stash survives so the operator can retry the same
+// paste if the import fails (a network error, Anthropic returning a
+// transient 5xx, a wire-shape regression on our end). Callers MUST
+// `clearPkce(key)` after a successful exchange — the OAuth code is
+// single-use upstream, so a successful exchange burns it and the
+// stash has no further use.
+export const recallPkce = (key: string, returnedState: string): { verifier: string; state: string } | null => {
   const raw = sessionStorage.getItem(key);
   if (!raw) return null;
   const parsed = JSON.parse(raw) as StashedPkce;
   if (parsed.state !== returnedState) return null;
-  sessionStorage.removeItem(key);
-  return { verifier: parsed.verifier };
+  return { verifier: parsed.verifier, state: parsed.state };
 };
 
 export const clearPkce = (key: string): void => {

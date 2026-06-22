@@ -539,7 +539,7 @@ const ingestCodexCredential = async (
     }
     const cb = body.callback;
     if (!cb) return { ok: false, error: 'callback is required when auth_json is absent' };
-    const out = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, fetcher });
+    const out = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, state: cb.state, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -742,7 +742,7 @@ const ingestClaudeCodeCredential = async (
     }
     const cb = body.callback;
     if (!cb) return { ok: false, error: 'callback is required when credentials_json is absent' };
-    const out = await importClaudeCodeFromCallback({ code: cb.code, pkceVerifier: cb.verifier, fetcher });
+    const out = await importClaudeCodeFromCallback({ code: cb.code, pkceVerifier: cb.verifier, state: cb.state, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -757,6 +757,7 @@ const ingestClaudeCodeSetupTokenCredential = async (
     const out = await importClaudeCodeFromSetupTokenCallback({
       code: body.callback.code,
       pkceVerifier: body.callback.verifier,
+      state: body.callback.state,
       fetcher,
     });
     return { ok: true, ...out };

@@ -6,7 +6,7 @@ import CodexAccountCard from './CodexAccountCard.vue';
 import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
-import { deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
+import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
@@ -79,7 +79,7 @@ watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (visible && tab === 'callback') void prepareAuthorize();
 }, { immediate: true });
 
-type CallbackCredential = { code: string; verifier: string };
+type CallbackCredential = { code: string; verifier: string; state: string };
 
 const buildBody = (): { ok: true; value: { auth_json?: string; callback?: CallbackCredential } } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'auth_json') {
@@ -94,7 +94,7 @@ const buildBody = (): { ok: true; value: { auth_json?: string; callback?: Callba
   try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   const recalled = recallPkce(storageKey, parsed.state);
   if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
-  return { ok: true, value: { callback: { code: parsed.code, verifier: recalled.verifier } } };
+  return { ok: true, value: { callback: { code: parsed.code, verifier: recalled.verifier, state: recalled.state } } };
 };
 
 const submit = async () => {
@@ -115,6 +115,11 @@ const submit = async () => {
       );
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
+  // Burn the in-flight stash only on success — the OAuth code is single-use
+  // upstream, so a successful exchange invalidates it anyway. On failure the
+  // stash survives so the operator can re-paste / retry without losing the
+  // verifier+state pair their authorize URL was built against.
+  clearPkce(storageKey);
   emit('imported', result.data);
   draft.value = { activeTab: 'auth_json', authJsonText: '', callbackUrlText: '' };
   pkce.value = null;
