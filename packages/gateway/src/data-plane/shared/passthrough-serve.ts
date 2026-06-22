@@ -187,7 +187,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
     recordRequestPerformance(ctx.backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
     ctx.dump?.error(e);
-    return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
+    return c.json({ error: toInternalDebugError(e) }, 502);
   }
 };
 

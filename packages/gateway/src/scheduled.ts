@@ -21,7 +21,6 @@ export const runScheduledMaintenance = async (): Promise<void> => {
   await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(now));
   await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS));
   await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS));
-  await runSweep('codexPkcePending.sweepExpired', () => getRepo().codexPkcePending.sweepExpired(Date.now()));
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(Date.now()));
   await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };

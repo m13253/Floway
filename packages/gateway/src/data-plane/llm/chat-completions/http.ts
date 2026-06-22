@@ -17,7 +17,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
-  const result = internalErrorResult(502, toInternalDebugError(error, 'chat-completions'));
+  const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondChatCompletions(c, result, false, false, ctx);
   return (ctx.dump?.close(response) ?? response);
 };

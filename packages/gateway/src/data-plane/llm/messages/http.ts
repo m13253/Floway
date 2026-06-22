@@ -39,7 +39,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
-  const result = internalErrorResult(502, toInternalDebugError(error, 'messages'));
+  const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondMessages(c, result, false, ctx);
   return (ctx.dump?.close(response) ?? response);
 };

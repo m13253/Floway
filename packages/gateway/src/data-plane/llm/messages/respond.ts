@@ -57,7 +57,7 @@ export const respondMessages = async (
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       ctx.dump?.error(error);
-      return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
+      return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error)) };
     }
   }
 
@@ -178,7 +178,6 @@ const internalMessagesErrorPayload = (error: InternalDebugError) => ({
     message: error.message,
     stack: error.stack,
     cause: error.cause,
-    source_api: error.source_api,
     target_api: error.target_api,
   },
 });
@@ -216,6 +215,6 @@ const messagesSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<M
     }
   } catch (error) {
     state.failed = true;
-    yield sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error, 'messages'))), 'error');
+    yield sseFrame(JSON.stringify(internalMessagesErrorPayload(toInternalDebugError(error))), 'error');
   }
 };
