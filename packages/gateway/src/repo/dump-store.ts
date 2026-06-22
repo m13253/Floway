@@ -1,5 +1,5 @@
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
-import { decodeBodyFromWire, encodeBodyForWire } from '../shared/dump-wire.ts';
+import { decodeBodyFromWire, encodeBodyForWire } from '../dump/wire.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 import type {
   DumpMetadata,

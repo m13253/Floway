@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { decodeBodyFromWire, encodeBodyForWire } from './dump-wire.ts';
+import { decodeBodyFromWire, encodeBodyForWire } from './wire.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Probe `looksTextual` (a private detail of `encodeBodyForWire`) through the
