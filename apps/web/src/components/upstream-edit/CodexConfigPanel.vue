@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import type { CodexImportTab, CodexPkceStartResult } from './codex-import-types.ts';
+import type { CodexAuthorizeUrlResult, CodexImportTab } from './codex-import-types.ts';
 import CodexAccountCard from './CodexAccountCard.vue';
 import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import { generatePkce, parseCallbackPaste, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>();
 
 const api = useApi();
+const storageKey = pkceStorageKey('codex');
 
 const draft = ref<{ activeTab: CodexImportTab; authJsonText: string; callbackUrlText: string }>(
   { activeTab: 'auth_json', authJsonText: '', callbackUrlText: '' },
@@ -34,16 +36,22 @@ const submitting = ref(false);
 const refreshing = ref(false);
 const reimportOpen = ref(false);
 
-const pkce = ref<CodexPkceStartResult | null>(null);
+const pkce = ref<CodexAuthorizeUrlResult | null>(null);
 const pkceLoading = ref(false);
 const pkceError = ref<string | null>(null);
 
-const fetchPkceStart = async () => {
+// The verifier + state are minted in-browser, stashed in sessionStorage, and
+// the server is asked only to stamp the matching challenge + state into its
+// authorize URL. The verifier never leaves the browser until the matching
+// callback comes back as `{code, verifier}` on import.
+const prepareAuthorize = async () => {
   if (pkce.value || pkceLoading.value) return;
   pkceLoading.value = true;
   pkceError.value = null;
-  const { data, error } = await callApi<CodexPkceStartResult>(
-    () => api.api.upstreams['codex-pkce-start'].$post({ json: {} }),
+  const { verifier, challenge, state } = await generatePkce();
+  stashPkce(storageKey, { verifier, state });
+  const { data, error } = await callApi<CodexAuthorizeUrlResult>(
+    () => api.api.upstreams['codex-authorize-url'].$post({ json: { challenge, state } }),
   );
   pkceLoading.value = false;
   if (error) { pkceError.value = error.message; return; }
@@ -53,19 +61,25 @@ const fetchPkceStart = async () => {
 const importFormVisible = computed(() => props.mode === 'create' || reimportOpen.value);
 
 watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
-  if (visible && tab === 'callback') void fetchPkceStart();
+  if (visible && tab === 'callback') void prepareAuthorize();
 }, { immediate: true });
 
-const buildBody = (): { ok: true; value: { auth_json?: string; callback?: { callback_url: string } } } | { ok: false; error: string } => {
+type CallbackCredential = { code: string; verifier: string };
+
+const buildBody = (): { ok: true; value: { auth_json?: string; callback?: CallbackCredential } } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'auth_json') {
     const text = draft.value.authJsonText.trim();
     if (!text) return { ok: false, error: 'Paste the contents of ~/.codex/auth.json' };
     try { JSON.parse(text); } catch (e) { return { ok: false, error: `auth.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
     return { ok: true, value: { auth_json: text } };
   }
-  const url = draft.value.callbackUrlText.trim();
-  if (!url) return { ok: false, error: 'Paste the URL the browser was redirected to' };
-  return { ok: true, value: { callback: { callback_url: url } } };
+  const text = draft.value.callbackUrlText.trim();
+  if (!text) return { ok: false, error: 'Paste the URL the browser was redirected to' };
+  let parsed: { code: string; state: string };
+  try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+  const recalled = recallPkce(storageKey, parsed.state);
+  if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
+  return { ok: true, value: { callback: { code: parsed.code, verifier: recalled.verifier } } };
 };
 
 const submit = async () => {

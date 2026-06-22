@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';
+import type { ClaudeCodeAuthorizeUrlResult, ClaudeCodeImportTab } from './claude-code-import-types.ts';
 import ClaudeCodeAccountCard from './ClaudeCodeAccountCard.vue';
 import ClaudeCodeImportTabs from './ClaudeCodeImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import { generatePkce, parseCallbackPaste, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
@@ -32,6 +33,10 @@ const emit = defineEmits<{
 }>();
 
 const api = useApi();
+// Both flows share one sessionStorage slot per provider; the random `state`
+// echoed back from the consent screen disambiguates oauth from setup-token
+// on its own because each `prepareAuthorize` call mints fresh state.
+const storageKey = pkceStorageKey('claude-code');
 
 const draft = ref<{
   activeTab: ClaudeCodeImportTab;
@@ -46,52 +51,63 @@ const refreshing = ref(false);
 const probing = ref(false);
 const reimportOpen = ref(false);
 
-const pkce = ref<ClaudeCodePkceStartResult | null>(null);
+const pkce = ref<ClaudeCodeAuthorizeUrlResult | null>(null);
 const pkceLoading = ref(false);
 const pkceError = ref<string | null>(null);
 
-const setupTokenPkce = ref<ClaudeCodePkceStartResult | null>(null);
+const setupTokenPkce = ref<ClaudeCodeAuthorizeUrlResult | null>(null);
 const setupTokenPkceLoading = ref(false);
 const setupTokenPkceError = ref<string | null>(null);
 
-const fetchPkceStart = async () => {
-  if (pkce.value || pkceLoading.value) return;
-  pkceLoading.value = true;
-  pkceError.value = null;
-  const { data, error } = await callApi<ClaudeCodePkceStartResult>(
-    () => api.api.upstreams['claude-code-pkce-start'].$post({ json: {} }),
+// The verifier + state are minted in-browser, stashed in sessionStorage, and
+// the server is asked only to stamp the matching challenge + state into its
+// authorize URL. The verifier never leaves the browser until the matching
+// callback comes back as `{code, verifier}` on import.
+const prepareAuthorize = async (kind: 'oauth' | 'setup-token') => {
+  const target = kind === 'oauth' ? pkce : setupTokenPkce;
+  const loadingFlag = kind === 'oauth' ? pkceLoading : setupTokenPkceLoading;
+  const errorFlag = kind === 'oauth' ? pkceError : setupTokenPkceError;
+  if (target.value || loadingFlag.value) return;
+  loadingFlag.value = true;
+  errorFlag.value = null;
+  const { verifier, challenge, state } = await generatePkce();
+  stashPkce(storageKey, { verifier, state });
+  const { data, error } = await callApi<ClaudeCodeAuthorizeUrlResult>(
+    () => api.api.upstreams['claude-code-authorize-url'].$post({ json: { challenge, state, kind } }),
   );
-  pkceLoading.value = false;
-  if (error) { pkceError.value = error.message; return; }
-  pkce.value = data;
-};
-
-const fetchSetupTokenPkceStart = async () => {
-  if (setupTokenPkce.value || setupTokenPkceLoading.value) return;
-  setupTokenPkceLoading.value = true;
-  setupTokenPkceError.value = null;
-  const { data, error } = await callApi<ClaudeCodePkceStartResult>(
-    () => api.api.upstreams['claude-code-setup-token-pkce-start'].$post({ json: {} }),
-  );
-  setupTokenPkceLoading.value = false;
-  if (error) { setupTokenPkceError.value = error.message; return; }
-  setupTokenPkce.value = data;
+  loadingFlag.value = false;
+  if (error) { errorFlag.value = error.message; return; }
+  target.value = data;
 };
 
 const importFormVisible = computed(() => props.mode === 'create' || reimportOpen.value);
 
-// Lazy PKCE start per tab: each authorize URL bakes Anthropic's scope
-// server-side, so we cannot share a single in-flight session between tabs.
+// Each authorize URL bakes Anthropic's scope server-side, so we cannot share
+// a single in-flight session between tabs. The shared sessionStorage slot is
+// safe because every `prepareAuthorize` call mints fresh state — the most
+// recently prepared flow wins the recall when its callback comes back.
 watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (!visible) return;
-  if (tab === 'callback') void fetchPkceStart();
-  else if (tab === 'setup_token_callback') void fetchSetupTokenPkceStart();
+  if (tab === 'callback') void prepareAuthorize('oauth');
+  else if (tab === 'setup_token_callback') void prepareAuthorize('setup-token');
 }, { immediate: true });
+
+type CallbackCredential = { code: string; verifier: string };
 
 type SubmitPayload =
   | { kind: 'oauth-credentials_json'; credentials_json: string }
-  | { kind: 'oauth-callback'; callback: { callback_url: string } }
-  | { kind: 'setup-token-callback'; callback: { callback_url: string } };
+  | { kind: 'oauth-callback'; callback: CallbackCredential }
+  | { kind: 'setup-token-callback'; callback: CallbackCredential };
+
+const buildCallbackCredential = (pasteText: string): { ok: true; value: CallbackCredential } | { ok: false; error: string } => {
+  const text = pasteText.trim();
+  if (!text) return { ok: false, error: 'Paste the URL the browser was redirected to' };
+  let parsed: { code: string; state: string };
+  try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
+  const recalled = recallPkce(storageKey, parsed.state);
+  if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
+  return { ok: true, value: { code: parsed.code, verifier: recalled.verifier } };
+};
 
 const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'credentials_json') {
@@ -104,13 +120,13 @@ const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: s
     return { ok: true, value: { kind: 'oauth-credentials_json', credentials_json: text } };
   }
   if (draft.value.activeTab === 'setup_token_callback') {
-    const url = draft.value.setupTokenCallbackUrlText.trim();
-    if (!url) return { ok: false, error: 'Paste the URL the browser was redirected to' };
-    return { ok: true, value: { kind: 'setup-token-callback', callback: { callback_url: url } } };
+    const credential = buildCallbackCredential(draft.value.setupTokenCallbackUrlText);
+    if (!credential.ok) return credential;
+    return { ok: true, value: { kind: 'setup-token-callback', callback: credential.value } };
   }
-  const url = draft.value.callbackUrlText.trim();
-  if (!url) return { ok: false, error: 'Paste the URL the browser was redirected to' };
-  return { ok: true, value: { kind: 'oauth-callback', callback: { callback_url: url } } };
+  const credential = buildCallbackCredential(draft.value.callbackUrlText);
+  if (!credential.ok) return credential;
+  return { ok: true, value: { kind: 'oauth-callback', callback: credential.value } };
 };
 
 const submit = async () => {

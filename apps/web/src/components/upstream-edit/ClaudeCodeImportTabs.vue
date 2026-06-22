@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from 'vue';
 
-import type { ClaudeCodeImportTab, ClaudeCodePkceStartResult } from './claude-code-import-types.ts';
+import type { ClaudeCodeAuthorizeUrlResult, ClaudeCodeImportTab } from './claude-code-import-types.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
 // `pkce` and `setupTokenPkce` carry independent in-flight PKCE sessions
@@ -9,10 +9,10 @@ import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 // the operator may open one tab without ever visiting the other. The
 // parent fetches each lazily when its tab is selected.
 defineProps<{
-  pkce: ClaudeCodePkceStartResult | null;
+  pkce: ClaudeCodeAuthorizeUrlResult | null;
   pkceLoading: boolean;
   pkceError: string | null;
-  setupTokenPkce: ClaudeCodePkceStartResult | null;
+  setupTokenPkce: ClaudeCodeAuthorizeUrlResult | null;
   setupTokenPkceLoading: boolean;
   setupTokenPkceError: string | null;
 }>();
@@ -70,7 +70,8 @@ onBeforeUnmount(() => {
           Open the authorize URL in a browser signed in to your Claude account, complete the consent screen,
           then paste the URL the browser was redirected to (it starts with
           <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">https://platform.claude.com/oauth/code/callback</code>).
-          Pasting just the <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">?code=&hellip;&amp;state=&hellip;</code> fragment is also accepted.
+          Pasting just the <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">?code=&hellip;&amp;state=&hellip;</code> fragment, or the
+          <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">code#state</code> form shown by the Claude Code CLI, is also accepted.
         </p>
 
         <div v-if="pkceLoading" class="flex items-center gap-2 text-sm text-gray-400">
@@ -88,7 +89,6 @@ onBeforeUnmount(() => {
             </Button>
             <span v-if="oauthCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
             <span v-else-if="oauthCopyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ oauthCopyStatus.message }}</span>
-            <span>Expires in {{ Math.round(pkce.expires_in_seconds / 60) }} min</span>
           </div>
         </div>
 
@@ -98,7 +98,7 @@ onBeforeUnmount(() => {
           v-model="callbackUrlText"
           :rows="3"
           monospace
-          placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=..."
+          placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=...  (or code#state)"
         />
       </div>
     </template>
@@ -127,7 +127,6 @@ onBeforeUnmount(() => {
             </Button>
             <span v-if="setupTokenCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
             <span v-else-if="setupTokenCopyStatus.kind === 'failed'" class="text-accent-rose">Copy failed: {{ setupTokenCopyStatus.message }}</span>
-            <span>Expires in {{ Math.round(setupTokenPkce.expires_in_seconds / 60) }} min</span>
           </div>
         </div>
 
@@ -137,7 +136,7 @@ onBeforeUnmount(() => {
           v-model="setupTokenCallbackUrlText"
           :rows="3"
           monospace
-          placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=..."
+          placeholder="https://platform.claude.com/oauth/code/callback?code=...&state=...  (or code#state)"
         />
       </div>
     </template>
