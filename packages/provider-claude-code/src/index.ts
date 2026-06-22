@@ -5,7 +5,6 @@ export * from './access-token-cache.ts';
 export * from './auth/identity.ts';
 export * from './auth/import.ts';
 export * from './auth/oauth.ts';
-export * from './auth/pkce.ts';
 export * from './auth/usage-probe.ts';
 export * from './detection.ts';
 export * from './headers.ts';

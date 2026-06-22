@@ -194,15 +194,6 @@ export interface ModelsCacheRepo {
   delete(upstreamId: string): Promise<void>;
 }
 
-// Single-use PKCE state → verifier handoff with a TTL. Used by both the
-// codex and claude-code OAuth flows; each flow owns its own table, but the
-// repo shape is identical.
-export interface PkcePendingRepo {
-  put(state: string, verifier: string, expiresAt: number): Promise<void>;
-  consume(state: string): Promise<{ verifier: string } | null>;
-  sweepExpired(now: number): Promise<void>;
-}
-
 export interface SearchConfigRepo {
   get(): Promise<unknown>;
   save(config: unknown): Promise<void>;
@@ -333,8 +324,6 @@ export interface Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   modelsCache: ModelsCacheRepo;
-  codexPkcePending: PkcePendingRepo;
-  claudeCodePkcePending: PkcePendingRepo;
   searchConfig: SearchConfigRepo;
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;

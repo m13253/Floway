@@ -58,40 +58,6 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
   };
 };
 
-// Accepts a full callback URL (`https://platform.claude.com/oauth/code/callback?...`),
-// a bare query (`?code=…&state=…` or `code=…&state=…`), or a host-relative
-// URL whose query carries both `code` and `state`.
-export const extractClaudeCodeCallbackParams = (input: string): { code: string; state: string } => {
-  const trimmed = input.trim();
-  if (trimmed === '') throw new Error('Callback input is empty');
-
-  let params: URLSearchParams;
-  if (/^https?:\/\//i.test(trimmed)) {
-    let url: URL;
-    try {
-      url = new URL(trimmed);
-    } catch (cause) {
-      throw new Error('Callback URL is malformed', { cause });
-    }
-    params = url.searchParams;
-  } else {
-    // Slice at the first `?` so a host-relative paste
-    // (`platform.claude.com/oauth/code/callback?code=…&state=…`) parses the
-    // post-`?` segment as a query instead of feeding the whole string to
-    // URLSearchParams (which would treat it as a single malformed key and
-    // surface a confusing "missing code" error).
-    const queryStart = trimmed.indexOf('?');
-    const query = queryStart >= 0 ? trimmed.slice(queryStart + 1) : trimmed;
-    params = new URLSearchParams(query);
-  }
-
-  const code = params.get('code');
-  const state = params.get('state');
-  if (!code) throw new Error('Callback input is missing `code`');
-  if (!state) throw new Error('Callback input is missing `state`');
-  return { code, state };
-};
-
 // Both calls (OAuth token exchange + /api/oauth/profile) run through the
 // caller-supplied `fetcher` (default: direct). The import flow runs before
 // the upstream record exists, so the fetcher cannot be resolved from a

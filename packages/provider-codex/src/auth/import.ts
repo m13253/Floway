@@ -80,34 +80,12 @@ export const importCodexFromAuthJson = async (rawJson: string): Promise<CodexImp
   });
 };
 
-// Accepts a full URL (`http://localhost:1455/auth/callback?...`) or a bare
-// query string (with or without leading `?`). Returns the `code` + `state`
-// query params or throws.
-export const extractCodexCallbackParams = (input: string): { code: string; state: string } => {
-  const trimmed = input.trim();
-  let query: string;
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      query = new URL(trimmed).search;
-    } catch (cause) {
-      throw new Error('Callback URL is malformed', { cause: cause as Error });
-    }
-  } else {
-    query = trimmed.startsWith('?') ? trimmed : `?${trimmed}`;
-  }
-  const params = new URLSearchParams(query);
-  const code = params.get('code');
-  const state = params.get('state');
-  if (!code) throw new Error('Callback URL is missing `code`');
-  if (!state) throw new Error('Callback URL is missing `state`');
-  return { code, state };
-};
-
 // Exchange the authorization code for tokens, then derive identity from the
-// returned id_token. The PKCE verifier was stored at PKCE-start time and is
-// supplied here. The token exchange is the only network hop on this path
-// (identity parses locally from the id_token), so `fetcher` is where the
-// caller picks egress for the whole import.
+// returned id_token. The PKCE verifier was generated and held by the
+// dashboard alongside the round-tripped state; it is supplied here verbatim.
+// The token exchange is the only network hop on this path (identity parses
+// locally from the id_token), so `fetcher` is where the caller picks egress
+// for the whole import.
 export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
   const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, fetcher: opts.fetcher });
   const identity = parseCodexIdTokenClaims(tokens.id_token);

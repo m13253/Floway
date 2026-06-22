@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { extractCodexCallbackParams, importCodexFromAuthJson, importCodexFromCallback } from './import.ts';
+import { importCodexFromAuthJson, importCodexFromCallback } from './import.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 const encodeBase64Url = (input: string): string => {
@@ -50,23 +50,6 @@ describe('importCodexFromAuthJson', () => {
     await expect(importCodexFromAuthJson(JSON.stringify({
       tokens: { access_token: 'a', refresh_token: 'r', id_token: makeJwt({ /* empty */ }) },
     }))).rejects.toThrow();
-  });
-});
-
-describe('extractCodexCallbackParams', () => {
-  test('parses a full localhost URL', () => {
-    const params = extractCodexCallbackParams('http://localhost:1455/auth/callback?code=CODE&state=STATE');
-    expect(params).toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('parses a raw query string', () => {
-    expect(extractCodexCallbackParams('code=CODE&state=STATE')).toEqual({ code: 'CODE', state: 'STATE' });
-    expect(extractCodexCallbackParams('?code=CODE&state=STATE')).toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('throws on missing code/state', () => {
-    expect(() => extractCodexCallbackParams('http://localhost:1455/auth/callback')).toThrow();
-    expect(() => extractCodexCallbackParams('http://localhost:1455/auth/callback?code=CODE')).toThrow(/state/);
   });
 });
 

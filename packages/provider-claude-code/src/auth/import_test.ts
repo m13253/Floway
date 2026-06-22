@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
-  extractClaudeCodeCallbackParams,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
@@ -36,44 +35,6 @@ const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.restoreAllMocks());
-
-describe('extractClaudeCodeCallbackParams', () => {
-  test('parses the official callback URL', () => {
-    const params = extractClaudeCodeCallbackParams('https://platform.claude.com/oauth/code/callback?code=CODE&state=STATE');
-    expect(params).toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('parses a bare query string with leading ?', () => {
-    expect(extractClaudeCodeCallbackParams('?code=CODE&state=STATE')).toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('parses a bare query string without leading ?', () => {
-    expect(extractClaudeCodeCallbackParams('code=CODE&state=STATE')).toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('parses a host-relative URL by slicing at the first ?', () => {
-    expect(extractClaudeCodeCallbackParams('platform.claude.com/oauth/code/callback?code=CODE&state=STATE'))
-      .toEqual({ code: 'CODE', state: 'STATE' });
-  });
-
-  test('throws on missing code', () => {
-    expect(() => extractClaudeCodeCallbackParams('https://platform.claude.com/oauth/code/callback?state=S'))
-      .toThrow(/code/);
-  });
-
-  test('throws on missing state', () => {
-    expect(() => extractClaudeCodeCallbackParams('https://platform.claude.com/oauth/code/callback?code=C'))
-      .toThrow(/state/);
-  });
-
-  test('throws on empty input', () => {
-    expect(() => extractClaudeCodeCallbackParams('   ')).toThrow();
-  });
-
-  test('throws on malformed http URL', () => {
-    expect(() => extractClaudeCodeCallbackParams('https://')).toThrow();
-  });
-});
 
 describe('importClaudeCodeFromCallback', () => {
   test('exchanges code, fetches profile, builds config + state', async () => {

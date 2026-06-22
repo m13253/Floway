@@ -290,26 +290,32 @@ export const copilotAuthPollBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
-// --- codex import / PKCE / refresh ---
+// --- codex import / authorize-url / refresh ---
 //
 // The control plane refuses `provider: 'codex'` on the generic create / update
 // upstream endpoints; Codex credentials enter only through these dedicated
-// routes so the PKCE verifier handoff and id_token parsing live in one place.
+// routes so the id_token parsing lives in one place.
+//
+// PKCE state is fully SPA-held: the dashboard mints `{verifier, challenge,
+// state}` in the browser via Web Crypto, stores `{verifier, state}` in
+// sessionStorage, and posts `challenge + state` here so the server can stamp
+// them into the upstream's authorize URL. The server never sees the
+// verifier until the callback comes back as `{code, verifier}` on import.
 
-export const codexPkceStartBody = z.object({});
+export const codexAuthorizeUrlBody = z.object({
+  challenge: z.string().min(1),
+  state: z.string().min(1),
+});
 
 // Path A — operator pastes `~/.codex/auth.json` verbatim. Path B — operator
-// supplies the OAuth callback, identified by the prior PKCE-start `state`. The
-// two paths are mutually exclusive; the refine below catches the both-or-
-// neither case before the handler runs.
+// supplies the SPA-validated OAuth callback as `{code, verifier}`. The two
+// paths are mutually exclusive; the refine below catches the both-or-neither
+// case before the handler runs.
 const codexCredentialFields = {
   auth_json: z.string().min(1).optional(),
   callback: z.object({
-    code: z.string().min(1).optional(),
-    state: z.string().min(1).optional(),
-    // Either `{code, state}` or `callback_url` (which we parse) — the handler
-    // picks `callback_url` first when present.
-    callback_url: z.string().min(1).optional(),
+    code: z.string().min(1),
+    verifier: z.string().min(1),
   }).optional(),
   // Edit-form override carried through the import dialog. The PKCE token
   // exchange runs before the upstream record exists, so re-import uses the
@@ -365,27 +371,32 @@ export const codexRefreshNowBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
-// --- claude-code import / PKCE / refresh ---
+// --- claude-code import / authorize-url / refresh ---
 //
 // Same shape rationale as the codex routes above: the generic create / update
-// upstream endpoints reject `provider: 'claude-code'` and dedicated PKCE +
-// re-import endpoints own the OAuth handoff so credential parsing lives in
-// one place.
+// upstream endpoints reject `provider: 'claude-code'` and dedicated
+// authorize-url + import + re-import endpoints own the OAuth handoff so
+// credential parsing lives in one place. PKCE state is SPA-held (see codex
+// section above for the architecture). The single authorize-url endpoint
+// covers both the full-OAuth and Setup-Token scopes via the `kind`
+// discriminator; the matching import endpoint per kind consumes the SPA-
+// provided verifier.
 
-export const claudeCodePkceStartBody = z.object({});
+export const claudeCodeAuthorizeUrlBody = z.object({
+  challenge: z.string().min(1),
+  state: z.string().min(1),
+  kind: z.enum(['oauth', 'setup-token']),
+});
 
 // Path A — operator pastes `~/.claude/.credentials.json` verbatim. Path B —
-// operator supplies the OAuth callback identified by the prior PKCE-start
-// `state`. The two paths are mutually exclusive; the refine below catches
-// the both-or-neither case before the handler runs.
+// operator supplies the SPA-validated OAuth callback as `{code, verifier}`.
+// The two paths are mutually exclusive; the refine below catches the both-or-
+// neither case before the handler runs.
 const claudeCodeCredentialFields = {
   credentials_json: z.string().min(1).optional(),
   callback: z.object({
-    code: z.string().min(1).optional(),
-    state: z.string().min(1).optional(),
-    // Either `{code, state}` or `callback_url` (which we parse) — the handler
-    // picks `callback_url` first when present.
-    callback_url: z.string().min(1).optional(),
+    code: z.string().min(1),
+    verifier: z.string().min(1),
   }).optional(),
 };
 
@@ -423,16 +434,16 @@ export const claudeCodeProbeQuotaBody = z.object({
 
 // --- claude-code Setup-Token import / re-import ---
 //
-// The Setup-Token PKCE flow uses the same authorize host / client_id /
+// The Setup-Token flow uses the same authorize host / client_id /
 // redirect_uri / token endpoint as the regular OAuth flow but narrows the
-// scope to `user:inference` — see provider-claude-code constants. The
-// resulting credential has no refresh_token, so the import body has no
-// credentials_json path (Anthropic's CLI never persists a setup token).
+// scope to `user:inference` (selected via the shared authorize-url
+// endpoint's `kind: 'setup-token'`). The resulting credential has no
+// refresh_token, so the import body has no credentials_json path
+// (Anthropic's CLI never persists a setup token).
 const claudeCodeSetupTokenCallbackFields = {
   callback: z.object({
-    code: z.string().min(1).optional(),
-    state: z.string().min(1).optional(),
-    callback_url: z.string().min(1).optional(),
+    code: z.string().min(1),
+    verifier: z.string().min(1),
   }),
 };
 

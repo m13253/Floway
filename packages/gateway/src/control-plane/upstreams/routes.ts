@@ -13,7 +13,7 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -33,9 +33,7 @@ import {
   assertClaudeCodeUpstreamRecord,
   buildClaudeCodeAuthorizeUrl,
   ensureClaudeCodeAccessToken,
-  extractClaudeCodeCallbackParams,
   fetchClaudeCodeUsageProbe,
-  generateClaudeCodePkce,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
@@ -54,8 +52,6 @@ import {
   CodexOAuthSessionTerminatedError,
   assertCodexUpstreamRecord,
   assertCodexUpstreamState,
-  extractCodexCallbackParams,
-  generateCodexPkce,
   getCodexQuota,
   importCodexFromAuthJson,
   importCodexFromCallback,
@@ -499,15 +495,19 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
   }
 };
 
-// 5 minutes mirrors auth.openai.com's authorization-code lifetime. A stale
-// pending state cannot be used for token exchange and is swept by the
-// scheduled maintenance job.
-const CODEX_PKCE_TTL_MS = 5 * 60 * 1000;
-
-export const codexPkceStart = async (c: CtxWithJson<typeof codexPkceStartBody>) => {
-  const { verifier, challenge } = await generateCodexPkce();
-  const state = crypto.randomUUID().replace(/-/g, '');
-  await getRepo().codexPkcePending.put(state, verifier, Date.now() + CODEX_PKCE_TTL_MS);
+// Stateless authorize-URL builder. PKCE state is owned by the dashboard
+// (verifier + state are generated client-side and stashed in sessionStorage);
+// the server only stamps the SPA-provided `challenge` and `state` into the
+// authorize URL with the auth.openai.com flags codex-cli sets.
+//   * `id_token_add_organizations` enriches the id_token with the operator's
+//     chatgpt_account_id; without it the identity-parsing step in
+//     `importCodexFromCallback` throws.
+//   * `codex_cli_simplified_flow` skips the consent screen for already-
+//     authorized clients.
+//   * `originator` matches the data-plane originator so auth telemetry stays
+//     consistent.
+export const codexAuthorizeUrl = async (c: CtxWithJson<typeof codexAuthorizeUrlBody>) => {
+  const { challenge, state } = c.req.valid('json');
 
   const url = new URL(CODEX_AUTHORIZE_URL);
   url.searchParams.set('response_type', 'code');
@@ -517,20 +517,11 @@ export const codexPkceStart = async (c: CtxWithJson<typeof codexPkceStartBody>) 
   url.searchParams.set('state', state);
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method', 'S256');
-  // OpenAI-side flags codex-cli sets. `id_token_add_organizations` enriches
-  // the id_token with the operator's chatgpt_account_id; without it the
-  // identity-parsing step in importCodex* throws. `codex_cli_simplified_flow`
-  // skips the consent screen for already-authorized clients. `originator`
-  // matches the data-plane originator so auth telemetry stays consistent.
   url.searchParams.set('id_token_add_organizations', 'true');
   url.searchParams.set('codex_cli_simplified_flow', 'true');
   url.searchParams.set('originator', 'codex_cli_rs');
 
-  return c.json({
-    state,
-    authorize_url: url.toString(),
-    expires_in_seconds: Math.floor(CODEX_PKCE_TTL_MS / 1000),
-  });
+  return c.json({ authorize_url: url.toString() });
 };
 
 type CodexCredentialBody = z.infer<typeof codexImportBody> | z.infer<typeof codexReimportBody>;
@@ -548,23 +539,7 @@ const ingestCodexCredential = async (
     }
     const cb = body.callback;
     if (!cb) return { ok: false, error: 'callback is required when auth_json is absent' };
-    let code = cb.code;
-    let state = cb.state;
-    if (cb.callback_url !== undefined) {
-      const parsed = extractCodexCallbackParams(cb.callback_url);
-      code = parsed.code;
-      state = parsed.state;
-    }
-    if (!code || !state) {
-      return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
-    }
-    // Atomic single-use DELETE+RETURNING — a replayed callback for the same
-    // state cannot succeed twice, and rows past their TTL are filtered out.
-    const pending = await getRepo().codexPkcePending.consume(state);
-    if (!pending) {
-      return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
-    }
-    const out = await importCodexFromCallback({ code, codeVerifier: pending.verifier, fetcher });
+    const out = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -739,69 +714,22 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
   }
 };
 
-// 5 minutes mirrors claude.ai's authorization-code lifetime. Sweep job in
-// scheduled.ts purges rows past their TTL; the import handler also rejects
-// expired rows defensively via the `expires_at > ?` filter in `consume`.
-const CLAUDE_CODE_PKCE_TTL_MS = 5 * 60 * 1000;
-
-export const claudeCodePkceStart = async (c: CtxWithJson<typeof claudeCodePkceStartBody>) => {
-  return await runClaudeCodePkceStart(c, 'oauth');
-};
-
-// Setup-Token PKCE start. Same shared `claude_code_pkce_pending` row store
-// as the regular OAuth flow — the verifier+state pair is interchangeable
-// between flows because only the authorize URL's `scope` differs and that
-// is rebuilt fresh each time. The caller picks the kind by hitting either
-// /claude-code-pkce-start or /claude-code-setup-token-pkce-start, and the
-// matching `import` endpoint consumes the verifier with the right
-// `importClaudeCodeFromSetupTokenCallback` / `importClaudeCodeFromCallback`
-// helper. There is no on-disk discriminator on the pending row because the
-// authorize URL has already locked in the scope server-side at Anthropic.
-export const claudeCodeSetupTokenPkceStart = async (c: CtxWithJson<typeof claudeCodePkceStartBody>) => {
-  return await runClaudeCodePkceStart(c, 'setup-token');
-};
-
-const runClaudeCodePkceStart = async (
-  c: CtxWithJson<typeof claudeCodePkceStartBody>,
-  kind: 'oauth' | 'setup-token',
-) => {
-  const { verifier, challenge } = await generateClaudeCodePkce();
-  const state = crypto.randomUUID().replace(/-/g, '');
-  await getRepo().claudeCodePkcePending.put(state, verifier, Date.now() + CLAUDE_CODE_PKCE_TTL_MS);
-
+// Stateless authorize-URL builder shared by both OAuth and Setup-Token
+// import flows. PKCE state is owned by the dashboard (verifier + state are
+// generated client-side and stashed in sessionStorage); the server only
+// stamps the SPA-provided `challenge` and `state` into the authorize URL.
+// The `kind` discriminator selects the scope set — full OAuth versus the
+// inference-only `user:inference` scope. Both kinds share host /
+// client_id / redirect_uri / token endpoint; only the authorize-URL scope
+// differs.
+export const claudeCodeAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeAuthorizeUrlBody>) => {
+  const { challenge, state, kind } = c.req.valid('json');
   const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge, kind });
-
-  return c.json({
-    state,
-    authorize_url,
-    expires_in_seconds: Math.floor(CLAUDE_CODE_PKCE_TTL_MS / 1000),
-  });
+  return c.json({ authorize_url });
 };
 
 type ClaudeCodeCredentialBody = z.infer<typeof claudeCodeImportBody> | z.infer<typeof claudeCodeReimportBody>;
 type ClaudeCodeSetupTokenBody = z.infer<typeof claudeCodeSetupTokenImportBody> | z.infer<typeof claudeCodeSetupTokenReimportBody>;
-
-const consumeClaudeCodeCallback = async (
-  cb: { code?: string; state?: string; callback_url?: string },
-): Promise<{ ok: true; code: string; verifier: string } | { ok: false; error: string }> => {
-  let code = cb.code;
-  let state = cb.state;
-  if (cb.callback_url !== undefined) {
-    const parsed = extractClaudeCodeCallbackParams(cb.callback_url);
-    code = parsed.code;
-    state = parsed.state;
-  }
-  if (!code || !state) {
-    return { ok: false, error: 'callback.code and callback.state are required (or supply callback.callback_url)' };
-  }
-  // Atomic single-use DELETE+RETURNING — a replayed callback for the same
-  // state cannot succeed twice, and rows past their TTL are filtered out.
-  const pending = await getRepo().claudeCodePkcePending.consume(state);
-  if (!pending) {
-    return { ok: false, error: 'PKCE state not found or expired; restart the flow' };
-  }
-  return { ok: true, code, verifier: pending.verifier };
-};
 
 const ingestClaudeCodeCredential = async (
   body: ClaudeCodeCredentialBody,
@@ -814,9 +742,7 @@ const ingestClaudeCodeCredential = async (
     }
     const cb = body.callback;
     if (!cb) return { ok: false, error: 'callback is required when credentials_json is absent' };
-    const consumed = await consumeClaudeCodeCallback(cb);
-    if (!consumed.ok) return consumed;
-    const out = await importClaudeCodeFromCallback({ code: consumed.code, pkceVerifier: consumed.verifier, fetcher });
+    const out = await importClaudeCodeFromCallback({ code: cb.code, pkceVerifier: cb.verifier, fetcher });
     return { ok: true, ...out };
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
@@ -828,11 +754,9 @@ const ingestClaudeCodeSetupTokenCredential = async (
   fetcher: Fetcher,
 ): Promise<{ ok: true; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState } | { ok: false; error: string }> => {
   try {
-    const consumed = await consumeClaudeCodeCallback(body.callback);
-    if (!consumed.ok) return consumed;
     const out = await importClaudeCodeFromSetupTokenCallback({
-      code: consumed.code,
-      pkceVerifier: consumed.verifier,
+      code: body.callback.code,
+      pkceVerifier: body.callback.verifier,
       fetcher,
     });
     return { ok: true, ...out };

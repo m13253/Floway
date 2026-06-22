@@ -660,34 +660,32 @@ const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
   }),
 });
 
-test('POST /api/upstreams/codex-pkce-start returns an authorize URL and stashes the verifier', async () => {
-  const { repo, adminSession } = await setupAppTest();
+test('POST /api/upstreams/codex-authorize-url stamps SPA-provided challenge + state into the auth.openai.com URL', async () => {
+  const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
+  const resp = await requestApp(
+    '/api/upstreams/codex-authorize-url',
+    authed(adminSession, { challenge: 'TEST_CHALLENGE', state: 'TEST_STATE' }),
+  );
   assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
-  assertEquals(typeof body.state, 'string');
-  assertEquals(body.authorize_url.startsWith('https://auth.openai.com/oauth/authorize?'), true);
-  assertEquals(body.expires_in_seconds, 300);
-
-  const stashed = await repo.codexPkcePending.consume(body.state);
-  assertEquals(stashed !== null, true);
-  assertEquals(typeof stashed!.verifier, 'string');
+  const body = (await resp.json()) as { authorize_url: string };
+  const url = new URL(body.authorize_url);
+  assertEquals(url.origin + url.pathname, 'https://auth.openai.com/oauth/authorize');
+  assertEquals(url.searchParams.get('code_challenge'), 'TEST_CHALLENGE');
+  assertEquals(url.searchParams.get('code_challenge_method'), 'S256');
+  assertEquals(url.searchParams.get('state'), 'TEST_STATE');
 });
 
-test('POST /api/upstreams/codex-import (callback) consumes the PKCE state and returns the verifier exchange result', async () => {
+test('POST /api/upstreams/codex-import (callback) exchanges the SPA-supplied verifier for tokens and persists the row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
-  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
 
   await withMockedFetch(
     () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
     async () => {
       const resp = await requestApp(
         '/api/upstreams/codex-import',
-        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
+        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
@@ -695,51 +693,6 @@ test('POST /api/upstreams/codex-import (callback) consumes the PKCE state and re
       assertEquals(created.state.accounts[0].refresh_token_set, true);
     },
   );
-
-  const replay = await repo.codexPkcePending.consume(state);
-  assertEquals(replay, null);
-});
-
-test('POST /api/upstreams/codex-import rejects a replayed PKCE callback', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
-
-  await withMockedFetch(
-    () => jsonResponse({ access_token: 'at_cb', refresh_token: 'rt_cb', id_token: fakeIdToken({}), expires_in: 600 }),
-    async () => {
-      const first = await requestApp(
-        '/api/upstreams/codex-import',
-        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
-      );
-      assertEquals(first.status, 201);
-
-      const replay = await requestApp(
-        '/api/upstreams/codex-import',
-        authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state } }),
-      );
-      assertEquals(replay.status, 400);
-      const body = (await replay.json()) as { error: string };
-      assertEquals(body.error.includes('PKCE state not found or expired'), true);
-    },
-  );
-});
-
-test('POST /api/upstreams/codex-import rejects an expired PKCE state', async () => {
-  const { repo, adminSession } = await setupAppTest();
-
-  // Plant a pending row that has already expired so the consume() filter drops it.
-  const expiredState = 'expired_state';
-  await repo.codexPkcePending.put(expiredState, 'verifier_x', Date.now() - 1000);
-
-  const resp = await requestApp(
-    '/api/upstreams/codex-import',
-    authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', state: expiredState } }),
-  );
-  assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.includes('PKCE state not found or expired'), true);
 });
 
 test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with state', async () => {
@@ -779,18 +732,6 @@ test('POST /api/upstreams/codex-import rejects when both auth_json and callback 
   const body = (await resp.json()) as { error: { issues?: Array<{ message: string }> } | string };
   // The schema-level XOR refine surfaces as a zod validation error envelope.
   assertEquals(JSON.stringify(body).includes('Provide exactly one of auth_json or callback'), true);
-});
-
-test('POST /api/upstreams/codex-import rejects a malformed PKCE callback URL', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const resp = await requestApp(
-    '/api/upstreams/codex-import',
-    authed(adminSession, { name: 'Codex', callback: { callback_url: 'http://localhost:1455/auth/callback' } }),
-  );
-  assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.includes('missing'), true);
 });
 
 test('POST /api/upstreams/:id/codex-refresh-now rejects non-codex rows with 404', async () => {
@@ -943,27 +884,25 @@ const claudeCodeCredentialsJson = (overrides: { accessToken?: string; refreshTok
   },
 });
 
-test('POST /api/upstreams/claude-code-pkce-start returns an authorize URL and stashes the verifier', async () => {
-  const { repo, adminSession } = await setupAppTest();
+test('POST /api/upstreams/claude-code-authorize-url stamps SPA-provided challenge + state into the OAuth URL', async () => {
+  const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
+  const resp = await requestApp(
+    '/api/upstreams/claude-code-authorize-url',
+    authed(adminSession, { challenge: 'TEST_CHALLENGE', state: 'TEST_STATE', kind: 'oauth' }),
+  );
   assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
-  assertEquals(typeof body.state, 'string');
-  assertEquals(body.authorize_url.startsWith('https://claude.ai/oauth/authorize?'), true);
-  assertEquals(body.expires_in_seconds, 300);
-
-  const stashed = await repo.claudeCodePkcePending.consume(body.state);
-  assertEquals(stashed !== null, true);
-  assertEquals(typeof stashed!.verifier, 'string');
+  const body = (await resp.json()) as { authorize_url: string };
+  const url = new URL(body.authorize_url);
+  assertEquals(url.origin + url.pathname, 'https://claude.ai/oauth/authorize');
+  assertEquals(url.searchParams.get('code_challenge'), 'TEST_CHALLENGE');
+  assertEquals(url.searchParams.get('code_challenge_method'), 'S256');
+  assertEquals(url.searchParams.get('state'), 'TEST_STATE');
 });
 
-test('POST /api/upstreams/claude-code-import (callback) consumes the PKCE state and returns the verifier exchange result', async () => {
+test('POST /api/upstreams/claude-code-import (callback) exchanges the SPA-supplied verifier and persists a row with access token + refresh-token-set flag', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
-  const startResp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
 
   await withMockedFetch(
     async (request: Request) => {
@@ -974,46 +913,13 @@ test('POST /api/upstreams/claude-code-import (callback) consumes the PKCE state 
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-import',
-        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
+        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> } };
       assertEquals(created.provider, 'claude-code');
       assertEquals(created.state.accounts[0].refreshTokenSet, true);
       assertEquals(typeof created.state.accounts[0].accessToken?.expiresAt, 'number');
-    },
-  );
-
-  const replay = await repo.claudeCodePkcePending.consume(state);
-  assertEquals(replay, null);
-});
-
-test('POST /api/upstreams/claude-code-import rejects a replayed PKCE callback', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const startResp = await requestApp('/api/upstreams/claude-code-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
-
-  await withMockedFetch(
-    async (request: Request) => {
-      if (request.url === 'https://platform.claude.com/v1/oauth/token') return jsonResponse(claudeCodeTokenBody());
-      if (request.url === 'https://api.anthropic.com/api/oauth/profile') return jsonResponse(claudeCodeProfileBody);
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const first = await requestApp(
-        '/api/upstreams/claude-code-import',
-        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
-      );
-      assertEquals(first.status, 201);
-
-      const replay = await requestApp(
-        '/api/upstreams/claude-code-import',
-        authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', state } }),
-      );
-      assertEquals(replay.status, 400);
-      const body = (await replay.json()) as { error: string };
-      assertEquals(body.error.includes('PKCE state not found or expired'), true);
     },
   );
 });
@@ -1070,16 +976,14 @@ test('POST /api/upstreams/claude-code-import rejects when both credentials_json 
   assertEquals(JSON.stringify(body).includes('Provide exactly one of credentials_json or callback'), true);
 });
 
-test('POST /api/upstreams/claude-code-import rejects a malformed callback URL', async () => {
+test('POST /api/upstreams/claude-code-import rejects a callback missing the verifier', async () => {
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp(
     '/api/upstreams/claude-code-import',
-    authed(adminSession, { name: 'Claude Code', callback: { callback_url: 'https://platform.claude.com/oauth/code/callback' } }),
+    authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE' } }),
   );
   assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.includes('missing'), true);
 });
 
 test('PATCH /api/upstreams rejects config edits on a claude-code row', async () => {
@@ -1813,30 +1717,23 @@ const claudeCodePermissionError403 = () => jsonResponse(
   403,
 );
 
-test('POST /api/upstreams/claude-code-setup-token-pkce-start narrows the authorize URL scope to user:inference', async () => {
-  const { repo, adminSession } = await setupAppTest();
+test('POST /api/upstreams/claude-code-authorize-url with kind=setup-token narrows the scope to user:inference', async () => {
+  const { adminSession } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
+  const resp = await requestApp(
+    '/api/upstreams/claude-code-authorize-url',
+    authed(adminSession, { challenge: 'TEST_CHALLENGE', state: 'TEST_STATE', kind: 'setup-token' }),
+  );
   assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { state: string; authorize_url: string; expires_in_seconds: number };
-  assertEquals(typeof body.state, 'string');
-  assertEquals(body.expires_in_seconds, 300);
+  const body = (await resp.json()) as { authorize_url: string };
   const url = new URL(body.authorize_url);
   assertEquals(url.origin + url.pathname, 'https://claude.ai/oauth/authorize');
   assertEquals(url.searchParams.get('scope'), 'user:inference');
-
-  // The pending row is interchangeable between flows — only the URL scope is
-  // flow-specific.
-  const stashed = await repo.claudeCodePkcePending.consume(body.state);
-  assertEquals(stashed !== null, true);
 });
 
 test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a setup-token credential and persists tokenKind', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
-  const startResp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
 
   await withMockedFetch(
     async (request: Request) => {
@@ -1856,7 +1753,7 @@ test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a se
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE', state } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as {
@@ -1876,18 +1773,11 @@ test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a se
       assertEquals(expiresAt > Date.now() + 360 * 24 * 60 * 60 * 1000, true);
     },
   );
-
-  // Single-use semantics: the same state cannot be replayed.
-  const replay = await repo.claudeCodePkcePending.consume(state);
-  assertEquals(replay, null);
 });
 
 test('POST /api/upstreams/:id/claude-code-refresh-now rejects setup-token credentials', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
-  const startResp = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
 
   let upstreamId = '';
   await withMockedFetch(
@@ -1899,7 +1789,7 @@ test('POST /api/upstreams/:id/claude-code-refresh-now rejects setup-token creden
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE', state } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       if (resp.status !== 201) {
         const body = await resp.text();
@@ -1923,10 +1813,6 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  // Start: import setup-token.
-  const start1 = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
-  const { state: state1 } = (await start1.json()) as { state: string };
-
   let upstreamId = '';
   await withMockedFetch(
     async (request: Request) => {
@@ -1937,17 +1823,13 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
     async () => {
       const resp = await requestApp(
         '/api/upstreams/claude-code-setup-token-import',
-        authed(adminSession, { callback: { code: 'AUTH_CODE_1', state: state1 } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE_1', verifier: 'VERIFIER_1' } }),
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as { id: string };
       upstreamId = created.id;
     },
   );
-
-  // Re-import with a fresh setup token.
-  const start2 = await requestApp('/api/upstreams/claude-code-setup-token-pkce-start', authed(adminSession, {}));
-  const { state: state2 } = (await start2.json()) as { state: string };
 
   await withMockedFetch(
     async (request: Request) => {
@@ -1958,7 +1840,7 @@ test('POST /api/upstreams/:id/claude-code-setup-token-reimport replaces credenti
     async () => {
       const resp = await requestApp(
         `/api/upstreams/${upstreamId}/claude-code-setup-token-reimport`,
-        authed(adminSession, { callback: { code: 'AUTH_CODE_2', state: state2 } }),
+        authed(adminSession, { callback: { code: 'AUTH_CODE_2', verifier: 'VERIFIER_2' } }),
       );
       assertEquals(resp.status, 200);
     },
@@ -2181,13 +2063,10 @@ test('POST /api/upstreams/:id/probe-quota 404s for an unknown upstream id', asyn
 test('POST /api/upstreams/codex-import honors the proxy_fallback_list override over the persisted list', async () => {
   const { adminSession } = await setupAppTest();
 
-  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
-
   const resp = await requestApp(
     '/api/upstreams/codex-import',
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', state },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );
@@ -2202,13 +2081,10 @@ test('POST /api/upstreams/:id/codex-reimport honors the proxy_fallback_list over
 
   const created = (await (await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()))).json()) as { id: string };
 
-  const startResp = await requestApp('/api/upstreams/codex-pkce-start', authed(adminSession, {}));
-  const { state } = (await startResp.json()) as { state: string };
-
   const resp = await requestApp(
     `/api/upstreams/${created.id}/codex-reimport`,
     authed(adminSession, {
-      callback: { code: 'AUTH_CODE', state },
+      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
       proxy_fallback_list: [{ id: 'p_unknown' }],
     }),
   );
