@@ -1,14 +1,15 @@
 <script lang="ts">
 import { useEventListener } from '@vueuse/core';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
-import { callApi, useApi } from '../../api/client.ts';
-import type { ApiKey } from '../../api/types.ts';
-import RecordDetail from '../../components/dump/RecordDetail.vue';
-import RequestList from '../../components/dump/RequestList.vue';
-import { useDumpSubscription } from '../../composables/useDumpSubscription.ts';
-import { useHashRef } from '../../composables/useHashRef.ts';
+import { callApi, useApi } from '../../../api/client.ts';
+import type { ApiKey } from '../../../api/types.ts';
+import RecordDetail from '../../../components/dump/RecordDetail.vue';
+import RequestList from '../../../components/dump/RequestList.vue';
+import { useDumpSubscription } from '../../../composables/useDumpSubscription.ts';
+import { useHashRef } from '../../../composables/useHashRef.ts';
 
 export const useRequestsPageData = defineBasicLoader(async () => {
   const api = useApi();
@@ -24,7 +25,9 @@ export const useRequestsPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
+const props = defineProps<{ keyId: string }>();
 const api = useApi();
+const router = useRouter();
 const initialData = useRequestsPageData();
 
 const keys = ref<ApiKey[] | null>(initialData.data.value.keys);
@@ -36,21 +39,24 @@ const loadError = ref<string | null>(initialData.data.value.error);
 // list to filter.
 const dumpKeys = computed(() => keys.value === null ? null : keys.value.filter(k => k.dump_retention_seconds !== null));
 
-const selectedKeyId = ref<string>(dumpKeys.value?.[0]?.id ?? '');
+// The URL is the single source of truth for the active key. Operator picks
+// flow back through `router.replace` so the address bar always shows the
+// currently-inspected key and the URL is shareable.
+const selectedKeyId = computed(() => props.keyId);
 const selectedRecordId = useHashRef();
 
 const subscription = useDumpSubscription(selectedKeyId);
 
-// Single setter for swapping the active key: the selected record id belongs
-// to the previous key and would 404 against the new one, so null it in the
-// same tick.
 const selectKey = (id: string) => {
-  selectedKeyId.value = id;
+  if (id === props.keyId) return;
+  // Drop the record-id hash in the same navigation: a record id from key A
+  // would 404 against key B and the API endpoint enforces the (keyId,
+  // recordId) pair, so carrying the hash across would render as the same
+  // "Record not found" the explicit cross-key paste produces.
+  void router.replace({ path: `/dashboard/requests/${id}` });
   selectedRecordId.value = null;
 };
 
-// Refetch the keys list when the operator switches back to this tab so a
-// retention toggle made elsewhere reflects without a full reload.
 const reloadKeys = async () => {
   const res = await callApi<ApiKey[]>(() => api.api.keys.$get());
   if (res.error) {
@@ -63,20 +69,12 @@ const reloadKeys = async () => {
 
 useEventListener(window, 'focus', () => { void reloadKeys(); });
 
-// Reconcile selectedKeyId when the dump-enabled set changes: if the current
-// pick is no longer in the list, fall back to the first available (or '').
-// When the keys list itself failed to load (`dumpKeys === null`), leave the
-// selection alone — the page renders the load-error block instead.
-watch(dumpKeys, next => {
-  if (next === null) return;
-  if (selectedKeyId.value === '') {
-    selectKey(next[0]?.id ?? '');
-    return;
-  }
-  if (!next.some(k => k.id === selectedKeyId.value)) {
-    selectKey(next[0]?.id ?? '');
-  }
-});
+// True when the URL points at a key that either no longer exists or no
+// longer has dump retention enabled. Distinct from "list is loading" —
+// only flagged once `dumpKeys` is a real array. The page renders a
+// not-found block in that case rather than letting the subscription chase
+// an upstream 404.
+const keyNotFound = computed(() => dumpKeys.value !== null && !dumpKeys.value.some(k => k.id === props.keyId));
 </script>
 
 <template>
@@ -85,7 +83,14 @@ watch(dumpKeys, next => {
       {{ loadError }}
     </div>
 
-    <div class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
+    <div v-if="keyNotFound" class="glass-card animate-in mx-auto max-w-md px-6 py-10 text-center text-sm text-gray-400">
+      <p class="mb-3 text-gray-300">This key does not exist or no longer has dump retention enabled.</p>
+      <RouterLink to="/dashboard/requests" class="text-accent-cyan hover:underline">
+        Pick another key →
+      </RouterLink>
+    </div>
+
+    <div v-else class="glass-card animate-in flex h-[calc(100dvh-130px)] min-h-[560px] flex-col overflow-hidden lg:h-[calc(100vh-140px)] lg:flex-row">
       <aside class="flex max-h-72 w-full min-h-0 shrink-0 flex-col border-b border-white/[0.06] lg:max-h-none lg:w-90 lg:border-b-0 lg:border-r">
         <div class="border-b border-white/[0.06] p-3">
           <select
@@ -120,10 +125,7 @@ watch(dumpKeys, next => {
       </aside>
 
       <div class="flex min-w-0 min-h-0 flex-1 flex-col">
-        <div v-if="selectedKeyId === ''" class="flex h-full items-center justify-center px-6 text-center text-sm text-gray-600">
-          Select an API key on the left to view captured requests.
-        </div>
-        <RecordDetail v-else :key-id="selectedKeyId" :record-id="selectedRecordId" />
+        <RecordDetail :key-id="selectedKeyId" :record-id="selectedRecordId" />
       </div>
     </div>
   </div>

@@ -46,7 +46,8 @@ declare module 'vue-router/auto-routes' {
       | '/dashboard/keys/'
       | '/dashboard/models'
       | '/dashboard/performance'
-      | '/dashboard/requests'
+      | '/dashboard/requests/'
+      | '/dashboard/requests/[keyId]'
       | '/dashboard/settings'
       | '/dashboard/upstreams/[id]'
       | '/dashboard/upstreams/new'
@@ -81,11 +82,18 @@ declare module 'vue-router/auto-routes' {
       Record<never, never>,
       | never
     >,
-    '/dashboard/requests': RouteRecordInfo<
-      '/dashboard/requests',
+    '/dashboard/requests/': RouteRecordInfo<
+      '/dashboard/requests/',
       '/dashboard/requests',
       Record<never, never>,
       Record<never, never>,
+      | never
+    >,
+    '/dashboard/requests/[keyId]': RouteRecordInfo<
+      '/dashboard/requests/[keyId]',
+      '/dashboard/requests/:keyId',
+      { keyId: ParamValue<true> },
+      { keyId: ParamValue<false> },
       | never
     >,
     '/dashboard/settings': RouteRecordInfo<
@@ -162,7 +170,8 @@ declare module 'vue-router/auto-routes' {
         | '/dashboard/keys/'
         | '/dashboard/models'
         | '/dashboard/performance'
-        | '/dashboard/requests'
+        | '/dashboard/requests/'
+        | '/dashboard/requests/[keyId]'
         | '/dashboard/settings'
         | '/dashboard/upstreams/[id]'
         | '/dashboard/upstreams/new'
@@ -195,9 +204,15 @@ declare module 'vue-router/auto-routes' {
       views:
         | never
     }
-    'src/pages/dashboard/requests.vue': {
+    'src/pages/dashboard/requests/index.vue': {
       routes:
-        | '/dashboard/requests'
+        | '/dashboard/requests/'
+      views:
+        | never
+    }
+    'src/pages/dashboard/requests/[keyId].vue': {
+      routes:
+        | '/dashboard/requests/[keyId]'
       views:
         | never
     }

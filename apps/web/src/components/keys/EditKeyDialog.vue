@@ -179,7 +179,7 @@ const save = async () => {
           {{ retentionWarning }}
         </p>
         <p v-if="retentionEnabled" class="text-xs text-gray-500">
-          <RouterLink to="/dashboard/requests" class="text-accent-cyan hover:underline">
+          <RouterLink :to="`/dashboard/requests/${apiKey.id}`" class="text-accent-cyan hover:underline">
             View captured requests →
           </RouterLink>
         </p>
