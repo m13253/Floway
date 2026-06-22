@@ -26,6 +26,7 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -83,6 +84,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -151,6 +153,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -324,7 +327,11 @@ test('/v1/embeddings rejects model on custom upstream without /embeddings capabi
   );
 });
 
-test('/v1/embeddings preserves custom upstream /models HTTP errors', async () => {
+// A custom upstream whose `/v1/models` fetch rejects is treated as
+// temporarily empty: the request resolves to 404 model-missing with the
+// failing upstream's display name appended parenthetically, instead of
+// the gateway forwarding the upstream's raw HTTP status to the client.
+test('/v1/embeddings reports the failed upstream parenthetically when /v1/models rejects', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -367,15 +374,22 @@ test('/v1/embeddings preserves custom upstream /models HTTP errors', async () =>
         }),
       });
 
-      assertEquals(response.status, 403);
+      assertEquals(response.status, 404);
       assertEquals(await response.json(), {
-        error: { message: 'bad embed key' },
+        error: {
+          message: 'Model custom-embed-model is not available on any configured upstream (models from upstream(s) "Embedding Provider" failed to load).',
+          type: 'api_error',
+        },
       });
     },
   );
 });
 
-test('/v1/embeddings preserves model-load errors hidden by another provider', async () => {
+// Even when a second upstream's catalog loads successfully (and so its
+// models are routable), the rejected upstream's name still surfaces in
+// the model-missing body so the operator can tell the failure apart
+// from a genuine "no upstream has this model" miss.
+test('/v1/embeddings reports the failed upstream even when a sibling upstream\'s catalog loads', async () => {
   const { apiKey, repo } = await setupAppTest();
   clearInProcessCopilotTokenCache();
 
@@ -406,6 +420,7 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
@@ -430,9 +445,9 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
         }),
       });
 
-      assertEquals(response.status, 403);
+      assertEquals(response.status, 404);
       const body = await response.json();
-      assertEquals(body.error.message, 'bad embed key');
+      assertEquals(body.error.message, 'Model custom-embed-model is not available on any configured upstream (models from upstream(s) "Embedding Provider" failed to load).');
     },
   );
 });
@@ -452,6 +467,7 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {

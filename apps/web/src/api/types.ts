@@ -70,9 +70,18 @@ export interface CopilotUser {
 }
 
 export interface CopilotUpstreamConfig {
-  accountType: 'individual' | 'business' | 'enterprise';
   user: CopilotUser;
   githubTokenSet?: boolean;
+}
+
+// Per-tier data-plane host GitHub last routed our PAT to. Populated on the
+// first successful token exchange and refreshed alongside the bearer token
+// (matches vscode-copilot-chat domainServiceImpl.ts). Null on a freshly-
+// imported upstream that hasn't completed a token exchange — but the import
+// path mints one synchronously, so a null here in steady state means
+// something is wrong (PAT revoked, network blocked).
+export interface CopilotUpstreamState {
+  copilotToken: { baseUrl: string } | null;
 }
 
 // Account-pool identities derived from the id_token at codex import. v1
@@ -257,7 +266,7 @@ interface UpstreamRecordBase {
 export type UpstreamRecord =
   | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
   | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
-  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
   | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
   | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
   | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });

@@ -27,7 +27,6 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     ...rest,
     config: overrideConfig ?? {
       githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,
-      accountType: 'individual',
       user: { id: 1, login: 'tester', name: 'Test User', avatar_url: 'https://example.com/avatar.png' },
     },
   };
@@ -139,6 +138,7 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -183,6 +183,7 @@ test('Copilot provider exposes only Responses for Claude when available', async 
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -232,6 +233,7 @@ test('Copilot provider owns the claude-* Messages capability workaround', async 
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -285,6 +287,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -343,7 +346,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
 
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-resp', supported_endpoints: ['/responses'] }]));
@@ -419,6 +422,7 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -433,23 +437,6 @@ test('Copilot provider exposes its default flag set via UpstreamModel.enabledFla
       assertEquals(model.enabledFlags.has('retry-cyber-policy'), true);
       assertEquals(model.enabledFlags.has('messages-web-search-shim'), true);
     },
-  );
-});
-
-test('Copilot provider rejects malformed account type instead of falling back', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-
-  await assertRejects(
-    () =>
-      createCopilotProvider({
-        ...copilotUpstream,
-        config: {
-          ...(copilotUpstream.config as Record<string, unknown>),
-          accountType: 'toString',
-        },
-      }),
-    Error,
-    'accountType must be one of individual, business, enterprise',
   );
 });
 
@@ -471,6 +458,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -542,6 +530,7 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -617,7 +606,7 @@ test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
@@ -652,7 +641,7 @@ const copilotPreflight = (request: Request): Response | null => {
   const url = new URL(request.url);
   if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
   if (url.pathname === '/copilot_internal/v2/token') {
-    return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+    return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
   }
   return null;
 };
@@ -851,7 +840,7 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
       { object: 'list', data: [{ id: 'm1', name: 'm1', version: '1', supported_endpoints: [], capabilities: { type: 'chat', limits: {} } }] },
       1_000_000,
     ),
-    copilotToken: { token: 'tok', expiresAt: 2_000_000 },
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
   };
   const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
   assertEquals(round.copilotToken?.token, 'tok');

@@ -2,14 +2,19 @@
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CopilotUpstreamConfig } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, CopilotUpstreamState } from '../../api/types.ts';
+import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
+import { Card } from '@floway-dev/ui';
 
 const props = defineProps<{
   upstreamId: string;
   config: CopilotUpstreamConfig;
+  state: CopilotUpstreamState | null;
   initialQuota?: CopilotQuotaSnapshot | null;
   initialQuotaError?: string | null;
 }>();
+
+const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.state));
 
 const api = useApi();
 const quota = ref<CopilotQuotaSnapshot | null>(props.initialQuota ?? null);
@@ -43,21 +48,23 @@ const usedPercent = computed(() => {
 <template>
   <div class="space-y-4">
     <div class="space-y-3">
-      <div class="flex items-center gap-3">
-        <img
-          v-if="config.user.avatar_url"
-          :src="config.user.avatar_url"
-          :alt="config.user.login"
-          class="size-10 rounded-full"
-        >
-        <div>
-          <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
-          <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ config.accountType }}</p>
+      <Card :padded="false" class="space-y-3 p-4">
+        <div class="flex items-center gap-3">
+          <img
+            v-if="config.user.avatar_url"
+            :src="config.user.avatar_url"
+            :alt="config.user.login"
+            class="size-10 rounded-full"
+          >
+          <div>
+            <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
+            <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ accountTypeDisplay }}</p>
+          </div>
         </div>
-      </div>
+      </Card>
     </div>
 
-    <div class="space-y-3 border-t border-white/[0.06] pt-4">
+    <Card :padded="false" class="space-y-3 p-4">
       <header class="flex items-center justify-between">
         <h4 class="text-sm font-semibold text-white">Premium quota</h4>
         <button
@@ -88,6 +95,6 @@ const usedPercent = computed(() => {
         </div>
       </template>
       <p v-else-if="!loadingQuota" class="text-xs text-gray-500">No premium quota reported.</p>
-    </div>
+    </Card>
   </div>
 </template>

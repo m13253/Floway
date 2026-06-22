@@ -5,6 +5,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -63,7 +64,7 @@ interface ResponsesWebSocketClientEvent {
   [key: string]: unknown;
 }
 
-export const responsesWebSocket = async (c: Context): Promise<Response> => {
+export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
@@ -85,8 +86,8 @@ export const responsesWebSocket = async (c: Context): Promise<Response> => {
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketHandlers => {
-  const session = createResponsesWsSession(c.get('apiKeyId') as string);
+const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+  const session = createResponsesWsSession(apiKeyFromContext(c).id);
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -122,7 +123,7 @@ const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketHandlers 
 };
 
 const handleClientMessage = async (
-  c: Context,
+  c: AuthedContext,
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,

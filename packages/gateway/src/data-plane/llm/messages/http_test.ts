@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
+import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import type { ApiKey, User } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -36,12 +38,34 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeApp = (): Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }> => {
-  const app = new Hono<{ Variables: { apiKeyId: string; apiKeyUpstreamIds: readonly string[] | null; userUpstreamIds: readonly string[] | null } }>();
+const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
+  id: API_KEY_ID,
+  userId: 1,
+  name: 'http_test',
+  key: 'sk-http-test',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  upstreamIds: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+const buildUser = (overrides: Partial<User> = {}): User => ({
+  id: 1,
+  username: 'http_test',
+  passwordHash: null,
+  isAdmin: false,
+  upstreamIds: null,
+  canViewGlobalTelemetry: false,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  deletedAt: null,
+  ...overrides,
+});
+
+const makeApp = (): Hono<{ Variables: AuthVars }> => {
+  const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
-    c.set('apiKeyId', API_KEY_ID);
-    c.set('apiKeyUpstreamIds', null);
-    c.set('userUpstreamIds', null);
+    c.set('apiKey', buildApiKey());
+    c.set('user', buildUser());
     await next();
   });
   app.post('/v1/messages', messagesHttp.generate);

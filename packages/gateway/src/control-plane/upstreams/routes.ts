@@ -7,12 +7,13 @@ import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { shortId } from '../../shared/short-id.ts';
-import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
+import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
@@ -57,7 +58,7 @@ import {
   importCodexFromCallback,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache, exchangeCopilotToken, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -448,7 +449,10 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
     if (!data.access_token) return c.json({ status: 'error', error: 'Unknown response' }, 500);
 
     const user = await fetchGitHubUser(data.access_token, fetcher);
-    const accountType = await detectAccountType(data.access_token, fetcher);
+    // Seed state with a token now so the upstream is immediately usable and
+    // dashboard knows the per-tier `endpoints.api` GitHub routes this PAT to.
+    // Also validates the PAT — a bad token throws before we touch the repo.
+    const tokenEntry = await exchangeCopilotToken(data.access_token, fetcher);
 
     const repo = getRepo().upstreams;
     const upstreams = await repo.list();
@@ -456,8 +460,12 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
     const now = new Date().toISOString();
     const config: CopilotUpstreamConfig = {
       githubToken: data.access_token,
-      accountType,
       user,
+    };
+    const prevState = existing ? readCopilotUpstreamState(existing.state) : { knownModels: null, copilotToken: null };
+    const nextState: CopilotUpstreamState = {
+      ...prevState,
+      copilotToken: tokenEntry,
     };
 
     const record: UpstreamRecord = existing
@@ -465,6 +473,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           ...existing,
           config,
           updatedAt: now,
+          state: nextState,
         }
       : {
           id: newId(),
@@ -482,11 +491,15 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           // correctly without clobbering a prior persisted choice.
           proxyFallbackList: proxyFallbackList !== undefined ? normalizeProxyFallbackList(proxyFallbackList) : [],
           config,
-          state: null,
+          state: nextState,
         };
 
     await repo.save(record);
-    await clearCopilotTokenCache(record.id);
+    // Drop the in-process memo so any isolate that already held a token entry
+    // for this upstream id (from a prior rotation) re-hydrates from the fresh
+    // state we just wrote, rather than serving up to 60s of stale auth.
+    // Persisted state stays — we just put a freshly minted token there.
+    clearInProcessCopilotTokenCache();
     await warmModelsCache(record, c);
     return c.json({ status: 'complete', user, upstream: await serializeForResponse(record) });
   } catch (e: unknown) {
@@ -1182,7 +1195,7 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
   }
 
   const body = c.req.valid('json');
-  const actor = c.get('userId') as number;
+  const actor = userFromContext(c).id;
   let fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });

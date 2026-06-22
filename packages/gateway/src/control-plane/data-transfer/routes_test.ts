@@ -100,7 +100,6 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   proxyFallbackList: [],
   config: {
     githubToken: 'ghu-alice',
-    accountType: 'individual',
     user: {
       id: 100,
       login: 'alice',

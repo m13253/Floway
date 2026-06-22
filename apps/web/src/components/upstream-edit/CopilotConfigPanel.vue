@@ -23,6 +23,7 @@ defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
     v-if="record"
     :upstream-id="record.id"
     :config="record.config"
+    :state="record.state"
     :initial-quota="initialQuota"
     :initial-quota-error="initialQuotaError"
   />

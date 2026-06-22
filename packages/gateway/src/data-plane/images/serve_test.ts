@@ -32,7 +32,7 @@ test('/v1/images/generations 404s when no upstream provides the model', async ()
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
@@ -132,7 +132,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
@@ -197,7 +197,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));

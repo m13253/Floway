@@ -25,7 +25,6 @@ const azureConfig = {
 
 const copilotConfig = {
   githubToken: 'ghu_secret',
-  accountType: 'individual',
   user: {
     id: 12345,
     login: 'octo',
@@ -1862,10 +1861,11 @@ test('POST /api/upstreams/copilot/auth/poll persists the override on the freshly
   await repo.proxies.insert({ id: 'p_real', name: 'Real', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
   // Drive the device-flow poll deterministically: every GitHub-side call
-  // the handler makes (oauth token exchange, /user, /copilot_internal/user,
-  // and the post-save warmup's /copilot_internal/v2/token mint) must
-  // resolve, otherwise the warmup falls into copilot auth's withRetry
-  // backoff and the test stalls for ~7s before passing.
+  // the handler makes (oauth token exchange, /user, and the import-time
+  // /copilot_internal/v2/token mint that seeds state.copilotToken with the
+  // per-tier endpoints.api) must resolve, otherwise the token exchange falls
+  // into copilot auth's withRetry backoff and the test stalls for ~7s before
+  // passing.
   await withMockedFetch(
     async (request: Request) => {
       const url = new URL(request.url);
@@ -1874,9 +1874,6 @@ test('POST /api/upstreams/copilot/auth/poll persists the override on the freshly
       }
       if (url.hostname === 'api.github.com' && url.pathname === '/user') {
         return jsonResponse({ login: 'octo', avatar_url: 'https://example.com/a.png', name: 'Octo', id: 99 });
-      }
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') {
-        return jsonResponse({ copilot_plan: 'individual' });
       }
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({ token: 'ct_test', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200, endpoints: { api: 'https://api.individual.githubcopilot.com' } });

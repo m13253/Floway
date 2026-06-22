@@ -1,6 +1,4 @@
-import type { Context } from 'hono';
-
-import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
+import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
@@ -23,18 +21,6 @@ export interface GatewayCtx {
   readonly currentColo: string | null;
 }
 
-// Names the auth-middleware-stamped Hono variables this builder reads. Hono
-// gives no compile-time guarantee that a middleware ran; the alias is the
-// local declaration of what `auth.ts` is contracted to set so the lookup
-// sheds its inline cast.
-export interface GatewayCtxAuthVars {
-  apiKeyId: string;
-  apiKeyUpstreamIds: readonly string[] | null;
-  userUpstreamIds: readonly string[] | null;
-}
-
-type AuthedContext = Context<{ Variables: GatewayCtxAuthVars }>;
-
 export interface CreateGatewayCtxOptions {
   wantsStream: boolean;
   // WebSocket-style call sites own the AbortController (so the upgrade
@@ -45,7 +31,7 @@ export interface CreateGatewayCtxOptions {
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
-  const apiKeyId = c.get('apiKeyId');
+  const apiKeyId = apiKeyFromContext(c).id;
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   return {
     apiKeyId,

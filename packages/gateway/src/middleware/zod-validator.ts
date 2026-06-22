@@ -2,6 +2,8 @@ import { zValidator as zValidatorBase } from '@hono/zod-validator';
 import type { Context, ValidationTargets } from 'hono';
 import type { z, ZodType } from 'zod';
 
+import type { AuthVars } from './auth.ts';
+
 // Wrap @hono/zod-validator so validation failures return our canonical
 // `{ error: msg }` 400 shape — matching what the hand-written control-plane
 // validators returned before this change. Without the wrapper, zValidator's
@@ -26,6 +28,7 @@ export const zValidator = <T extends ZodType, Target extends keyof ValidationTar
 // Handler context aliases for routes whose request shape is declared via
 // zValidator middleware. Handlers in separate files import these to type
 // `c.req.valid('json' | 'query')` precisely without restating the env / path
-// generics every time.
-export type CtxWithJson<S extends ZodType> = Context<{ Variables: Record<string, unknown> }, string, { in: { json: z.infer<S> }; out: { json: z.infer<S> } }>;
-export type CtxWithQuery<S extends ZodType> = Context<{ Variables: Record<string, unknown> }, string, { in: { query: z.infer<S> }; out: { query: z.infer<S> } }>;
+// generics every time. The Variables generic mirrors app.ts so handlers can
+// still call apiKeyFromContext / userFromContext on the same Context.
+export type CtxWithJson<S extends ZodType> = Context<{ Variables: AuthVars }, string, { in: { json: z.infer<S> }; out: { json: z.infer<S> } }>;
+export type CtxWithQuery<S extends ZodType> = Context<{ Variables: AuthVars }, string, { in: { query: z.infer<S> }; out: { query: z.infer<S> } }>;
