@@ -1,9 +1,9 @@
 // All Claude Code OAuth + data-plane upstream constants. Pinned to the same
-// public OAuth client the official `claude` CLI ships with. Independent
-// cross-references (different authors, not the same person reshipping under
-// two names):
-// https://github.com/synacktraa/ccauth/blob/master/ccauth/runner.py (Python; full OAuth flow)
-// https://github.com/ghboke/claude-code-reverse/blob/main/THIRD_PARTY_CLIENT_GUIDE.md (decompile guide)
+// public OAuth client the official `claude` CLI ships with. Cross-checked
+// against the two top-popularity independent gateways shipping a Claude
+// Code OAuth flow (different authors from each other and from Wei-Shaw):
+//   https://github.com/plandex-ai/plandex/blob/e2d772072efadbe41d2946d97d79be55532dbab5/app/cli/lib/claude_max.go
+//   https://github.com/decolua/9router/blob/0c47c891e7a6c1a47c35b286235a132c0a5aa0a8/open-sse/providers/registry/claude.js
 // Wei-Shaw maintains both `sub2api` and `claude-relay-service` — those
 // repos count as ONE source for cross-reference purposes; cite them when
 // useful but never as two independent confirmations.
@@ -16,25 +16,25 @@ export const CLAUDE_CODE_OAUTH_TOKEN_URL = 'https://platform.claude.com/v1/oauth
 // Cannot be changed without re-registering the OAuth client.
 export const CLAUDE_CODE_REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
 
-// OAuth scope set for the operator-driven dashboard import flow. NOT the
-// scope set the official CLI requests when you run `claude` locally — the
-// CLI bundle (verified via grep of @anthropic-ai/claude-code@1.0.128
-// cli.js) requests only three scopes: `org:create_api_key user:profile
-// user:inference`. The broader six-scope set we ship is the convention
-// for operator-driven dashboard imports, so the issued token can later
-// be used for sessions / MCP servers / file uploads on behalf of the
-// operator without re-consenting. Independent cross-references:
-//   https://github.com/synacktraa/ccauth/blob/master/ccauth/runner.py (SCOPE — exact 6-string match)
-//   https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeOAuth — "Browser URL")
-//   https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES)
-// The narrower 5-scope subset (dropping `org:create_api_key`) is what
-// ghboke/claude-code-reverse uses for token-only API-call style flows
-// where the token will never be used to mint API keys — not applicable
-// to us because our import path stores a credential whose scope set
-// must remain stable across re-imports.
-export const CLAUDE_CODE_OAUTH_SCOPE =
-  'org:create_api_key user:profile user:inference user:sessions:claude_code '
-  + 'user:mcp_servers user:file_upload';
+// OAuth scope set: the three-scope CLI-heritage grant.
+//   `org:create_api_key` — broadly available on every claude.ai OAuth flow;
+//     keeping it means a future "mint an API key" affordance can land
+//     without a re-consent loop.
+//   `user:profile`       — required for `/api/oauth/profile` identity.
+//   `user:inference`     — required for `/v1/messages` data-plane calls.
+// This is what the official @anthropic-ai/claude-code CLI requests (cli.js
+// 1.0.128, verified via grep) and what the two top-popularity independent
+// gateways ship: plandex-ai/plandex (15k★, `claudeMaxScopes`) and
+// decolua/9router (18k★, registry/claude.js `oauth.scopes`).
+//   https://github.com/plandex-ai/plandex/blob/e2d772072efadbe41d2946d97d79be55532dbab5/app/cli/lib/claude_max.go#L24
+//   https://github.com/decolua/9router/blob/0c47c891e7a6c1a47c35b286235a132c0a5aa0a8/open-sse/providers/registry/claude.js#L74-L78
+// Wei-Shaw's sub2api + claude-relay-service ship a broader six-scope set
+// (adding `user:sessions:claude_code`, `user:mcp_servers`,
+// `user:file_upload`); we deliberately do not, because we do not consume
+// those scopes anywhere and a documented case (askalf/dario's repo) of
+// Anthropic flipping the accepted shape across CC versions argues for the
+// minimum-viable grant.
+export const CLAUDE_CODE_OAUTH_SCOPE = 'org:create_api_key user:profile user:inference';
 
 // Setup-Token scope: inference only. This is the credential class minted by
 // Anthropic's "Create a Long-Lived Token" UI — safer for shared deployments
