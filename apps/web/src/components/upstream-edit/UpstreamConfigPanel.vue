@@ -10,13 +10,11 @@ import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
-import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { CopilotQuotaSnapshot, FlagDef, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
-import { assertNever } from '../../utils/assert-never.ts';
+import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
-const activeProvider = defineModel<UpstreamProviderKind>('provider', { required: true });
 const name = defineModel<string>('name', { required: true });
 const enabled = defineModel<boolean>('enabled', { required: true });
 const flagOverrides = defineModel<Record<string, boolean>>('flagOverrides', { required: true });
@@ -27,6 +25,10 @@ const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
 const props = defineProps<{
+  // Provider is owned by the parent — in create mode it comes from the
+  // route segment, in edit mode it comes from the record. Either way the
+  // chooser has moved out of this panel, so the prop is one-way only.
+  provider: UpstreamProviderKind;
   mode: 'create' | 'edit';
   record: UpstreamRecord | null;
   flags: FlagDef[];
@@ -65,27 +67,6 @@ const codexRecord = computed(() => props.record?.provider === 'codex' ? props.re
 const claudeCodeRecord = computed(() => props.record?.provider === 'claude-code' ? props.record : null);
 const copilotRecord = computed(() => props.record?.provider === 'copilot' ? props.record : null);
 
-const providerBadgeClass = (kind: UpstreamProviderKind) => {
-  switch (kind) {
-  case 'azure': return 'border-accent-emerald/30 bg-accent-emerald/10 text-accent-emerald';
-  case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
-  case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
-  case 'claude-code': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'ollama': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
-  }
-  return assertNever(kind);
-};
-
-const providerBadgeLabel = (kind: UpstreamProviderKind): string => ({
-  custom: 'Custom',
-  azure: 'Azure',
-  copilot: 'Copilot',
-  codex: 'Codex',
-  'claude-code': 'Claude Code',
-  ollama: 'Ollama',
-}[kind]);
-
 // Intrinsic floor for the aside: smallest height at which every
 // non-flag-editor section is fully laid out AND the flag editor still has
 // its declared min-h-[16rem]. Drives `min-h` on the aside so the rail
@@ -115,7 +96,7 @@ const measureFloor = () => {
   if (header) h += header.getBoundingClientRect().height;
   intrinsicFloorPx.value = h;
 };
-watch([contentRef, flagSectionRef, headerRef, activeProvider], () => {
+watch([contentRef, flagSectionRef, headerRef, () => props.provider], () => {
   floorObserver?.disconnect();
   const content = contentRef.value;
   if (!content) return;
@@ -137,8 +118,8 @@ onBeforeUnmount(() => floorObserver?.disconnect());
     <header ref="headerRef" class="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
       <span
         class="rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-        :class="providerBadgeClass(activeProvider)"
-      >{{ providerBadgeLabel(activeProvider) }}</span>
+        :class="providerBadgeClass(provider)"
+      >{{ providerMeta(provider).label }}</span>
       <h2 class="min-w-0 truncate text-sm font-semibold text-white">
         {{ name || (mode === 'create' ? 'New upstream' : 'Upstream') }}
       </h2>
@@ -147,17 +128,12 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
     <div ref="contentRef" class="flex min-h-0 flex-1 flex-col gap-6 px-5 py-5">
 
-      <section v-if="mode === 'create'" class="shrink-0">
-        <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Provider</p>
-        <ProviderPicker v-model="activeProvider" />
-      </section>
-
-      <section v-if="!(mode === 'create' && (activeProvider === 'copilot' || activeProvider === 'codex' || activeProvider === 'claude-code'))" class="shrink-0">
+      <section v-if="!(mode === 'create' && (provider === 'copilot' || provider === 'codex' || provider === 'claude-code'))" class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
 
-      <section v-if="activeProvider === 'custom'" class="shrink-0">
+      <section v-if="provider === 'custom'" class="shrink-0">
         <CustomConfigPanel
           v-model="customDraft"
           :bearer-token-set="customBearerTokenSet"
@@ -169,7 +145,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="activeProvider === 'azure'" class="shrink-0">
+      <section v-else-if="provider === 'azure'" class="shrink-0">
         <AzureConfigPanel
           v-model="azureDraft"
           :api-key-set="azureApiKeySet"
@@ -177,7 +153,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="activeProvider === 'ollama'" class="shrink-0">
+      <section v-else-if="provider === 'ollama'" class="shrink-0">
         <OllamaConfigPanel
           v-model="ollamaDraft"
           :api-key-set="ollamaApiKeySet"
@@ -189,7 +165,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="activeProvider === 'copilot'" class="shrink-0">
+      <section v-else-if="provider === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
           :record="copilotRecord"
           :initial-quota="initialCopilotQuota"
@@ -199,7 +175,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="activeProvider === 'codex'" class="shrink-0">
+      <section v-else-if="provider === 'codex'" class="shrink-0">
         <CodexConfigPanel
           :mode="mode"
           :record="codexRecord"
@@ -209,7 +185,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="activeProvider === 'claude-code'" class="shrink-0">
+      <section v-else-if="provider === 'claude-code'" class="shrink-0">
         <ClaudeCodeConfigPanel
           :mode="mode"
           :record="claudeCodeRecord"
@@ -255,7 +231,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <FlagOverridesEditor
           v-model="flagOverrides"
           :flags="flags"
-          :provider-kind="activeProvider"
+          :provider-kind="provider"
           name-prefix="upstream-flag"
           class="min-h-0 flex-1"
         />

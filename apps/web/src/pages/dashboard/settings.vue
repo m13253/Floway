@@ -4,7 +4,7 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { ProxyRecord, SearchConfig, UpstreamRecord } from '../../api/types.ts';
+import type { ProxyRecord, SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import ProxyEditDialog from '../../components/proxy-edit/ProxyEditDialog.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
@@ -83,7 +83,7 @@ const openProxyDialog = (record: ProxyRecord | null): void => {
           v-model:ordered="ordered"
           :loading="storeLoading"
           :models="modelsStore.models.value"
-          @add="() => router.push('/dashboard/upstreams/new')"
+          @add="(kind: UpstreamProviderKind) => router.push(`/dashboard/upstreams/new/${kind}`)"
           @edit="(record: UpstreamRecord) => router.push(`/dashboard/upstreams/${record.id}`)"
           @changed="reloadAll"
         />

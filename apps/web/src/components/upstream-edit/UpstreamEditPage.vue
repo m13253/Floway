@@ -23,6 +23,7 @@ import { authFetch, callApi, useApi } from '../../api/client.ts';
 import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
+import { providerMeta } from '../upstreams/provider-meta.ts';
 import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -57,18 +58,17 @@ type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
 
 // Edit mode always carries a `record` (parent's v-if guards the null case);
-// create mode always carries `initialProvider` (the loader resolves it from
-// the query string, falling back to 'custom' there). One of the two is
-// always defined for this component to mount.
-const initialActiveProvider = ((): UpstreamProviderKind => {
+// create mode always carries `initialProvider` (the route param locks the
+// provider to one value for the lifetime of this page — switching providers
+// is now a navigation, handled by the dropdown that opens the create flow).
+const activeProvider = computed<UpstreamProviderKind>(() => {
   if (props.mode === 'edit') {
     if (!props.record) throw new Error('UpstreamEditPage: edit mode requires a non-null record');
     return props.record.provider;
   }
   if (!props.initialProvider) throw new Error('UpstreamEditPage: create mode requires an initialProvider');
   return props.initialProvider;
-})();
-const activeProvider = ref<UpstreamProviderKind>(initialActiveProvider);
+});
 const name = ref('');
 const enabled = ref(true);
 const sortOrder = ref<number>(props.nextSortOrder);
@@ -91,16 +91,7 @@ const upstreamModelsError = ref<string | null>(props.initialUpstreamModelsError 
 const liveRecord = ref<UpstreamRecord | null>(props.record);
 watch(() => props.record, r => { liveRecord.value = r; });
 
-const defaultName = (p: UpstreamProviderKind) =>
-  p === 'azure' ? 'Azure AI'
-    : p === 'copilot' ? 'GitHub Copilot'
-      : p === 'codex' ? 'ChatGPT Codex'
-        : p === 'claude-code' ? 'Claude Code'
-          : p === 'ollama' ? 'Ollama'
-            : 'Custom upstream';
-
 const seedFromRecord = (r: UpstreamRecord) => {
-  activeProvider.value = r.provider;
   name.value = r.name;
   enabled.value = r.enabled;
   sortOrder.value = r.sort_order;
@@ -143,7 +134,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
 };
 
 const seedFresh = () => {
-  name.value = defaultName(activeProvider.value);
+  name.value = providerMeta(activeProvider.value).defaultName;
   enabled.value = true;
   sortOrder.value = props.nextSortOrder;
   flagOverrides.value = {};
@@ -156,16 +147,6 @@ const seedFresh = () => {
 
 if (props.mode === 'edit' && props.record) seedFromRecord(props.record);
 else seedFresh();
-
-// In create mode, switching providers also rewrites the name field when it
-// still matches the previous provider's default (i.e. it has not been
-// customized).
-const setActiveProvider = (next: UpstreamProviderKind) => {
-  if (activeProvider.value === next) return;
-  const prevDefault = defaultName(activeProvider.value);
-  if (props.mode === 'create' && name.value === prevDefault) name.value = defaultName(next);
-  activeProvider.value = next;
-};
 
 const customBearerTokenSet = computed(() => {
   if (props.record?.provider !== 'custom') return false;
@@ -586,7 +567,6 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :initial-copilot-quota-error="initialCopilotQuotaError"
         :models-cache="showCacheStatus ? liveRecord!.modelsCache : null"
         :refreshing="refreshing"
-        @update:provider="setActiveProvider"
         @fetch-models="fetchDraftModels"
         @refresh-cache="refreshCachedModels"
         @copilot-completed="onCopilotCompleted"
