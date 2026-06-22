@@ -31,7 +31,7 @@ const ollamaFetchInternal = async (
     headers.set('Content-Type', 'application/json');
   }
   if (options.extraHeaders) {
-    for (const [k, v] of Object.entries(options.extraHeaders)) headers.set(k, v);
+    for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
   return await options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
 };
