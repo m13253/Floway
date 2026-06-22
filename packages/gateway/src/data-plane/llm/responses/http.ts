@@ -1,9 +1,8 @@
-import type { Context } from 'hono';
-
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
@@ -48,10 +47,10 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic.
-const respondWithInternalError = async (c: Context, error: unknown, requestBody: GatewayCtxRequestBody): Promise<Response> => {
+const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: GatewayCtxRequestBody): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error, 'responses'));
   const { response } = await respondResponses(c, result, false, ctx);
   return captureResponseAndFinalize(ctx, response);
@@ -61,12 +60,12 @@ const parsePayload = (requestBody: GatewayCtxRequestBody, stampReasoningEffort: 
   rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
 
 export const responsesHttp = {
-  generate: async (c: Context): Promise<Response> => {
+  generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBodyForCapture(c);
     try {
       const payload = parsePayload(requestBody, true);
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream, requestBody);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
@@ -77,11 +76,11 @@ export const responsesHttp = {
     }
   },
 
-  compact: async (c: Context): Promise<Response> => {
+  compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBodyForCapture(c);
     try {
       const payload = parsePayload(requestBody, false);
-      const ctx = createGatewayCtxFromHono(c, false, requestBody);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') return captureResponseAndFinalize(ctx, Response.json(result.result));

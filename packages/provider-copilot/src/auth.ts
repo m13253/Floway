@@ -1,19 +1,6 @@
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
-const COPILOT_BASE_URLS = {
-  individual: 'https://api.githubcopilot.com',
-  business: 'https://api.business.githubcopilot.com',
-  enterprise: 'https://api.enterprise.githubcopilot.com',
-} as const;
-
-export type CopilotAccountType = keyof typeof COPILOT_BASE_URLS;
-
-const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const satisfies readonly CopilotAccountType[];
-
-export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
-  typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
-
 // Version constants pinned to a known-good set. GitHub Copilot rejects too-new
 // editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded
 // 0.48.0 → 0.47.1 after upstream broke on the newer one); dynamically tracking
@@ -148,11 +135,11 @@ function isTokenValid(token: string | null, expiresAt: number): boolean {
   return expiresAt > now + 60;
 }
 
-async function getCopilotToken(upstreamId: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<string> {
+async function getCopilotToken(upstreamId: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
   const now = Date.now();
   const cached = inProcessTokenCache.get(upstreamId);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
-    return cached.entry.token;
+    return cached.entry;
   }
 
   const fresh = await getRepo().upstreams.getById(upstreamId);
@@ -161,7 +148,7 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
   const persisted = state.copilotToken;
   if (persisted && isTokenValid(persisted.token, persisted.expiresAt)) {
     inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now });
-    return persisted.token;
+    return persisted;
   }
 
   // Routed through the upstream's Fetcher so deployments behind a network
@@ -170,32 +157,7 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
   // Copilot proxy would still see periodic auth-refresh failures every
   // ~25 minutes per process.
   return await withRetry(async () => {
-    // Token exchange is a GET against api.github.com (not POST); matches
-    // VSCode Copilot Chat and caozhiyuan/copilot-api. A POST returns 404.
-    // Forward the data-plane request's signal so a client disconnect
-    // during refresh tears the call down instead of burning the per-proxy
-    // dial deadline before unwinding.
-    const resp = await fetcher('https://api.github.com/copilot_internal/v2/token', {
-      method: 'GET',
-      headers: githubHeaders(githubToken),
-      signal,
-    });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      throw new CopilotTokenFetchError(resp.status, text, new Headers(resp.headers));
-    }
-
-    const data = (await resp.json()) as {
-      token: string;
-      expires_at: number;
-      refresh_in: number;
-    };
-
-    const entry: CopilotTokenEntry = {
-      token: data.token,
-      expiresAt: data.expires_at,
-    };
+    const entry = await exchangeCopilotToken(githubToken, fetcher, signal);
     inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
     // Best-effort persistence: a losing CAS or transient DB error must not
     // invalidate the freshly fetched token, which the caller is about to use
@@ -209,9 +171,48 @@ async function getCopilotToken(upstreamId: string, githubToken: string, fetcher:
     } catch (err) {
       console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
     }
-
-    return data.token;
+    return entry;
   }, signal);
+}
+
+// Pure exchange against /copilot_internal/v2/token — no caching, no
+// persistence, no retry. Callers that want those wrap it (getCopilotToken
+// adds all three; the control-plane import path calls it once to validate
+// the PAT and seed initial state). Method is GET, not POST — POST returns
+// 404 from this endpoint (matches VSCode Copilot Chat and caozhiyuan/copilot-
+// api). `endpoints.api` is the per-tier data-plane host GitHub routes this
+// PAT to — it travels with the token because they share a lifetime
+// (vscode-copilot-chat 5863f5a7 domainServiceImpl.ts L55, refreshes on
+// every onDidStoreUpdate; all four reference implementations agree).
+export async function exchangeCopilotToken(githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> {
+  const resp = await fetcher('https://api.github.com/copilot_internal/v2/token', {
+    method: 'GET',
+    headers: githubHeaders(githubToken),
+    signal,
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new CopilotTokenFetchError(resp.status, text, new Headers(resp.headers));
+  }
+
+  const data = (await resp.json()) as {
+    token: string;
+    expires_at: number;
+    refresh_in: number;
+    endpoints?: { api?: string };
+  };
+
+  const baseUrl = data.endpoints?.api;
+  if (typeof baseUrl !== 'string' || baseUrl === '') {
+    throw new Error('Copilot token exchange response missing endpoints.api');
+  }
+
+  return {
+    token: data.token,
+    expiresAt: data.expires_at,
+    baseUrl,
+  };
 }
 
 export interface CopilotFetchOptions {
@@ -229,19 +230,17 @@ export interface CopilotFetchOptions {
 export interface CopilotAuth {
   id: string;
   githubToken: string;
-  accountType: CopilotAccountType;
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
-  const token = await getCopilotToken(auth.id, auth.githubToken, options.fetcher, init.signal ?? undefined);
-  const baseUrl = COPILOT_BASE_URLS[auth.accountType];
+  const entry = await getCopilotToken(auth.id, auth.githubToken, options.fetcher, init.signal ?? undefined);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
   const requestId = crypto.randomUUID();
 
   const headers = new Headers(init.headers);
-  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Authorization', `Bearer ${entry.token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('editor-version', EDITOR_VERSION);
   headers.set('editor-plugin-version', EDITOR_PLUGIN_VERSION);
@@ -273,7 +272,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
     }
   }
 
-  return await options.fetcher(`${baseUrl}${path}`, { ...init, headers }, options.recordUpstreamLatency);
+  return await options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }, options.recordUpstreamLatency);
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.

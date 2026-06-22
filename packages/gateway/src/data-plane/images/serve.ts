@@ -47,7 +47,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   const request = prepareImagesGenerationsRequest(requestBody.bytes);
   if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
 
-  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const response = await passthroughServe({
     c,
     ctx,
@@ -84,7 +84,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     return passthroughApiError(c, 'Image edits request body must include a model field.', 400);
   }
 
-  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const response = await passthroughServe({
     c,
     ctx,

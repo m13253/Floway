@@ -4,7 +4,7 @@ import { streamSSE } from 'hono/streaming';
 import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../../shared/respond-observer.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
@@ -100,16 +100,29 @@ export const respondMessages = async (
 // (extended-cache-ttl-2025-04-11), split the per-TTL counts onto the 5m and
 // 1h dimensions; the flat `cache_creation_input_tokens` is the sum and is
 // only consulted when the sub-object is absent.
+//
+// Response usage carries two server-stamped tier fields: `speed` (fast mode)
+// and `service_tier` (capacity assignment). Fast mode is documented as
+// unavailable with Priority Tier and the Batch API, so at most one
+// non-`standard` value lands on a single response — prefer `speed` first
+// (the only multi-x override today) then fall through to `service_tier`.
+// `standard` on either side collapses to null so per-tier rows aggregate
+// with base; unknown values flow through verbatim so a future Anthropic
+// release does not silently bill at base.
+//   * https://docs.claude.com/en/build-with-claude/fast-mode
+//   * https://docs.claude.com/en/api/service-tiers
 const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
   const cacheWrite5m = u.cache_creation?.ephemeral_5m_input_tokens;
   const cacheWrite1h = u.cache_creation?.ephemeral_1h_input_tokens;
   const cacheWriteRolledUp = u.cache_creation_input_tokens ?? 0;
+  const tier = billableServiceTier(u.speed) ?? billableServiceTier(u.service_tier);
   return tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
     input_cache_write: cacheWrite5m ?? cacheWriteRolledUp,
     input_cache_write_1h: cacheWrite1h ?? 0,
     output: u.output_tokens,
+    tier,
   });
 };
 
@@ -120,6 +133,12 @@ export const createMessagesStreamUsageState = () => ({
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
 
+// Returns a snapshot of the running usage on every frame that revises it, not
+// only on `message_stop`, so the observer can checkpoint billing state into
+// `SourceStreamState.usage` as the stream progresses. A client disconnect that
+// races the terminal frame would otherwise discard the last `message_delta`'s
+// output count. Each call returns a fresh object so the snapshot stored in
+// `SourceStreamState.usage` does not silently mutate when the next delta lands.
 export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEvent>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;
@@ -130,13 +149,29 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
     // every input-side dimension, not bare input alone — otherwise a later
     // delta carrying input_tokens re-merges and drops the cache counts.
     state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) + (state.current.input_cache_write_1h ?? 0) > 0;
+    return { ...state.current };
   }
   if (event.type === 'message_delta' && event.usage) {
+    // Anthropic's wire schema lets a delta re-stamp `speed`/`service_tier`,
+    // and both fields are per-message properties of this billing bucket. A
+    // delta-supplied tier therefore wins; absent that, message_start's tier
+    // carries forward across the bucket. Two branches below: the cache-hit
+    // prompt path (message_start carried zero input, this delta now carries
+    // the real input accounting) rebuilds state.current from the delta and
+    // backfills tier from the prior; the normal path updates the running
+    // output and restamps tier when the delta provides one.
+    const deltaResolved = tokenUsageFromMessagesUsage(event.usage);
     if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
-      state.current = tokenUsageFromMessagesUsage(event.usage);
-    } else state.current.output = event.usage.output_tokens;
+      const priorTier = state.current.tier;
+      state.current = deltaResolved;
+      state.current.tier ??= priorTier;
+    } else {
+      state.current.output = event.usage.output_tokens;
+      if (deltaResolved.tier != null) state.current.tier = deltaResolved.tier;
+    }
+    return { ...state.current };
   }
-  return event.type === 'message_stop' ? state.current : null;
+  return event.type === 'message_stop' ? { ...state.current } : null;
 };
 
 const internalMessagesErrorPayload = (error: InternalDebugError) => ({

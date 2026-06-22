@@ -1,7 +1,4 @@
-import type { Context } from 'hono';
-
-import { effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
-import type { ApiKey } from '../../../repo/types.ts';
+import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import type { RespondObserver } from '../../shared/respond-observer.ts';
@@ -61,6 +58,20 @@ export interface GatewayCtx {
   readonly requestSnapshot: GatewayCtxRequestSnapshot;
 }
 
+export interface CreateGatewayCtxOptions {
+  wantsStream: boolean;
+  // WebSocket-style call sites own the AbortController (so the upgrade
+  // handler can cancel mid-stream); HTTP call sites let the factory mint one
+  // when wantsStream is true.
+  downstreamAbortController?: AbortController;
+  // Already-buffered inbound request body bytes. HTTP handlers read them
+  // once via `readRequestBodyForCapture` and pass them in so the dump
+  // observer's `finalize` hook can replay the request payload without
+  // re-reading the (already-consumed) stream. WebSocket upgrades carry no
+  // body and omit this.
+  requestBody?: GatewayCtxRequestBody;
+}
+
 const headerPairs = (headers: Headers): Array<[string, string]> => {
   const pairs: Array<[string, string]> = [];
   headers.forEach((value, name) => { pairs.push([name, value]); });
@@ -68,7 +79,7 @@ const headerPairs = (headers: Headers): Array<[string, string]> => {
 };
 
 const buildRequestSnapshot = (
-  c: Context,
+  c: AuthedContext,
   body: GatewayCtxRequestBody | undefined,
   capture: boolean,
 ): GatewayCtxRequestSnapshot => {
@@ -85,67 +96,26 @@ const buildRequestSnapshot = (
   };
 };
 
-const installObservers = (c: Context, startedAt: number): readonly RespondObserver[] => {
-  // The auth middleware stamps `apiKey` on the context for every authenticated
-  // data-plane request. Tests that don't model auth can leave it unset; the
-  // factory then installs no observers (consistent with "no opt-in, no
-  // observation").
-  const apiKey = c.get('apiKey') as ApiKey | undefined;
-  if (!apiKey) return [];
-  return installRespondObservers({ apiKey, startedAt });
-};
-
-export const createGatewayCtxFromHono = (
-  c: Context,
-  wantsStream: boolean,
-  requestBody?: GatewayCtxRequestBody,
-): GatewayCtx => {
-  const apiKeyId = c.get('apiKeyId') as string;
+export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
+  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
+  const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const downstreamAbortController = wantsStream ? new AbortController() : undefined;
   const requestStartedAt = performance.now();
   const requestStartedWallMs = Date.now();
-  const respondObservers = installObservers(c, requestStartedWallMs);
+  const respondObservers = installRespondObservers({ apiKey, startedAt: requestStartedWallMs });
   return {
-    apiKeyId,
+    apiKeyId: apiKey.id,
     upstreamIds,
-    ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
-    wantsStream,
+    abortSignal: controller?.signal,
+    wantsStream: opts.wantsStream,
+    downstreamAbortController: controller,
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt,
     requestStartedWallMs,
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     currentColo: getCurrentColo(c.req.raw),
     respondObservers,
-    requestSnapshot: buildRequestSnapshot(c, requestBody, respondObservers.length > 0),
-  };
-};
-
-export const createGatewayCtxForWs = (
-  c: Context,
-  downstreamAbortController: AbortController,
-): GatewayCtx => {
-  const apiKeyId = c.get('apiKeyId') as string;
-  const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const requestStartedAt = performance.now();
-  const requestStartedWallMs = Date.now();
-  const respondObservers = installObservers(c, requestStartedWallMs);
-  return {
-    apiKeyId,
-    upstreamIds,
-    abortSignal: downstreamAbortController.signal,
-    wantsStream: true,
-    downstreamAbortController,
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-    requestStartedAt,
-    requestStartedWallMs,
-    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    currentColo: getCurrentColo(c.req.raw),
-    respondObservers,
-    // The WS upgrade carries no request body; the duplex frames flow after the
-    // handshake. Observers that want WS-frame capture rely on the `frame`
-    // hook, not on the inbound snapshot.
-    requestSnapshot: buildRequestSnapshot(c, undefined, respondObservers.length > 0),
+    requestSnapshot: buildRequestSnapshot(c, opts.requestBody, respondObservers.length > 0),
   };
 };
 
@@ -155,7 +125,7 @@ export const createGatewayCtxForWs = (
 // than producing a 500). Handlers pass the returned shape into
 // `createGatewayCtxFromHono` AND parse their payload off the same bytes, so
 // the inbound body is read exactly once.
-export const readRequestBodyForCapture = async (c: Context): Promise<GatewayCtxRequestBody> => {
+export const readRequestBodyForCapture = async (c: AuthedContext): Promise<GatewayCtxRequestBody> => {
   if (c.req.raw.body === null) return { bytes: new Uint8Array(), streamError: null };
   try {
     return { bytes: new Uint8Array(await c.req.raw.arrayBuffer()), streamError: null };

@@ -233,7 +233,10 @@ export interface MessagesUsage {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
-  service_tier?: 'standard' | 'priority' | 'batch';
+  // https://docs.claude.com/en/api/service-tiers
+  service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+  // https://docs.claude.com/en/build-with-claude/fast-mode
+  speed?: 'standard' | 'fast' | (string & {});
   server_tool_use?: MessagesUsageServerToolUse;
 }
 
@@ -312,6 +315,8 @@ export interface MessagesMessageDeltaEvent {
       ephemeral_5m_input_tokens?: number;
       ephemeral_1h_input_tokens?: number;
     };
+    service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+    speed?: 'standard' | 'fast' | (string & {});
     server_tool_use?: MessagesUsageServerToolUse;
   };
 }

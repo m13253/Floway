@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
@@ -150,9 +150,10 @@ test('getInternalModels returns the catalog projection without execution binding
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(
           copilotModels([
             {
@@ -222,9 +223,10 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'claude-opus-4.7', supported_endpoints: ['/v1/messages'] }]));
       }
       if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
@@ -402,15 +404,26 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
   assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher, testScheduler).then(r => r?.id), undefined);
 });
 
-test('listModelProviders drops stale ids (deleted or disabled upstreams) from a whitelist', async () => {
+test('listModelProviders silently drops disabled upstreams from a whitelist', async () => {
+  // A per-user cap legitimately references an upstream the operator just
+  // disabled; the cap survives that transition without surfacing an error.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_b', name: 'B', sortOrder: 20, enabled: false }));
 
-  // up_ghost was never saved; up_b is disabled. Both vanish silently.
-  const providers = await listModelProviders(['up_ghost', 'up_b', 'up_a']);
+  const providers = await listModelProviders(['up_b', 'up_a']);
   assertEquals(providers.map(p => p.upstream), ['up_a']);
+});
+
+test('listModelProviders throws on unknown upstream ids in the whitelist', async () => {
+  // Unknown ids are a caller-side configuration error, not a runtime state;
+  // surface them instead of silently serving a smaller subset.
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));
+
+  await expect(listModelProviders(['up_ghost', 'up_a'])).rejects.toThrow(/up_ghost/);
 });
 
 // Per-upstream catalog fetches fan out in parallel: total wall-clock time

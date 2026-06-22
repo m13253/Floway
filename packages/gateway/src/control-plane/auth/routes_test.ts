@@ -218,7 +218,7 @@ test('/api/upstreams/copilot/auth/start starts GitHub device flow', async () => 
   );
 });
 
-test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row', async () => {
+test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row and seeds state from the token exchange', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -227,8 +227,17 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row', async ()
       const url = new URL(request.url);
       if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_new' });
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') return jsonResponse({ copilot_plan: 'enterprise' });
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'ct_new',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.enterprise.githubcopilot.com' },
+        });
+      }
+      // Warmup probes /models on the per-tier host — return an empty catalog
+      // so the import handler completes without waiting on a real fetch.
+      if (url.hostname === 'api.enterprise.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -249,6 +258,9 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row', async ()
       assertEquals(body.upstream.provider, 'copilot');
       assertEquals(body.upstream.config.githubToken, undefined);
       assertEquals(body.upstream.config.githubTokenSet, true);
+      // The serialized state exposes only the per-tier baseUrl; the bearer
+      // token and its expiry stay server-side.
+      assertEquals(body.upstream.state, { copilotToken: { baseUrl: 'https://api.enterprise.githubcopilot.com' } });
     },
   );
 
@@ -256,8 +268,11 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row', async ()
   assertEquals(rows.length, 1);
   assertEquals(rows[0].provider, 'copilot');
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_new');
-  assertEquals((rows[0].config as Record<string, any>).accountType, 'enterprise');
+  assertEquals((rows[0].config as Record<string, any>).accountType, undefined);
   assertEquals((rows[0].config as Record<string, any>).user.id, 777);
+  const persistedState = rows[0].state as { copilotToken: { token: string; baseUrl: string } | null } | null;
+  assertEquals(persistedState?.copilotToken?.token, 'ct_new');
+  assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.enterprise.githubcopilot.com');
 });
 
 test('/api/upstreams/copilot/auth/poll rejects failed GitHub user lookup without saving an upstream', async () => {
@@ -291,17 +306,16 @@ test('/api/upstreams/copilot/auth/poll rejects failed GitHub user lookup without
   assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll rejects failed Copilot account type lookup without saving an upstream', async () => {
+test('/api/upstreams/copilot/auth/poll rejects a failed token exchange without saving an upstream', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_plan' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_seat' });
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') return jsonResponse({ message: 'no copilot seat' }, 403);
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') return jsonResponse({ message: 'no copilot seat' }, 403);
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -316,7 +330,7 @@ test('/api/upstreams/copilot/auth/poll rejects failed Copilot account type looku
 
       assertEquals(response.status, 502);
       const body = (await response.json()) as { error: string };
-      assertStringIncludes(body.error, 'GitHub Copilot account type detection failed: 403');
+      assertStringIncludes(body.error, 'Copilot token fetch failed: 403');
       assertStringIncludes(body.error, 'no copilot seat');
     },
   );
@@ -324,17 +338,18 @@ test('/api/upstreams/copilot/auth/poll rejects failed Copilot account type looku
   assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll rejects unknown Copilot account type without saving an upstream', async () => {
+test('/api/upstreams/copilot/auth/poll rejects a token-exchange response missing endpoints.api without saving an upstream', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_unknown_plan' });
+      if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_no_endpoint' });
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') return jsonResponse({ copilot_plan: 'free' });
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'ct_no_endpoint', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200 });
+      }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -348,7 +363,7 @@ test('/api/upstreams/copilot/auth/poll rejects unknown Copilot account type with
       });
 
       assertEquals(response.status, 502);
-      assertEquals((await response.json()) as Record<string, unknown>, { error: 'Unknown GitHub Copilot plan: free' });
+      assertEquals((await response.json()) as Record<string, unknown>, { error: 'Copilot token exchange response missing endpoints.api' });
     },
   );
 
@@ -359,7 +374,6 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
   const { repo, adminSession, githubAccount } = await setupAppTest({
     githubAccount: {
       token: 'ghu_old',
-      accountType: 'individual',
       user: githubUser,
     },
   });
@@ -372,8 +386,15 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
       const url = new URL(request.url);
       if (url.hostname === 'github.com' && url.pathname === '/login/oauth/access_token') return jsonResponse({ access_token: 'ghu_refreshed' });
       if (url.hostname === 'api.github.com' && url.pathname === '/user') return jsonResponse(githubUser);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/user') return jsonResponse({ copilot_plan: 'business' });
+      if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'ct_refreshed',
+          expires_at: Math.floor(Date.now() / 1000) + 1500,
+          refresh_in: 1200,
+          endpoints: { api: 'https://api.business.githubcopilot.com' },
+        });
+      }
+      if (url.hostname === 'api.business.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -396,5 +417,6 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
   assertEquals(rows[0].name, 'Pinned Copilot');
   assertEquals(rows[0].sortOrder, 9);
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_refreshed');
-  assertEquals((rows[0].config as Record<string, any>).accountType, 'business');
+  const persistedState = rows[0].state as { copilotToken: { baseUrl: string } | null } | null;
+  assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
 });

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import type { AzureUpstreamConfig, CodexUpstreamConfig, CopilotUpstreamConfig, CustomUpstreamConfig, OllamaUpstreamConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { assertNever } from '../../utils/assert-never.ts';
+import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
 
 const props = defineProps<{
   upstream: UpstreamRecord;
-  // Count of public models bound to this upstream, resolved by the parent over
-  // the control-plane /api/models response.
   modelCount: number;
   moveUpDisabled: boolean;
   moveDownDisabled: boolean;
@@ -27,37 +27,31 @@ const providerBadgeClass = (kind: UpstreamProviderKind) => {
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   case 'ollama': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom':
-  default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
+  return assertNever(kind);
 };
 
 const modelSummary = computed(() => `${props.modelCount} model${props.modelCount === 1 ? '' : 's'}`);
 
 const subtitle = computed(() => {
-  const cfg = props.upstream.config;
-  switch (props.upstream.provider) {
-  case 'azure': {
-    const azure = cfg as AzureUpstreamConfig;
-    const models = azure.models?.length ?? 0;
-    return [azure.endpoint || 'Azure AI endpoint', `${models} model${models === 1 ? '' : 's'}`].join(' · ');
-  }
-  case 'custom': return (cfg as CustomUpstreamConfig).baseUrl ?? '';
+  const u = props.upstream;
+  switch (u.provider) {
+  case 'azure': return u.config.endpoint;
+  case 'custom': return u.config.baseUrl;
   case 'copilot': {
-    const copilot = cfg as CopilotUpstreamConfig;
-    const user = copilot.user;
-    return user?.login ? `@${user.login} · ${copilot.accountType || 'copilot'}` : 'GitHub Copilot account';
+    const user = u.config.user;
+    return user.login
+      ? `@${user.login} · ${copilotAccountTypeDisplay(u.state)}`
+      : 'GitHub Copilot account';
   }
   case 'codex': {
-    const codex = cfg as CodexUpstreamConfig;
-    const account = codex.accounts?.[0];
-    return account ? [account.email, account.planType].filter(Boolean).join(' · ') : 'ChatGPT Codex account';
+    const account = u.config.accounts[0];
+    return `${account.email} · ${account.planType}`;
   }
-  case 'ollama': {
-    const ollama = cfg as OllamaUpstreamConfig;
-    return ollama.baseUrl ?? 'Ollama endpoint';
+  case 'ollama': return u.config.baseUrl ?? 'Ollama endpoint';
   }
-  }
+  return assertNever(u);
 });
 </script>
 

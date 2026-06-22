@@ -32,7 +32,7 @@ export interface ResponsesPayload {
   text?: { format?: Record<string, unknown> | null } | null;
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
-  service_tier?: string | null;
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
 }
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a
@@ -50,7 +50,7 @@ export interface ResponsesCompactPayload {
   previous_response_id?: string | null;
   prompt_cache_key?: string | null;
   prompt_cache_retention?: 'in_memory' | '24h' | null;
-  service_tier?: string | null;
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   // Gateway-only: controls whether the compact response's output items + the
   // committed snapshot persist. Forwarded NEITHER to upstream nor to the
   // provider call body.
@@ -395,6 +395,8 @@ export interface ResponsesResult {
   // never synthesizes it.
   incomplete_details: { reason: string } | null;
   error: { message: string; code: string; type?: string } | null;
+  // https://developers.openai.com/api/reference/resources/responses/methods/create
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;

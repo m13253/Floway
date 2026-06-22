@@ -3,13 +3,13 @@ import { streamSSE } from 'hono/streaming';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
 import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../../shared/respond-observer.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
@@ -89,21 +89,6 @@ export const respondResponses = async (
   });
 
   return { success: true, response };
-};
-
-// --- token usage ---
-
-// OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input.
-const tokenUsageFromResponsesResult = (r: ResponsesResult) => {
-  const u = r.usage;
-  if (!u) return null;
-  const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
-  return tokenUsage({
-    input: u.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: u.output_tokens,
-  });
 };
 
 // --- error rendering ---

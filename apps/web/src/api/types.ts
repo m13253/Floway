@@ -1,29 +1,21 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'ollama';
+import type {
+  BillingDimension,
+  ModelEndpointKey,
+  ModelEndpoints,
+  ModelKind,
+  ModelPricing,
+} from '@floway-dev/protocols/common';
 
-export type ModelKind = 'chat' | 'embedding' | 'image';
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'ollama';
 
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
 }
-
-// A present key means the model is served by that endpoint.
-export interface ModelEndpoints {
-  chatCompletions?: {};
-  responses?: {};
-  messages?: {};
-  embeddings?: {};
-  imagesGenerations?: {};
-  imagesEdits?: {};
-}
-
-export type ModelEndpointKey = keyof ModelEndpoints;
-
-// USD per million tokens, keyed by billing dimension.
-export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_cache_write_1h' | 'input_image' | 'output' | 'output_image';
-export type ModelPricing = Partial<Record<BillingDimension, number>>;
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;
@@ -78,9 +70,18 @@ export interface CopilotUser {
 }
 
 export interface CopilotUpstreamConfig {
-  accountType: 'individual' | 'business' | 'enterprise';
   user: CopilotUser;
   githubTokenSet?: boolean;
+}
+
+// Per-tier data-plane host GitHub last routed our PAT to. Populated on the
+// first successful token exchange and refreshed alongside the bearer token
+// (matches vscode-copilot-chat domainServiceImpl.ts). Null on a freshly-
+// imported upstream that hasn't completed a token exchange — but the import
+// path mints one synchronously, so a null here in steady state means
+// something is wrong (PAT revoked, network blocked).
+export interface CopilotUpstreamState {
+  copilotToken: { baseUrl: string } | null;
 }
 
 // Account-pool identities derived from the id_token at codex import. v1
@@ -135,9 +136,8 @@ export interface CodexQuotaSnapshot {
   ratelimited_until?: string;
 }
 
-export interface UpstreamRecord {
+interface UpstreamRecordBase {
   id: string;
-  provider: UpstreamProviderKind;
   name: string;
   enabled: boolean;
   sort_order: number;
@@ -148,16 +148,12 @@ export interface UpstreamRecord {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig | OllamaUpstreamConfig;
   // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
   // string `'direct'` for "no proxy") and an optional `colos` whitelist that
   // scopes the entry to specific Cloudflare colos / Node RUNTIME_LOCATION
   // tags. Empty/missing whitelist means "active in all colos". Empty top-
   // level list means "always direct".
   proxy_fallback_list: ProxyFallbackEntry[];
-  // Codex is the only provider that ships gateway-managed state on the row
-  // today; the other providers serialize this as null.
-  state: CodexUpstreamState | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
@@ -166,10 +162,18 @@ export interface UpstreamRecord {
     fetchedAt: number | null;
     lastError: { message: string; at: number } | null;
   };
-  // Present only for provider === 'codex'; serialized inline so the dashboard
-  // renders the quota panel without a follow-up fetch.
-  codex_quota?: CodexQuotaSnapshot | null;
 }
+
+// Provider-keyed discriminated union: each variant pins `provider` and the
+// matching `config` / `state` shape, so `switch (record.provider)` narrows
+// both fields without an `as` cast. Codex's `codex_quota` field rides on the
+// codex variant only.
+export type UpstreamRecord =
+  | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
+  | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
+  | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
   id: string;

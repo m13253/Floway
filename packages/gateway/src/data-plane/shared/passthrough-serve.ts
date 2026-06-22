@@ -22,6 +22,7 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
@@ -86,7 +87,7 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 };
 
 export interface PassthroughServeContext {
-  readonly c: Context;
+  readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly sourceApi: NonLlmServeApiName;
   // Already-validated public model id the client requested. The helper

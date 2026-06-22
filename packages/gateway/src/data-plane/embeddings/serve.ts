@@ -48,7 +48,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
   const request = prepareEmbeddingsRequest(requestBody.bytes);
   if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
 
-  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const response = await passthroughServe({
     c,
     ctx,

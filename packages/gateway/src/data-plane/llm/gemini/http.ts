@@ -1,7 +1,6 @@
-import type { Context } from 'hono';
-
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini } from './respond.ts';
 import { geminiServe } from './serve.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
@@ -50,7 +49,7 @@ const parseGeminiBodyBytes = <T>(requestBody: GatewayCtxRequestBody, project: (b
 // wrapped in the Google-RPC envelope (status, code, message). Other
 // failures collapse to the Gemini internal-error envelope.
 const respondWithGeminiError = async (
-  c: Context,
+  c: AuthedContext,
   error: unknown,
   ctx: GatewayCtx,
   wantsStream: boolean,
@@ -73,7 +72,7 @@ const respondWithGeminiError = async (
 // once, then dispatches to the matching sub-handler. Keeping the parse here
 // means the sub-handlers see a validated `(model, action)` pair and never
 // need to re-emit "Unknown Gemini model action" on already-validated input.
-export const geminiHttp = async (c: Context): Promise<Response> => {
+export const geminiHttp = async (c: AuthedContext): Promise<Response> => {
   const parsed = parseGeminiModelAction(c.req.param('modelAction'));
   if (parsed instanceof Response) return parsed;
   if (parsed.action === 'countTokens') return await runGeminiCountTokens(c, parsed.model);
@@ -83,12 +82,12 @@ export const geminiHttp = async (c: Context): Promise<Response> => {
   return geminiRpcErrorResponse(404, `Unknown Gemini model action: ${parsed.action}`);
 };
 
-const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {
+const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
   const requestBody = await readRequestBodyForCapture(c);
   const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, wantsStream, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody });
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.generate({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
@@ -99,12 +98,12 @@ const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean
   }
 };
 
-const runGeminiCountTokens = async (c: Context, model: string): Promise<Response> => {
+const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
   const requestBody = await readRequestBodyForCapture(c);
   const payload = parseGeminiBodyBytes(requestBody, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.countTokens({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });

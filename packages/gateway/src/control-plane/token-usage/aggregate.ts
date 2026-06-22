@@ -22,7 +22,10 @@ export interface DisplayUsageByUserRecord {
 
 // Cost is pure addition over the dimension rows: Σ tokens × unit_price / 1e6.
 // No subtraction is needed because the counts are disjoint and each dimension
-// already carries its own resolved unit price snapshot.
+// already carries its own resolved unit price snapshot. `record.cost` here
+// is the per-row reconstruction of the per-dimension `unit_price` columns
+// the repo writer already folded the bucket's tier into — so the dimension
+// lookup is a direct hit, no tier resolution needed at read time.
 const recordCostUsd = (record: UsageRecord): number => {
   let total = 0;
   for (const dimension of BILLING_DIMENSIONS) {

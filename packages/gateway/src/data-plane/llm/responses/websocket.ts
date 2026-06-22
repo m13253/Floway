@@ -4,9 +4,10 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
+import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import { createGatewayCtxForWs, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -63,7 +64,7 @@ interface ResponsesWebSocketClientEvent {
   [key: string]: unknown;
 }
 
-export const responsesWebSocket = async (c: Context): Promise<Response> => {
+export const responsesWebSocket = async (c: AuthedContext): Promise<Response> => {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
@@ -85,8 +86,8 @@ export const responsesWebSocket = async (c: Context): Promise<Response> => {
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketHandlers => {
-  const session = createResponsesWsSession(c.get('apiKeyId') as string);
+const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+  const session = createResponsesWsSession(apiKeyFromContext(c).id);
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -122,7 +123,7 @@ const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketHandlers 
 };
 
 const handleClientMessage = async (
-  c: Context,
+  c: AuthedContext,
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
@@ -150,7 +151,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxForWs(c, downstreamAbortController);
+    const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 
@@ -398,17 +399,6 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error, 'responses'),
   code: 'internal_error',
 });
-
-const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
-  const usage = response.usage;
-  if (!usage) return null;
-  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
-  return tokenUsage({
-    input: usage.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: usage.output_tokens,
-  });
-};
 
 const responseDoneSummary = (event: unknown) => {
   if (!event || typeof event !== 'object') return null;

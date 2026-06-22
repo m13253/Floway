@@ -1,5 +1,4 @@
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
-import { githubHeaders, isCopilotAccountType, type CopilotAccountType } from '@floway-dev/provider-copilot';
 
 export interface GitHubUser {
   login: string;
@@ -78,15 +77,4 @@ export const fetchGitHubUser = async (githubToken: string, fetcher: Fetcher = di
 
   if (!userResp.ok) throw new Error(`GitHub user lookup failed: ${userResp.status} ${await userResp.text()}`);
   return (await userResp.json()) as GitHubUser;
-};
-
-export const detectAccountType = async (githubToken: string, fetcher: Fetcher = directFetcher): Promise<CopilotAccountType> => {
-  const resp = await fetcher('https://api.github.com/copilot_internal/user', {
-    headers: githubHeaders(githubToken),
-  });
-  if (!resp.ok) throw new Error(`GitHub Copilot account type detection failed: ${resp.status} ${await resp.text()}`);
-
-  const data = (await resp.json()) as { copilot_plan?: unknown };
-  if (!isCopilotAccountType(data.copilot_plan)) throw new Error(`Unknown GitHub Copilot plan: ${String(data.copilot_plan)}`);
-  return data.copilot_plan;
 };

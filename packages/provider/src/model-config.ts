@@ -1,5 +1,5 @@
 import { isKnownFlagId } from './flags.ts';
-import { BILLING_DIMENSIONS, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
@@ -126,6 +126,22 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   const pricing: ModelPricing = {};
   for (const dimension of BILLING_DIMENSIONS) {
     if (record[dimension] !== undefined) pricing[dimension] = nonNegativeNumberField(record[dimension], `${label}.${dimension}`);
+  }
+  if (record.tiers !== undefined) {
+    if (!isRecord(record.tiers)) throw new Error(`Malformed ${label}.tiers: must be an object`);
+    const tiers: Record<string, Partial<Record<BillingDimension, number>>> = {};
+    for (const [tierName, overlay] of Object.entries(record.tiers)) {
+      if (tierName === '') throw new Error(`Malformed ${label}.tiers: tier name must be non-empty`);
+      if (!isRecord(overlay)) throw new Error(`Malformed ${label}.tiers.${tierName}: must be an object`);
+      const tierPricing: Partial<Record<BillingDimension, number>> = {};
+      for (const dimension of BILLING_DIMENSIONS) {
+        if (overlay[dimension] !== undefined) {
+          tierPricing[dimension] = nonNegativeNumberField(overlay[dimension], `${label}.tiers.${tierName}.${dimension}`);
+        }
+      }
+      if (Object.keys(tierPricing).length > 0) tiers[tierName] = tierPricing;
+    }
+    if (Object.keys(tiers).length > 0) pricing.tiers = tiers;
   }
   return Object.keys(pricing).length > 0 ? pricing : undefined;
 };
