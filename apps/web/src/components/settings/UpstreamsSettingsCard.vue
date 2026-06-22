@@ -118,7 +118,7 @@ const moveDisabled = (id: string, direction: -1 | 1) => {
                 class="grid size-8 shrink-0 place-items-center rounded-md"
                 :class="providerSwatchClass(meta.kind)"
               >
-                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="meta.iconSvg" />
+                <i :class="[meta.icon, 'size-4']" />
               </span>
               <span class="min-w-0">
                 <span class="block text-sm font-semibold text-white">{{ meta.label }}</span>
