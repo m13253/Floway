@@ -133,6 +133,20 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
 
+      <!-- Proxy chain sits at the top so the operator decides on egress
+           BEFORE the per-provider section runs anything that depends on
+           it — the copilot device flow, codex/claude-code OAuth token
+           exchange, and the custom/azure/ollama model probes all dial
+           through this list. Above the fold the panel doubles as a
+           confirmation that a proxy is already configured. -->
+      <ProxyFallbackListPanel
+        v-model="proxyFallbackList"
+        :upstream-id="record?.id ?? null"
+        :colo-aware="coloAware"
+        :current-colo="currentColo"
+        class="shrink-0"
+      />
+
       <section v-if="provider === 'custom'" class="shrink-0">
         <CustomConfigPanel
           v-model="customDraft"
@@ -236,14 +250,6 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           class="min-h-0 flex-1"
         />
       </section>
-
-      <ProxyFallbackListPanel
-        v-model="proxyFallbackList"
-        :upstream-id="record?.id ?? null"
-        :colo-aware="coloAware"
-        :current-colo="currentColo"
-        class="shrink-0"
-      />
 
     </div>
   </aside>
