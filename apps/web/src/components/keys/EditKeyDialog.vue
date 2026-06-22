@@ -91,15 +91,13 @@ const proposedRetentionSeconds = computed<number | null | 'invalid'>(() => {
   return retentionPresetSeconds[retentionPreset.value];
 });
 
-const previousRetention = computed(() => props.apiKey.dump_retention_seconds);
-
 const retentionEnabled = computed(() => {
   const proposed = proposedRetentionSeconds.value;
   return proposed !== null && proposed !== 'invalid';
 });
 
 const retentionWarning = computed<string | null>(() => {
-  const previous = previousRetention.value;
+  const previous = props.apiKey.dump_retention_seconds;
   if (previous === null) return null;
   const next = proposedRetentionSeconds.value;
   if (next === 'invalid') return null;

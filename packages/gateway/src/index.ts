@@ -1,10 +1,10 @@
 export { app } from './app.ts';
-export { getRepo, initRepo } from './repo/index.ts';
+export { initRepo } from './repo/index.ts';
 export { FileDumpStore } from './repo/dump-store.ts';
 export { SqlRepo } from './repo/sql.ts';
 export { initBackgroundSchedulerResolver } from './runtime/background.ts';
 export { initDumpBroker, initDumpStore } from './dump/registry.ts';
 export type { DumpBroker } from './dump/broker.ts';
-export type { DumpListOptions, DumpStore } from './dump/store-contract.ts';
+export type { DumpStore } from './dump/store-contract.ts';
 export { initResponsesWebSocketUpgradeResolver, type ResponsesWebSocketEvents } from './data-plane/llm/responses/websocket.ts';
 export { runScheduledMaintenance } from './scheduled.ts';

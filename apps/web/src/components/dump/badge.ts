@@ -1,4 +1,4 @@
-export type RowSeverity = 'ok' | 'warn' | 'err';
+type RowSeverity = 'ok' | 'warn' | 'err';
 
 export const rowSeverity = (status: number, error: string | null): RowSeverity => {
   if (status === 0 || error !== null) return 'err';

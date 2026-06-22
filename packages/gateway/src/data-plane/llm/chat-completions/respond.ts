@@ -36,9 +36,6 @@ export const respondChatCompletions = async (
   }
 
   const state = new SourceStreamState();
-  // Force `includeUsageChunk: true` on the dump frame so the dashboard
-  // always sees the trailing usage frame, independent of the wire-level
-  // option the client requested.
   const frames = observeChatCompletionsFrames(result.events, state, wantsStream, ctx);
 
   if (!wantsStream) {

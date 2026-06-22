@@ -69,7 +69,7 @@ const formatTokens = (n: number): string => {
   return `${(n / 1_000_000).toFixed(1)} M`;
 };
 
-const upstreamKindTextClass = (kind: string | undefined): string => {
+const upstreamKindTextClass = (kind: string): string => {
   switch (kind) {
   case 'copilot': return 'text-accent-cyan';
   case 'codex': return 'text-accent-violet';

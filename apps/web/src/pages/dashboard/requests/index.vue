@@ -12,7 +12,7 @@ export const useRequestsIndexData = defineBasicLoader(async () => {
   if (keysRes.error) {
     return { firstDumpKeyId: null as string | null, error: keysRes.error.message };
   }
-  const firstDumpKey = keysRes.data.find(k => k.dump_retention_seconds !== null) ?? null;
+  const firstDumpKey = keysRes.data.find(k => k.dump_retention_seconds !== null);
   return { firstDumpKeyId: firstDumpKey?.id ?? null, error: null as string | null };
 });
 </script>

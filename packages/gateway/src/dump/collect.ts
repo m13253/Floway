@@ -43,7 +43,6 @@ export interface CollectOutcome<TResult> {
   result: TResult | null;
   error: string | null;
   truncated: boolean;
-  warnings: string[];
 }
 
 export type CollectKind = 'messages' | 'chat-completions' | 'responses' | 'gemini';
@@ -98,9 +97,9 @@ export const collectMessagesStream = async (events: readonly DumpStreamEvent[]):
   })();
   try {
     const result = await reassembleMessagesEvents(eventStream);
-    return { result, error, truncated, warnings: [] };
+    return { result, error, truncated };
   } catch (e) {
-    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true, warnings: [] };
+    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
   }
 };
 
@@ -127,9 +126,9 @@ export const collectChatCompletionsStream = async (events: readonly DumpStreamEv
   })();
   try {
     const result = await reassembleChatCompletionsEvents(eventStream);
-    return { result, error, truncated, warnings: [] };
+    return { result, error, truncated };
   } catch (e) {
-    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true, warnings: [] };
+    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
   }
 };
 
@@ -140,7 +139,7 @@ export const collectResponsesStream = async (events: readonly DumpStreamEvent[])
     const frame = ev.frame as ProtocolFrame<ResponsesStreamEvent>;
     if (frame.type !== 'event') continue;
     if (frame.event.type === 'error') {
-      error = (frame.event as { message?: string }).message ?? 'stream ended with error event';
+      error = frame.event.message;
       break;
     }
     if (frame.event.type === 'response.failed') {
@@ -158,9 +157,9 @@ export const collectResponsesStream = async (events: readonly DumpStreamEvent[])
   })();
   try {
     const result = await reassembleResponsesEvents(eventStream);
-    return { result, error, truncated, warnings: [] };
+    return { result, error, truncated };
   } catch (e) {
-    return { result: null, error: error ?? (truncated ? null : (e instanceof Error ? e.message : String(e))), truncated: true, warnings: [] };
+    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
   }
 };
 
@@ -172,7 +171,7 @@ export const collectGeminiStream = async (events: readonly DumpStreamEvent[]): P
     if (frame.type === 'done') { truncated = false; break; }
     if (frame.type !== 'event') continue;
     if (isGeminiErrorEvent(frame.event)) {
-      error = (frame.event as { error?: { message?: string } }).error?.message ?? 'stream ended with error event';
+      error = frame.event.error.message;
       break;
     }
     if (isGeminiTerminalEvent(frame.event)) { truncated = false; break; }
@@ -183,9 +182,8 @@ export const collectGeminiStream = async (events: readonly DumpStreamEvent[]): P
   })();
   try {
     const result = await collectGeminiProtocolEventsToResult(frameStream);
-    return { result, error, truncated, warnings: [] };
+    return { result, error, truncated };
   } catch (e) {
-    if (truncated) return { result: null, error, truncated: true, warnings: [] };
-    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true, warnings: [] };
+    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
   }
 };

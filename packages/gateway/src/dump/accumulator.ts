@@ -101,11 +101,6 @@ const tokenUsageInput = (usage: TokenUsage | null): number | null => {
   return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
 };
 
-const tokenUsageOutput = (usage: TokenUsage | null): number | null => {
-  if (!usage) return null;
-  return usage.output ?? null;
-};
-
 const oneLineError = (err: unknown): string => {
   const msg = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
   return msg.length > 500 ? `${msg.slice(0, 497)}…` : msg;
@@ -163,7 +158,7 @@ export class DumpAccumulator {
       upstreamId: identity.upstream,
       model: identity.model,
       inputTokens: tokenUsageInput(usage),
-      outputTokens: tokenUsageOutput(usage),
+      outputTokens: usage?.output ?? null,
       error: null,
     };
   }

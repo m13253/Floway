@@ -386,13 +386,6 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             <p v-else-if="collected.truncated" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Output truncated by the upstream (length cap).
             </p>
-            <p
-              v-for="(warning, i) in collected.warnings"
-              :key="`warn:${i}`"
-              class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-[11px] font-mono text-accent-amber"
-            >
-              {{ warning }}
-            </p>
             <Code v-if="collectedJson !== null" flush :code="collectedJson" language="json" :copyable="false" />
             <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No structured result recovered from the stream.</p>
           </template>
