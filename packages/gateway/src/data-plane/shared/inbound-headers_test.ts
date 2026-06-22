@@ -46,6 +46,52 @@ describe('inboundHeadersForUpstream', () => {
     assertEquals(headers.get('user-agent'), 'claude-sdk/1.0');
   });
 
+  test('strips HTTP/1.1 framing, hop-by-hop, and accept-encoding while preserving propagation signals', async () => {
+    const app = new Hono();
+    let headers: Headers | undefined;
+    app.post('/test', c => {
+      headers = inboundHeadersForUpstream(c);
+      return c.text('ok');
+    });
+    await app.request('/test', {
+      method: 'POST',
+      headers: {
+        'accept-encoding': 'gzip, br',
+        'connection': 'keep-alive',
+        'content-length': '17',
+        'expect': '100-continue',
+        'keep-alive': 'timeout=5',
+        'proxy-connection': 'keep-alive',
+        'te': 'trailers',
+        'trailer': 'X-After',
+        'transfer-encoding': 'chunked',
+        'upgrade': 'websocket',
+        'forwarded': 'for=192.0.2.1;proto=https',
+        'x-real-ip': '192.0.2.1',
+        'x-forwarded-for': '192.0.2.1',
+      },
+      body: 'inbound-body-bytes',
+    });
+    assertExists(headers);
+    for (const name of [
+      'accept-encoding',
+      'connection',
+      'content-length',
+      'expect',
+      'keep-alive',
+      'proxy-connection',
+      'te',
+      'trailer',
+      'transfer-encoding',
+      'upgrade',
+    ]) {
+      assertEquals(headers.has(name), false);
+    }
+    assertEquals(headers.get('forwarded'), 'for=192.0.2.1;proto=https');
+    assertEquals(headers.get('x-real-ip'), '192.0.2.1');
+    assertEquals(headers.get('x-forwarded-for'), '192.0.2.1');
+  });
+
   test('returns a fresh Headers each call so mutations do not leak across requests', async () => {
     const app = new Hono();
     let first: Headers | undefined;
