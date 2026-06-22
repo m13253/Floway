@@ -29,16 +29,13 @@ const router = useRouter();
 const data = useNewUpstreamData();
 const store = useUpstreamsStore();
 
-const KNOWN_KINDS = PROVIDER_META.map(m => m.kind);
-const isKnownKind = (v: string): v is UpstreamProviderKind => (KNOWN_KINDS as string[]).includes(v);
-
 // The provider segment is the route's discriminator: an unknown value is a
 // dead URL (typo, stale bookmark) and should not silently default to one
 // kind. Bounce to the settings list and let the user pick from the
 // dropdown again rather than rendering a fake "Custom" form.
 const provider = computed<UpstreamProviderKind | null>(() => {
   const raw = route.params.provider;
-  return isKnownKind(raw) ? raw : null;
+  return (PROVIDER_META.map(m => m.kind) as string[]).includes(raw) ? (raw as UpstreamProviderKind) : null;
 });
 
 onMounted(() => {
@@ -46,7 +43,6 @@ onMounted(() => {
 });
 
 const onSaved = async () => {
-  // Refetch so navigations back to listings see the new upstream.
   await store.load();
 };
 </script>

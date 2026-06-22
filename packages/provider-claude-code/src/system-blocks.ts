@@ -84,8 +84,10 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
 // engineered from real CC packet captures.
 const FINGERPRINT_SALT_ASCII = '59cf53e54c78';
 
-// Byte indices into the first user-role text used by real CC, same source as FINGERPRINT_SALT_ASCII.
+// Byte indices into the first user-role text; see FINGERPRINT_SALT_ASCII source.
 const FINGERPRINT_INDICES = [4, 7, 20] as const;
+
+const encoder = new TextEncoder();
 
 const extractFirstUserText = (body: MessagesPayload): string => {
   for (const msg of body.messages) {
@@ -105,14 +107,14 @@ const extractFirstUserText = (body: MessagesPayload): string => {
 // The output drives `${VERSION}.${FP}` in the billing block; matching
 // real CC's wire shape is cheap and robust to detector tightening.
 export const computeCcVersionFingerprint = (version: string, body: MessagesPayload): string => {
-  const utf8 = new TextEncoder().encode(extractFirstUserText(body));
+  const utf8 = encoder.encode(extractFirstUserText(body));
   const chars = new Uint8Array(FINGERPRINT_INDICES.length);
   for (let i = 0; i < FINGERPRINT_INDICES.length; i++) {
     const idx = FINGERPRINT_INDICES[i]!;
     chars[i] = idx < utf8.length ? utf8[idx]! : 0x30;
   }
-  const salt = new TextEncoder().encode(FINGERPRINT_SALT_ASCII);
-  const ver = new TextEncoder().encode(version);
+  const salt = encoder.encode(FINGERPRINT_SALT_ASCII);
+  const ver = encoder.encode(version);
   const input = new Uint8Array(salt.length + chars.length + ver.length);
   input.set(salt, 0);
   input.set(chars, salt.length);

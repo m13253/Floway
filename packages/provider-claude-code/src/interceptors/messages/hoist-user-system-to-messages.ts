@@ -23,9 +23,7 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //
 // Non-text fields on blocks (citations, cache_control) are intentionally
 // dropped — the wrapped turn is best-effort recovery of the operator's
-// intent. System cache breakpoints are not preserved on hoist; CC clients
-// that pay for engineered system caching should send via `system` rather
-// than as system-shaped messages routed through this re-mimicry path.
+// intent.
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
@@ -34,14 +32,16 @@ export const hoistUserSystemToMessages = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const captured = ((system: string | MessagesTextBlock[] | undefined): string => {
-    if (system === undefined) return '';
-    if (typeof system === 'string') return system;
-    return system
+  const system: string | MessagesTextBlock[] | undefined = ctx.payload.system;
+  let captured = '';
+  if (typeof system === 'string') {
+    captured = system;
+  } else if (system !== undefined) {
+    captured = system
       .map(block => block.text)
       .filter(text => typeof text === 'string' && text.length > 0)
       .join('\n\n');
-  })(ctx.payload.system);
+  }
   // inject-billing-block et al rebuild `system` from scratch as a three-block
   // array; removing the field here keeps the boundary mutation self-contained.
   const nextPayload = { ...ctx.payload };

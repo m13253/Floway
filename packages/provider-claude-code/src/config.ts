@@ -31,8 +31,7 @@ export interface ClaudeCodeAccountIdentity {
 
 // Account pool. v1 always carries exactly one entry; the wire shape stays
 // array-of-accounts so a future fan-out / round-robin pool feature can land
-// without a schema migration. The 1-account invariant is enforced by the
-// asserter; ordering is operator-controlled and stable.
+// without a schema migration.
 export interface ClaudeCodeUpstreamConfig {
   accounts: ClaudeCodeAccountIdentity[];
 }
@@ -42,7 +41,7 @@ export type ClaudeCodeUpstreamRecord = UpstreamRecord & {
   config: ClaudeCodeUpstreamConfig;
 };
 
-const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void => {
+function assertClaudeCodeAccountIdentity(value: unknown, where: string): asserts value is ClaudeCodeAccountIdentity {
   const allowed = new Set(['email', 'accountUuid', 'organizationUuid', 'subscriptionType', 'rateLimitTier'] as const);
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
@@ -68,7 +67,7 @@ const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void =>
   if (obj.rateLimitTier !== null && (typeof obj.rateLimitTier !== 'string' || obj.rateLimitTier === '')) {
     throw new TypeError(`${where}.rateLimitTier must be null or a non-empty string`);
   }
-};
+}
 
 function assertClaudeCodeUpstreamConfig(value: unknown): asserts value is ClaudeCodeUpstreamConfig {
   const allowed = new Set(['accounts'] as const);

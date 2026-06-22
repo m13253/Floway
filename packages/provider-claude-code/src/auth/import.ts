@@ -66,8 +66,6 @@ export const importClaudeCodeFromCallback = async (opts: {
     kind: 'oauth',
     fetcher,
   });
-  // OAuth /token always returns refresh_token; guard so a malformed response
-  // surfaces precisely instead of corrupting the persisted state.
   if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
     throw new Error('Claude Code OAuth /token response missing refresh_token on full-scope exchange');
   }
@@ -162,13 +160,7 @@ export const importClaudeCodeFromCredentialsJson = async (
   if (typeof expiresAtRaw !== 'number' || !Number.isFinite(expiresAtRaw)) {
     throw new TypeError('credentials.json.claudeAiOauth.expiresAt must be a finite number (unix ms)');
   }
-  // The CLI persists `expiresAt` as unix milliseconds. Versions in the wild
-  // all match this; if a future build emits seconds, the cache's freshness
-  // gate would clip every read to "stale" and force an immediate refresh —
-  // that's a recoverable misclassification, but worth catching as a sanity
-  // check by rejecting obviously-too-small values. `1_000_000_000_000` is
-  // 2001-09-09T01:46:40Z in milliseconds; any real OAuth expiry will be
-  // larger, while a seconds-encoded expiry from the present-day will be ~10^9.
+  // expiresAt is unix milliseconds; reject obviously-too-small values (1e12 ≈ 2001-09-09) to catch a seconds-encoded regression early.
   if (expiresAtRaw < 1_000_000_000_000) {
     throw new TypeError('credentials.json.claudeAiOauth.expiresAt looks like seconds, expected milliseconds');
   }
@@ -178,11 +170,9 @@ export const importClaudeCodeFromCredentialsJson = async (
   // sibling fields. Take both verbatim when present; unknown
   // subscriptionType values fall back to the derived one rather than
   // breaking ingest.
-  const persistedSubscriptionType = (() => {
-    const v = w.subscriptionType;
-    if (v === 'pro' || v === 'max' || v === 'team' || v === 'enterprise') return v;
-    return null;
-  })();
+  const persistedSubscriptionType = (w.subscriptionType === 'pro' || w.subscriptionType === 'max' || w.subscriptionType === 'team' || w.subscriptionType === 'enterprise')
+    ? w.subscriptionType
+    : null;
   const persistedRateLimitTier = typeof w.rateLimitTier === 'string' && w.rateLimitTier !== ''
     ? w.rateLimitTier
     : null;

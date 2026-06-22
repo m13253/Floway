@@ -408,9 +408,7 @@ const onClaudeCodeError = (message: string) => {
   saveError.value = message;
 };
 
-// Copilot, codex, and claude-code catalogs are read-only — ModelsPanel runs
-// in `read-only` mode for all three, so the v-model setter is never invoked.
-// The getter hands back an empty list to keep the type contract honest.
+// Read-only providers never invoke the v-model setter; the getter returns [] to satisfy the type contract.
 const modelsManualForActive = computed<UpstreamModelConfig[]>({
   get: () => {
     if (activeProvider.value === 'custom') return customDraft.value.models;
@@ -446,10 +444,7 @@ const autoForActive = computed<UpstreamModelConfig[]>(() => {
 });
 
 const upstreamIdLabelForActive = computed(() => activeProvider.value === 'azure' ? 'Deployment' : 'Upstream Model ID');
-// Copilot's create flow lands the row from the device-flow panel; codex's
-// and claude-code's create flows land the row from their import panels.
-// In all three cases the page-level Save button is the wrong trigger, so
-// it stays hidden until the panel emits the new record.
+// Provider import panels (copilot/codex/claude-code) land the row themselves on create, so the page-level Save button stays hidden until they emit.
 const showSaveButton = computed(() => props.mode === 'edit' || (activeProvider.value !== 'copilot' && activeProvider.value !== 'codex' && activeProvider.value !== 'claude-code'));
 
 // The cache-status panel reads the row's `modelsCache` summary and offers a

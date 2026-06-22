@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
+import type { MessagesMessage, MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
 // envelope `{device_id, account_uuid, session_id}` (v2.1.78+) or the legacy
@@ -10,13 +11,10 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 // party id seeds the same plan-billing routing key the CLI uses — so we
 // always populate it on the re-mimicry path.
 //
-// The shape we emit is the new JSON form, matching CC v2.1.78+ verbatim:
-//   {"device_id":"<64-hex>","account_uuid":"","session_id":"<uuidv4>"}
-//
 // Deterministic ids: device_id is per-upstream stable (one CC "device" per
 // upstream record), session_id is per-payload (so a multi-turn conversation
-// re-uses the same session_id when the same prefix repeats, the same
-// property prompt-cache routing wants). Stability comes from sha256 over
+// re-uses the same session_id when the prefix repeats — the property
+// prompt-cache routing relies on). Stability comes from sha256 over
 // (upstream id + nonce / payload prefix); randomness would defeat the
 // upstream's cache and burn rate-limit slots faster.
 //
@@ -45,10 +43,8 @@ export const synthesizeMetadataUserId = async <TResult>(
   return await run();
 };
 
-// 64 hex chars (32 bytes) matches the format real CC emits, captured in
-// sub2api test fixtures (`gateway_prompt_test.go:17`,
-// `claude_code_validator_test.go:14`). An off-length device_id is one of
-// several CC-shape failures the detector keys on.
+// 64-hex (32-byte) device_id, matching the format real CC emits. See
+// https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_prompt_test.go#L17
 const deviceIdForUpstream = (upstreamId: string): string =>
   sha256Hex(`claude-code-device:${upstreamId}`);
 
@@ -58,37 +54,17 @@ const deviceIdForUpstream = (upstreamId: string): string =>
 // different ids. Matches the strategy injectSessionId uses on the Codex
 // side, with a per-upstream salt so two upstreams running the same script
 // don't collide.
-const sessionIdForPayload = (upstreamId: string, payload: { messages?: unknown }): string => {
+const sessionIdForPayload = (upstreamId: string, payload: Pick<MessagesPayload, 'messages'>): string => {
   const firstUser = firstUserMessageText(payload.messages);
   return sha256Uuidv4(`claude-code-session:${upstreamId}${firstUser}`);
 };
 
-const firstUserMessageText = (messages: unknown): string => {
-  if (!Array.isArray(messages)) {
-    throw new TypeError(`Claude Code synthesize-metadata-user-id: messages must be an array, got ${messages === null ? 'null' : typeof messages}`);
-  }
+const firstUserMessageText = (messages: MessagesMessage[]): string => {
   for (const msg of messages) {
-    if (typeof msg !== 'object' || msg === null) {
-      throw new TypeError(`Claude Code synthesize-metadata-user-id: message must be an object, got ${msg === null ? 'null' : typeof msg}`);
-    }
-    const m = msg as { role?: unknown; content?: unknown };
-    if (m.role !== 'user') continue;
-    if (typeof m.content === 'string') return m.content;
-    if (!Array.isArray(m.content)) {
-      throw new TypeError(`Claude Code synthesize-metadata-user-id: first user-message content must be a string or array, got ${typeof m.content}`);
-    }
-    return m.content
-      .map(part => {
-        if (typeof part !== 'object' || part === null) {
-          throw new TypeError(`Claude Code synthesize-metadata-user-id: content part must be an object, got ${part === null ? 'null' : typeof part}`);
-        }
-        const p = part as { type?: unknown; text?: unknown };
-        if (p.type !== 'text') return '';
-        if (typeof p.text !== 'string') {
-          throw new TypeError(`Claude Code synthesize-metadata-user-id: text content part must carry a string .text, got ${typeof p.text}`);
-        }
-        return p.text;
-      })
+    if (msg.role !== 'user') continue;
+    if (typeof msg.content === 'string') return msg.content;
+    return msg.content
+      .map(part => part.type === 'text' ? part.text : '')
       .filter(Boolean)
       .join('\n');
   }

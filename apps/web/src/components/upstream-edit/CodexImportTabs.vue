@@ -60,11 +60,9 @@ const copyAuthorizeUrl = async () => {
           <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
             {{ pkce.authorize_url }}
           </a>
-          <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-            <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
-              <i class="i-lucide-clipboard size-3.5" /> Copy URL
-            </Button>
-          </div>
+          <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
+            <i class="i-lucide-clipboard size-3.5" /> Copy URL
+          </Button>
         </div>
 
         <Textarea

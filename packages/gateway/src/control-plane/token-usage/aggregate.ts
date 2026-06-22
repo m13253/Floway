@@ -20,11 +20,8 @@ export interface DisplayUsageByUserRecord {
   cost: number;
 }
 
-// Per-row `unit_price` snapshots are first resolved through
-// `resolveEffectivePricing(cost, tier)` to select the tier-applicable
-// pricing for the row, then cost is a pure sum over disjoint dimensions:
-// Σ tokens × unit_price / 1e6. Counts are disjoint per dimension, so no
-// subtraction is needed.
+// Cost is a pure sum over disjoint per-dimension token counts:
+// Σ tokens × unit_price / 1e6. No subtraction needed.
 const recordCostUsd = (record: UsageRecord): number => {
   const effective = resolveEffectivePricing(record.cost, record.tier);
   let total = 0;

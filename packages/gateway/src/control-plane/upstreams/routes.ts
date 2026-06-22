@@ -84,6 +84,14 @@ const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedU
   return serialized;
 };
 
+// Re-read a row after a refresh-now mutation and return the serialized
+// payload, falling back to a bare `{ ok: true }` if the row vanished between
+// our write and this read. Shared by both providers' refresh-now handlers.
+const respondWithFreshRow = async (id: string, c: Context) => {
+  const refreshed = await getRepo().upstreams.getById(id);
+  return c.json(refreshed ? await serializeForResponse(refreshed) : { ok: true });
+};
+
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -156,7 +164,7 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch { /* discarded — see above */ }
+  } catch {}
 };
 
 // 'direct' is always a valid entry id; any other id must reference an
@@ -693,8 +701,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     if (!result.updated) {
       return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
     }
-    const fresh = await getRepo().upstreams.getById(id);
-    return c.json(fresh ? await serializeForResponse(fresh) : { ok: true });
+    return await respondWithFreshRow(id, c);
   } catch (err) {
     // OAuth session terminated (refresh_token replayed, revoked, or
     // app_session_terminated): mirror the data-plane behavior — flip the row
@@ -748,13 +755,15 @@ const ingestClaudeCodeCredential = async (
   body: ClaudeCodeCredentialBody,
   fetcher: Fetcher,
 ): Promise<{ ok: true; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState } | { ok: false; error: string }> => {
+  if (body.credentials_json === undefined && body.callback === undefined) {
+    throw new Error('claudeCode ingest: callback missing despite Zod refine — schema/validation drift');
+  }
   try {
     if (body.credentials_json !== undefined) {
       const out = await importClaudeCodeFromCredentialsJson(body.credentials_json, fetcher);
       return { ok: true, ...out };
     }
-    const cb = body.callback;
-    if (!cb) return { ok: false, error: 'callback is required when credentials_json is absent' };
+    const cb = body.callback!;
     const out = await importClaudeCodeFromCallback({ code: cb.code, pkceVerifier: cb.verifier, state: cb.state, fetcher });
     return { ok: true, ...out };
   } catch (err) {
@@ -953,10 +962,10 @@ const CLAUDE_CODE_REFRESH_SKEW_MS = 5 * 60 * 1000;
 //     Caller falls through to the terminal-flip path.
 //
 // Mirrors `recoverFromRefreshRace` in
-// `packages/provider-claude-code/src/access-token-cache.ts` (commit
-// f1efc9dd) but lighter: the data-plane recovery has to return a usable
-// token to keep the request flowing, while here we only need to decide
-// whether the dashboard sees "refresh succeeded" or "refresh failed."
+// `packages/provider-claude-code/src/access-token-cache.ts` but lighter:
+// the data-plane recovery has to return a usable token to keep the
+// request flowing, while here we only need to decide whether the
+// dashboard sees "refresh succeeded" or "refresh failed."
 const recoverRefreshNow = async (
   id: string,
   refreshTokenWeUsed: string,
@@ -1044,9 +1053,9 @@ const attemptClaudeCodeRefresh = async (id: string, fetcher: Fetcher): Promise<R
 // two interleave (operator click while a data-plane request is mid-mint),
 // one of them rotates the RT and the other observes either CAS-loss or
 // `invalid_grant`. We mirror the data-plane's recovery (see
-// `recoverFromRefreshRace` in access-token-cache.ts, commit f1efc9dd): on
-// loss, re-read the row; if a sibling rotated successfully, report success
-// instead of a misleading "credential dead" toast.
+// `recoverFromRefreshRace` in access-token-cache.ts): on loss, re-read the
+// row; if a sibling rotated successfully, report success instead of a
+// misleading "credential dead" toast.
 export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
   const id = c.req.param('id');
   if (!id) return c.json({ error: 'upstream id is required' }, 400);
@@ -1080,23 +1089,18 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
     return c.json({ error: errorMessage(err) }, 400);
   }
 
-  const respondWithFreshRow = async () => {
-    const refreshed = await getRepo().upstreams.getById(id);
-    return c.json(refreshed ? await serializeForResponse(refreshed) : { ok: true });
-  };
-
   // Bounded by `recoveryAllowed`: at most one recovery re-mint per request.
   // Mirrors the data-plane depth guard.
   let recoveryAllowed = true;
   while (true) {
     const attempt = await attemptClaudeCodeRefresh(id, fetcher);
 
-    if (attempt.kind === 'ok') return await respondWithFreshRow();
+    if (attempt.kind === 'ok') return await respondWithFreshRow(id, c);
 
     if (attempt.kind === 'cas-lost') {
       if (recoveryAllowed) {
         const outcome = await recoverRefreshNow(id, attempt.refreshTokenUsed);
-        if (outcome === 'recovered') return await respondWithFreshRow();
+        if (outcome === 'recovered') return await respondWithFreshRow(id, c);
         if (outcome === 'retry-mint') { recoveryAllowed = false; continue; }
       }
       // Either out of recovery budget, or the re-read shows no sibling
@@ -1107,7 +1111,7 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
     // attempt.kind === 'oauth-terminal'
     if (attempt.error.code === 'invalid_grant' && recoveryAllowed) {
       const outcome = await recoverRefreshNow(id, attempt.refreshTokenUsed);
-      if (outcome === 'recovered') return await respondWithFreshRow();
+      if (outcome === 'recovered') return await respondWithFreshRow(id, c);
       if (outcome === 'retry-mint') { recoveryAllowed = false; continue; }
       // genuine-failure: fall through to the terminal-flip path below.
     }

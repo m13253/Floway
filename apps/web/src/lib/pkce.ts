@@ -116,12 +116,10 @@ export const peekStashedPkce = (key: string): StashedPkce | null => {
 // `clearPkce(key)` after a successful exchange — the OAuth code is
 // single-use upstream, so a successful exchange burns it and the
 // stash has no further use.
-export const recallPkce = (key: string, returnedState: string): { verifier: string; state: string } | null => {
-  const raw = sessionStorage.getItem(key);
-  if (!raw) return null;
-  const parsed = JSON.parse(raw) as StashedPkce;
-  if (parsed.state !== returnedState) return null;
-  return { verifier: parsed.verifier, state: parsed.state };
+export const recallPkce = (key: string, returnedState: string): { verifier: string } | null => {
+  const stash = peekStashedPkce(key);
+  if (stash?.state !== returnedState) return null;
+  return { verifier: stash.verifier };
 };
 
 export const clearPkce = (key: string): void => {

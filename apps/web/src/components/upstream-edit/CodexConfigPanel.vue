@@ -79,9 +79,7 @@ watch([importFormVisible, () => draft.value.activeTab], ([visible, tab]) => {
   if (visible && tab === 'callback') void prepareAuthorize();
 }, { immediate: true });
 
-type CallbackCredential = { code: string; verifier: string };
-
-const buildBody = (): { ok: true; value: { auth_json?: string; callback?: CallbackCredential } } | { ok: false; error: string } => {
+const buildBody = (): { ok: true; value: { auth_json?: string; callback?: { code: string; verifier: string } } } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'auth_json') {
     const text = draft.value.authJsonText.trim();
     if (!text) return { ok: false, error: 'Paste the contents of ~/.codex/auth.json' };

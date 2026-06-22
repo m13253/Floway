@@ -124,7 +124,7 @@ describe('refreshClaudeCodeAccessToken', () => {
 
 describe('buildClaudeCodeAuthorizeUrl', () => {
   test('emits all required PKCE + identity query params', () => {
-    const url = buildClaudeCodeAuthorizeUrl({ state: 'csrf123', codeChallenge: 'CHAL' });
+    const url = buildClaudeCodeAuthorizeUrl({ state: 'csrf123', codeChallenge: 'CHAL', kind: 'oauth' });
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe('https://claude.ai/oauth/authorize');
     expect(parsed.searchParams.get('client_id')).toBe('9d1c250a-e61b-44d9-88ed-5944d1962f5e');

@@ -28,38 +28,31 @@ const importTabs = [
   { value: 'credentials_json', label: 'Paste credentials.json' },
 ] as const;
 
-// 'copied' shows a tick for 2s on success; 'failed' surfaces the underlying
-// clipboard error inline so the operator can fall back to selecting the
-// visible link manually. One status per copyable URL so two near-simultaneous
-// copies don't overwrite each other's feedback.
+// `failed` surfaces the underlying clipboard error so the operator can fall
+// back to selecting the visible link manually.
 type CopyState = { kind: 'idle' } | { kind: 'copied' } | { kind: 'failed'; message: string };
-const oauthCopyStatus = ref<CopyState>({ kind: 'idle' });
-const setupTokenCopyStatus = ref<CopyState>({ kind: 'idle' });
-let oauthCopyResetTimer: ReturnType<typeof setTimeout> | undefined;
-let setupTokenCopyResetTimer: ReturnType<typeof setTimeout> | undefined;
 
-const copyUrl = async (url: string, target: 'oauth' | 'setup-token') => {
-  const status = target === 'oauth' ? oauthCopyStatus : setupTokenCopyStatus;
-  if (target === 'oauth' && oauthCopyResetTimer !== undefined) clearTimeout(oauthCopyResetTimer);
-  if (target === 'setup-token' && setupTokenCopyResetTimer !== undefined) clearTimeout(setupTokenCopyResetTimer);
-  try {
-    await navigator.clipboard.writeText(url);
-    status.value = { kind: 'copied' };
-    const timer = setTimeout(() => { status.value = { kind: 'idle' }; }, 2000);
-    if (target === 'oauth') oauthCopyResetTimer = timer;
-    else setupTokenCopyResetTimer = timer;
-  } catch (e) {
-    status.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
-  }
+const useCopyStatus = () => {
+  const status = ref<CopyState>({ kind: 'idle' });
+  let resetTimer: ReturnType<typeof setTimeout> | undefined;
+  const copy = async (url: string) => {
+    if (resetTimer !== undefined) clearTimeout(resetTimer);
+    try {
+      await navigator.clipboard.writeText(url);
+      status.value = { kind: 'copied' };
+      resetTimer = setTimeout(() => { status.value = { kind: 'idle' }; }, 2000);
+    } catch (e) {
+      status.value = { kind: 'failed', message: e instanceof Error ? e.message : String(e) };
+    }
+  };
+  onBeforeUnmount(() => {
+    if (resetTimer !== undefined) clearTimeout(resetTimer);
+  });
+  return { status, copy };
 };
 
-// Clearing the in-flight reset timers on unmount avoids a late `idle` write
-// to an already-discarded ref when the parent tears the panel down between a
-// copy and its 2s reset.
-onBeforeUnmount(() => {
-  if (oauthCopyResetTimer !== undefined) clearTimeout(oauthCopyResetTimer);
-  if (setupTokenCopyResetTimer !== undefined) clearTimeout(setupTokenCopyResetTimer);
-});
+const { status: oauthCopyStatus, copy: copyOauthUrl } = useCopyStatus();
+const { status: setupTokenCopyStatus, copy: copySetupTokenUrl } = useCopyStatus();
 </script>
 
 <template>
@@ -84,7 +77,7 @@ onBeforeUnmount(() => {
             {{ pkce.authorize_url }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-            <Button size="sm" variant="secondary" @click="copyUrl(pkce.authorize_url, 'oauth')">
+            <Button size="sm" variant="secondary" @click="copyOauthUrl(pkce.authorize_url)">
               <i class="i-lucide-clipboard size-3.5" /> Copy URL
             </Button>
             <span v-if="oauthCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>
@@ -122,7 +115,7 @@ onBeforeUnmount(() => {
             {{ setupTokenPkce.authorize_url }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
-            <Button size="sm" variant="secondary" @click="copyUrl(setupTokenPkce.authorize_url, 'setup-token')">
+            <Button size="sm" variant="secondary" @click="copySetupTokenUrl(setupTokenPkce.authorize_url)">
               <i class="i-lucide-clipboard size-3.5" /> Copy URL
             </Button>
             <span v-if="setupTokenCopyStatus.kind === 'copied'" class="text-accent-emerald">Copied</span>

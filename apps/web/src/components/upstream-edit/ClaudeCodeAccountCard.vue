@@ -37,9 +37,7 @@ const emit = defineEmits<{
 
 const HEAVY_USAGE_THRESHOLD_PCT = 80;
 
-const account = computed<ClaudeCodeAccountIdentity | null>(() => {
-  return props.record.config.accounts[0] ?? null;
-});
+const account = computed<ClaudeCodeAccountIdentity | null>(() => props.record.config.accounts[0] ?? null);
 
 type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
@@ -106,8 +104,6 @@ const formatTimestamp = (iso: string): string => new Date(iso).toLocaleString();
 
 const clampPercent = (n: number): number => Math.max(0, Math.min(100, Math.round(n)));
 
-const formatPercent = (n: number): string => `${clampPercent(n)}%`;
-
 const formatRelative = (epochMs: number): string => {
   const delta = epochMs - Date.now();
   const abs = Math.abs(delta);
@@ -164,13 +160,8 @@ const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(accoun
 // the account.
 const headerLabel = computed(() => account.value?.email ?? accountIdShort.value);
 
-// `windows` reconciles the two snapshot sources per window. Each output row
-// carries `source: 'header' | 'probe'` so the UI can label the timestamp it
-// shows in the chip. The picker prefers the newer `fetchedAt`: probe-fresh
-// right after the operator hits Refresh; header-fresh right after any real
-// model call. `seven_day_sonnet` rides only on the probe — it's surfaced
-// only when probe data exists. Status text and reset times are taken from
-// the chosen source; we never merge fields between the two.
+// `seven_day_sonnet` rides only on the probe — it's surfaced only when probe
+// data exists.
 type WindowSource = 'header' | 'probe';
 interface WindowRow {
   key: string;
@@ -182,33 +173,34 @@ interface WindowRow {
   fetchedAt: number;
 }
 
-const toPercent = (n: number): number => n * 100;
+const headerFetchedAt = computed<number | null>(() => credential.value?.quotaSnapshot?.fetchedAt ?? null);
+const probeFetchedAt = computed<number | null>(() => credential.value?.usageProbeSnapshot?.fetchedAt ?? null);
 
-const headerFetchedAt = computed<number>(() => credential.value?.quotaSnapshot?.fetchedAt ?? 0);
-const probeFetchedAt = computed<number>(() => credential.value?.usageProbeSnapshot?.fetchedAt ?? 0);
-
-const pickHeaderWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null | undefined): WindowRow | null => {
-  const headerUtil = headerWin && typeof headerWin.utilization === 'number' ? headerWin.utilization : null;
-  const probeUtil = probeWin && typeof probeWin.utilization === 'number' ? probeWin.utilization : null;
-  const preferProbe = probeUtil !== null && (headerUtil === null || probeFetchedAt.value > headerFetchedAt.value);
-  if (preferProbe && probeWin && probeUtil !== null) {
-    return { key, label, percent: toPercent(probeUtil), resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeFetchedAt.value };
+const pickWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null | undefined): WindowRow | null => {
+  const headerUtil = headerWin?.utilization ?? null;
+  const probeUtil = probeWin?.utilization ?? null;
+  const headerTs = headerFetchedAt.value;
+  const probeTs = probeFetchedAt.value;
+  const preferProbe = probeUtil !== null && probeTs !== null && (headerUtil === null || headerTs === null || probeTs > headerTs);
+  if (preferProbe && probeWin && probeUtil !== null && probeTs !== null) {
+    return { key, label, percent: probeUtil * 100, resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeTs };
   }
-  if (headerUtil !== null && headerWin) {
-    return { key, label, percent: toPercent(headerUtil), resetAt: headerWin.reset, status: headerWin.status, source: 'header', fetchedAt: headerFetchedAt.value };
+  if (headerUtil !== null && headerWin && headerTs !== null) {
+    return { key, label, percent: headerUtil * 100, resetAt: headerWin.reset, status: headerWin.status, source: 'header', fetchedAt: headerTs };
   }
   return null;
 };
 
 const windows = computed<WindowRow[]>(() => {
   const rows: WindowRow[] = [];
-  const fiveHour = pickHeaderWindow('5-hour window', 'five_hour', quota.value?.fiveHour, probe.value?.fiveHour);
+  const fiveHour = pickWindow('5-hour window', 'five_hour', quota.value?.fiveHour, probe.value?.fiveHour);
   if (fiveHour) rows.push(fiveHour);
-  const sevenDay = pickHeaderWindow('7-day window', 'seven_day', quota.value?.sevenDay, probe.value?.sevenDay);
+  const sevenDay = pickWindow('7-day window', 'seven_day', quota.value?.sevenDay, probe.value?.sevenDay);
   if (sevenDay) rows.push(sevenDay);
   const sonnet = probe.value?.sevenDaySonnet;
-  if (sonnet && typeof sonnet.utilization === 'number') {
-    rows.push({ key: 'seven_day_sonnet', label: '7-day Sonnet', percent: toPercent(sonnet.utilization), resetAt: sonnet.resetAt, status: null, source: 'probe', fetchedAt: probeFetchedAt.value });
+  const probeTs = probeFetchedAt.value;
+  if (sonnet && typeof sonnet.utilization === 'number' && probeTs !== null) {
+    rows.push({ key: 'seven_day_sonnet', label: '7-day Sonnet', percent: sonnet.utilization * 100, resetAt: sonnet.resetAt, status: null, source: 'probe', fetchedAt: probeTs });
   }
   return rows;
 });
@@ -316,7 +308,7 @@ const probeFetchedAtIso = computed<string | null>(() => {
               {{ w.label }}
               <span class="ml-1 text-[10px] uppercase tracking-wide text-gray-500" :title="`Fetched ${formatTimestamp(new Date(w.fetchedAt).toISOString())}`">{{ w.source === 'probe' ? 'probe' : 'headers' }}</span>
             </span>
-            <span class="text-gray-500">{{ formatPercent(w.percent) }}<template v-if="w.status"> · {{ w.status }}</template></span>
+            <span class="text-gray-500">{{ clampPercent(w.percent) }}%<template v-if="w.status"> · {{ w.status }}</template></span>
           </div>
           <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
             <div

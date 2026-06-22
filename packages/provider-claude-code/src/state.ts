@@ -20,17 +20,16 @@
 
 import { assertClaudeCodeQuotaSnapshot, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 
-export type ClaudeCodeTokenKind = 'oauth' | 'setup-token';
-
 // Short-lived OAuth access token minted by exchanging the stored refreshToken
 // against /v1/oauth/token. The refreshToken itself stays on
 // ClaudeCodeAccountCredential so a KV/cache wipe never forces operator
 // re-import; only the minted token (and its expiry) belong in state alongside
-// it.
+// it. `expiresAt` is unix ms; `refreshedAt` is ISO 8601, matching the
+// QuotaSnapshotEntry convention below.
 export interface ClaudeCodeAccessTokenEntry {
   token: string;
-  expiresAt: number;       // unix ms
-  refreshedAt: string;     // ISO 8601
+  expiresAt: number;
+  refreshedAt: string;
 }
 
 // Most recent quota observation derived from /v1/messages response headers.

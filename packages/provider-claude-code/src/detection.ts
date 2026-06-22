@@ -155,8 +155,6 @@ export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): 
   if (!input.headers.get('anthropic-beta')) return false;
   if (!input.headers.get('anthropic-version')) return false;
 
-  if (typeof input.body.model !== 'string' || input.body.model === '') return false;
-
   const systemTexts = extractSystemTexts(input.body);
   if (systemTexts.length === 0) return false;
   const systemMatches = systemTexts.some(t => looksLikeBillingBlock(t) || matchesAnyIdentityTemplate(t));

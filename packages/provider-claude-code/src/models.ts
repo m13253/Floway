@@ -35,7 +35,6 @@ export const fetchClaudeCodeModelsList = async (
   accessToken: string,
   fetcher: Fetcher,
 ): Promise<ClaudeCodeApiModel[]> => {
-  // Catalog fetch is GET-only; send the Sonnet/Opus header profile directly.
   const headers: Record<string, string> = {
     ...CLAUDE_CODE_HEADERS_SONNET_OPUS,
     authorization: `Bearer ${accessToken}`,

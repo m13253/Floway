@@ -136,13 +136,12 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   case 'claude-code':
     return {
       accounts: assertAccountsArray(upstream, state.accounts).map(a => {
-        // accessToken.expiresAt + quotaSnapshot + usageProbeSnapshot are
-        // non-secret summaries the dashboard surfaces directly.
-        // accessToken.token is dropped. Each field is contractually
-        // `<entry> | null` per state.ts; a string / array / number here is
-        // genuine shape drift and must throw, not collapse into null
-        // silently.
-        const accessTokenRecord = serializeOpaqueRecord(upstream, 'accessToken', a.accessToken);
+        // accessToken.token is dropped; expiresAt + refreshedAt are surfaced to the dashboard.
+        const accessToken = a.accessToken === null
+          ? null
+          : isRecord(a.accessToken)
+            ? { expiresAt: clone(a.accessToken.expiresAt), refreshedAt: clone(a.accessToken.refreshedAt) }
+            : (() => { throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accessToken: expected object or null`); })();
         return {
           ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
           ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
@@ -150,7 +149,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
           ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
           stateUpdatedAt: clone(a.stateUpdatedAt),
           refreshTokenSet: hasSecret(a.refreshToken),
-          accessToken: accessTokenRecord === null ? null : { expiresAt: accessTokenRecord.expiresAt, refreshedAt: accessTokenRecord.refreshedAt },
+          accessToken,
           quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', a.quotaSnapshot),
           // usageProbeSnapshot's wire shape is owned by Anthropic's
           // /api/oauth/usage endpoint and evolves on their schedule, so we

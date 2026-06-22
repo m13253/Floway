@@ -314,10 +314,7 @@ export const codexAuthorizeUrlBody = z.object({
 // unknown_parameter (live-probed); the SPA still validates state before
 // sending the callback so CSRF protection is intact, but the gateway has
 // no reason to receive it.
-// Shared OAuth callback shape: claude-code OAuth + Setup-Token callbacks carry
-// `state`; codex's token exchange drops it because auth.openai.com rejects
-// state with 400 unknown_parameter (live-probed). The SPA still validates
-// state before posting, so CSRF protection is intact.
+// Shared by claude-code OAuth + Setup-Token callbacks; codex defines its own callback inline because it omits `state`.
 const oauthCallbackSchema = z.object({
   code: z.string().min(1),
   verifier: z.string().min(1),
@@ -387,7 +384,9 @@ export const codexRefreshNowBody = z.object({
 // section above for the architecture). The single authorize-url endpoint
 // covers both the full-OAuth and Setup-Token scopes via the `kind`
 // discriminator; the matching import endpoint per kind consumes the SPA-
-// provided verifier.
+// provided verifier. Every claude-code body below accepts the same in-flight
+// `proxy_fallback_list` edit-form override with semantics documented in
+// proxy-resolution.ts.
 
 export const claudeCodeAuthorizeUrlBody = z.object({
   challenge: z.string().min(1),
@@ -408,8 +407,6 @@ export const claudeCodeImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
   ...claudeCodeCredentialFields,
-  // Edit-form override; persisted onto the freshly-created row so subsequent
-  // data-plane calls honor the same chain. See proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(
   b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
@@ -419,8 +416,6 @@ export const claudeCodeImportBody = z.object({
 export const claudeCodeReimportBody = z.object({
   name: z.string().min(1).optional(),
   ...claudeCodeCredentialFields,
-  // Edit-form override; overwrites the persisted list when present. See
-  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).refine(
   b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
@@ -428,8 +423,6 @@ export const claudeCodeReimportBody = z.object({
 );
 
 export const claudeCodeRefreshNowBody = z.object({
-  // Edit-form override; absent falls back to the persisted row's list. See
-  // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
@@ -448,24 +441,17 @@ export const claudeCodeProbeQuotaBody = z.object({
 // endpoint's `kind: 'setup-token'`). The resulting credential has no
 // refresh_token, so the import body has no credentials_json path
 // (Anthropic's CLI never persists a setup token).
-const claudeCodeSetupTokenCallbackFields = {
-  callback: oauthCallbackSchema,
-};
 
 export const claudeCodeSetupTokenImportBody = z.object({
   name: z.string().min(1).optional(),
   sort_order: z.number().int().optional(),
-  ...claudeCodeSetupTokenCallbackFields,
-  // Edit-form override; persisted onto the freshly-created row. See
-  // proxy-resolution.ts.
+  callback: oauthCallbackSchema,
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
 export const claudeCodeSetupTokenReimportBody = z.object({
   name: z.string().min(1).optional(),
-  ...claudeCodeSetupTokenCallbackFields,
-  // Edit-form override; overwrites the persisted list when present. See
-  // proxy-resolution.ts.
+  callback: oauthCallbackSchema,
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 

@@ -75,20 +75,7 @@ export const fetchClaudeCodeIdentity = async (
   }
 
   if (!response.ok) {
-    // Last-resort fallback: when the upstream sent neither a structured
-    // error envelope nor any other recognizable shape, surface the raw
-    // body prefix so the operator has something readable to act on.
-    const root = (typeof parsed === 'object' && parsed !== null) ? parsed as Record<string, unknown> : null;
-    let message: string | null = null;
-    if (root !== null) {
-      if (typeof root.error === 'string') {
-        message = root.error;
-      } else if (parsedError !== null && typeof parsedError.message === 'string') {
-        message = parsedError.message;
-      } else if (typeof root.message === 'string') {
-        message = root.message;
-      }
-    }
+    const message = parsedError !== null && typeof parsedError.message === 'string' ? parsedError.message : null;
     throw new Error(`Claude Code /api/oauth/profile returned ${response.status}: ${message ?? rawText.slice(0, 256)}`);
   }
 

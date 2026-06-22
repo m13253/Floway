@@ -45,8 +45,8 @@ export const CLAUDE_CODE_OAUTH_SCOPE = 'org:create_api_key user:profile user:inf
 // claude-relay-service's `SCOPES_SETUP` both ship this value); the
 // `user:inference`-alone scope set is also the logical minimum for the
 // inference-only credential class so the single-source risk is low.
-//   https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeInference)
-//   https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES_SETUP)
+//   https://github.com/Wei-Shaw/sub2api/blob/85a3b122545a6c914704f716a612aea00c3d7ecd/backend/internal/pkg/oauth/oauth.go#L31
+//   https://github.com/Wei-Shaw/claude-relay-service/blob/13a8158922ff7654e79950fffe086ce5cfbc080c/src/utils/oauthHelper.js#L23
 export const CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE = 'user:inference';
 
 // 1 year in seconds. Sent in the setup-token `authorization_code` exchange

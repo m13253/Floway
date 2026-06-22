@@ -115,16 +115,13 @@ const buildCallbackCredential = (pasteText: string, kind: 'oauth' | 'setup-token
   try { parsed = parseCallbackPaste(text); } catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
   const recalled = recallPkce(pkceStorageKey('claude-code', kind), parsed.state);
   if (!recalled) return { ok: false, error: 'Authorization flow not recognized; restart the flow' };
-  return { ok: true, value: { code: parsed.code, verifier: recalled.verifier, state: recalled.state } };
+  return { ok: true, value: { code: parsed.code, verifier: recalled.verifier, state: parsed.state } };
 };
 
 const buildBody = (): { ok: true; value: SubmitPayload } | { ok: false; error: string } => {
   if (draft.value.activeTab === 'credentials_json') {
     const text = draft.value.credentialsJsonText.trim();
     if (!text) return { ok: false, error: 'Paste the contents of ~/.claude/.credentials.json' };
-    // The handler runs JSON.parse server-side and reports a parse error. We
-    // still try-parse here so the operator gets immediate feedback rather
-    // than a round-trip on a typo.
     try { JSON.parse(text); } catch (e) { return { ok: false, error: `credentials.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}` }; }
     return { ok: true, value: { kind: 'oauth-credentials_json', credentials_json: text } };
   }
@@ -186,7 +183,7 @@ const refreshable = computed(() => {
 
 const refreshTokenNow = async () => {
   if (refreshing.value) return;
-  if (!props.record) return;
+  if (!props.record) throw new Error('refreshTokenNow called without a record');
   const id = props.record.id;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
@@ -215,7 +212,7 @@ const refreshTokenNow = async () => {
 // `data: unknown` slot exactly as the gateway persists it.
 const refreshQuotaNow = async () => {
   if (probing.value) return;
-  if (!props.record) return;
+  if (!props.record) throw new Error('refreshQuotaNow invoked without a record — AccountCard should be hidden in create mode');
   const record = props.record;
   // The gateway route mints an access token via ensureClaudeCodeAccessToken,
   // which throws when state has no account credentials. Refuse here so the

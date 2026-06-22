@@ -81,20 +81,22 @@ const SHAPED_PASSTHROUGH_HEADER_ALLOWLIST = new Set<string>([
   'x-client-request-id',
 ]);
 
-const syntheticResponse = (status: number, body: unknown, extraHeaders: Record<string, string> = {}): Response =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...extraHeaders } });
-
 const synthetic503 = (message: string): Response =>
-  syntheticResponse(503, { error: { type: 'claude_code_upstream_unavailable', message } });
+  new Response(
+    JSON.stringify({ error: { type: 'claude_code_upstream_unavailable', message } }),
+    { status: 503, headers: { 'content-type': 'application/json' } },
+  );
 
 const synthetic429 = (message: string, retryAtIso: string | null, now: Date): Response => {
   const retryAfterSeconds = retryAtIso === null
     ? 60
     : Math.max(0, Math.ceil((new Date(retryAtIso).getTime() - now.getTime()) / 1000));
-  return syntheticResponse(
-    429,
-    { error: { type: 'claude_code_rate_limited', message, retry_at: retryAtIso } },
-    { 'retry-after': String(retryAfterSeconds) },
+  return new Response(
+    JSON.stringify({ error: { type: 'claude_code_rate_limited', message, retry_at: retryAtIso } }),
+    {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': String(retryAfterSeconds) },
+    },
   );
 };
 
@@ -131,7 +133,7 @@ const isRateLimitedNow = (
 
 const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) return;
+  if (!fresh) throw new Error(`Claude Code upstream ${upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
   const account = state.accounts[0];
   const priorStatus = account.quotaSnapshot === null ? null : account.quotaSnapshot.data.status;
@@ -292,8 +294,6 @@ const maybePersistTerminalFromBodyFireAndForget = (
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,
 ): void => {
   if (response.status !== 400 && response.status !== 403) return;
-  // Clone before reading: streamingProviderCall returns the original
-  // response to the caller verbatim and we must not consume its body here.
   const cloned = response.clone();
   const task = (async () => {
     let bodyText: string;

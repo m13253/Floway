@@ -22,11 +22,6 @@
 import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
 
-// `anthropic-beta` is the only non-trivial header the upstream requires.
-// Without `oauth-2025-04-20` the endpoint returns 401 even with a valid
-// bearer (verified against sub2api's pinned headers).
-const ANTHROPIC_OAUTH_BETA = 'oauth-2025-04-20';
-
 export interface ClaudeCodeUsageProbeResult {
   // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
   fetched_at: string;
@@ -46,7 +41,10 @@ export const fetchClaudeCodeUsageProbe = async (
       authorization: `Bearer ${accessToken}`,
       accept: 'application/json',
       'user-agent': CLAUDE_CODE_OAUTH_USER_AGENT,
-      'anthropic-beta': ANTHROPIC_OAUTH_BETA,
+      // `anthropic-beta` is the only non-trivial header the upstream requires.
+      // Without `oauth-2025-04-20` the endpoint returns 401 even with a valid
+      // bearer (verified against sub2api's pinned headers).
+      'anthropic-beta': 'oauth-2025-04-20',
       'anthropic-version': '2023-06-01',
     },
   });

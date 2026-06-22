@@ -106,14 +106,14 @@ describe('stashPkce / recallPkce / clearPkce', () => {
 
   const key = pkceStorageKey('codex');
 
-  test('returns {verifier, state} on matching state without consuming the entry', () => {
+  test('returns {verifier} on matching state without consuming the entry', () => {
     stashPkce(key, { verifier: 'v1', state: 's1' });
     const recalled = recallPkce(key, 's1');
-    expect(recalled).toEqual({ verifier: 'v1', state: 's1' });
+    expect(recalled).toEqual({ verifier: 'v1' });
     // Non-destructive: callers explicitly clearPkce on success so a failed
     // exchange leaves the stash for retry.
     expect(sessionStorage.getItem(key)).not.toBeNull();
-    expect(recallPkce(key, 's1')).toEqual({ verifier: 'v1', state: 's1' });
+    expect(recallPkce(key, 's1')).toEqual({ verifier: 'v1' });
   });
 
   test('clearPkce removes the entry', () => {
@@ -147,8 +147,8 @@ describe('stashPkce / recallPkce / clearPkce', () => {
     const setupTokenKey = pkceStorageKey('claude-code', 'setup-token');
     stashPkce(oauthKey, { verifier: 'v_oauth', state: 's_oauth' });
     stashPkce(setupTokenKey, { verifier: 'v_setup', state: 's_setup' });
-    expect(recallPkce(oauthKey, 's_oauth')).toEqual({ verifier: 'v_oauth', state: 's_oauth' });
-    expect(recallPkce(setupTokenKey, 's_setup')).toEqual({ verifier: 'v_setup', state: 's_setup' });
+    expect(recallPkce(oauthKey, 's_oauth')).toEqual({ verifier: 'v_oauth' });
+    expect(recallPkce(setupTokenKey, 's_setup')).toEqual({ verifier: 'v_setup' });
   });
 });
 
@@ -160,7 +160,7 @@ describe('peekStashedPkce', () => {
     stashPkce(key, { verifier: 'v1', state: 's1' });
     expect(peekStashedPkce(key)).toEqual({ verifier: 'v1', state: 's1' });
     expect(peekStashedPkce(key)).toEqual({ verifier: 'v1', state: 's1' });
-    expect(recallPkce(key, 's1')).toEqual({ verifier: 'v1', state: 's1' });
+    expect(recallPkce(key, 's1')).toEqual({ verifier: 'v1' });
   });
 
   test('returns null when nothing is stashed', () => {

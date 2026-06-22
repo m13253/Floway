@@ -28,9 +28,8 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`
-    // when the refresh_token has died; we rethrow so the catalog cache
-    // records the failure and surfaces it on the dashboard exactly as
-    // codex does.
+    // when the refresh_token has died; the throw propagates so the catalog
+    // cache records the failure and surfaces it on the dashboard.
     getProvidedModels: async fetcher => {
       const access = await ensureClaudeCodeAccessToken({
         upstreamId: record.id,
@@ -56,9 +55,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       // needs to preserve. So the chain only runs on the unshaped path; the
       // shaped path skips straight to the terminal call, which forwards the
       // caller's headers and body byte-for-byte (Authorization swap only).
-      //
-      // `opts.headers` carries the inbound HTTP request's identity
-      // (UA, anthropic-version, x-app) used by the shape detector.
       const looksShaped = isClaudeCodeShapedRequest({
         headers: opts.headers,
         body: ctx.payload,
@@ -91,12 +87,8 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       );
     },
 
-    // Claude Code only exposes /v1/messages — the catalog declares
-    // `endpoints: { messages: {} }` and the dispatcher's per-endpoint
-    // capability gate (`bindingServesEndpoint`) makes these surfaces
-    // unreachable for any well-formed route. A reject-on-call stub
-    // turns a dispatcher routing bug into a loud, attributable failure
-    // rather than a silent shape mismatch downstream.
+    // Only /v1/messages is supported; reject any other endpoint loudly so a
+    // dispatcher routing bug surfaces instead of a silent shape mismatch.
     callMessagesCountTokens: rejectUnsupported('callMessagesCountTokens'),
     callChatCompletions: rejectUnsupported('callChatCompletions'),
     callResponses: rejectUnsupported('callResponses'),

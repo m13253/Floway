@@ -62,6 +62,20 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // the rare case.
 const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
 
+export const ensureClaudeCodeAccessToken = async (
+  args: EnsureClaudeCodeAccessTokenArgs,
+): Promise<EnsuredAccessToken> => {
+  const existing = inFlightEnsures.get(args.upstreamId);
+  if (existing) return await existing;
+  const promise = ensureClaudeCodeAccessTokenInner(args, true);
+  inFlightEnsures.set(args.upstreamId, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightEnsures.delete(args.upstreamId);
+  }
+};
+
 // Reads, refreshes, and persists. The rotated refresh token and the new
 // cached access token are committed together in a single CAS write. CAS
 // loss on that write is fatal: the upstream rotates on every refresh call,
@@ -83,20 +97,6 @@ const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
 // `invalid_refresh_token`, `invalid_client`, `unauthorized_client`,
 // `access_denied`) signal credential death under any race scenario and
 // flip to terminal without a recovery attempt.
-export const ensureClaudeCodeAccessToken = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
-): Promise<EnsuredAccessToken> => {
-  const existing = inFlightEnsures.get(args.upstreamId);
-  if (existing) return await existing;
-  const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  inFlightEnsures.set(args.upstreamId, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightEnsures.delete(args.upstreamId);
-  }
-};
-
 const ensureClaudeCodeAccessTokenInner = async (
   args: EnsureClaudeCodeAccessTokenArgs,
   recoveryAllowed: boolean,
@@ -133,7 +133,6 @@ const ensureClaudeCodeAccessTokenInner = async (
     throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
   }
 
-  // Setup-token returned above; `account` is narrowed to the oauth variant.
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return { entry: account.accessToken, freshlyMinted: false };
   }

@@ -1,3 +1,5 @@
+// Data transfer routes — export/import operator-managed database data as JSON.
+//
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //

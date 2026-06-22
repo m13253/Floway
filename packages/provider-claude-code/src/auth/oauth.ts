@@ -21,18 +21,12 @@ export type ClaudeCodeOAuthFlowKind = 'oauth' | 'setup-token';
 
 export interface ClaudeOAuthTokenResponse {
   access_token: string;
-  token_type: 'Bearer';
-  // Lifetime in seconds, relative to the server's clock at issue time.
   expires_in: number;
   // Absent on setup-token exchanges (the long-lived bearer has no rotation
   // counterpart). Always present on the full OAuth flow and on every
   // refresh-token round-trip.
   refresh_token?: string;
   scope: string;
-  // Optional convenience fields the upstream sometimes returns; we re-derive
-  // identity from /api/oauth/profile rather than trusting these.
-  organization?: { uuid: string };
-  account?: { uuid: string; email_address: string };
 }
 
 // Terminal error: refresh_token is dead, operator must re-import. Distinct
@@ -135,27 +129,17 @@ const claudeCodeTokenRequest = async (
   if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
     throw new Error('Claude Code OAuth /token response missing expires_in');
   }
-  // `refresh_token` is required on the full OAuth flow (initial exchange and
-  // every refresh round-trip) but absent on setup-token exchanges. Callers
-  // that care about the difference downcast through the kind discriminator
-  // rather than re-validating here.
   if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
     throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
   }
   if (typeof root.scope !== 'string') {
     throw new Error('Claude Code OAuth /token response missing scope');
   }
-  // Build the typed view explicitly after the runtime guards. `token_type`,
-  // `organization`, and `account` ride through verbatim — the data plane
-  // never reads them, so we don't validate them here.
   return {
     access_token: root.access_token,
-    token_type: root.token_type as 'Bearer',
     expires_in: root.expires_in,
     refresh_token: typeof root.refresh_token === 'string' ? root.refresh_token : undefined,
     scope: root.scope,
-    organization: root.organization as { uuid: string } | undefined,
-    account: root.account as { uuid: string; email_address: string } | undefined,
   };
 };
 
@@ -222,9 +206,9 @@ export const refreshClaudeCodeAccessToken = async (
 export const buildClaudeCodeAuthorizeUrl = (args: {
   state: string;
   codeChallenge: string;
-  kind?: ClaudeCodeOAuthFlowKind;
+  kind: ClaudeCodeOAuthFlowKind;
 }): string => {
-  const scope = (args.kind ?? 'oauth') === 'setup-token'
+  const scope = args.kind === 'setup-token'
     ? CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE
     : CLAUDE_CODE_OAUTH_SCOPE;
   const params = new URLSearchParams({
