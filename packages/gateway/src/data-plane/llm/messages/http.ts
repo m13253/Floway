@@ -39,7 +39,7 @@ const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
   const result = internalErrorResult(502, toInternalDebugError(error, 'messages'));
   const { response } = await respondMessages(c, result, false, ctx);
   return response;
@@ -53,7 +53,7 @@ export const messagesHttp = {
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
@@ -69,7 +69,7 @@ export const messagesHttp = {
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      const ctx = createGatewayCtxFromHono(c, false);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.countTokens({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);

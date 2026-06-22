@@ -86,7 +86,7 @@ const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean
   const payload = await parseGeminiBody(c, payload => payload as GeminiPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, wantsStream);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream });
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.generate({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
@@ -101,7 +101,7 @@ const runGeminiCountTokens = async (c: Context, model: string): Promise<Response
   const payload = await parseGeminiBody(c, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.countTokens({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });

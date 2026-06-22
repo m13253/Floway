@@ -35,34 +35,24 @@ export interface GatewayCtxAuthVars {
 
 type AuthedContext = Context<{ Variables: GatewayCtxAuthVars }>;
 
-export const createGatewayCtxFromHono = (c: AuthedContext, wantsStream: boolean): GatewayCtx => {
-  const apiKeyId = c.get('apiKeyId');
-  const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const downstreamAbortController = wantsStream ? new AbortController() : undefined;
-  return {
-    apiKeyId,
-    upstreamIds,
-    ...(downstreamAbortController !== undefined ? { abortSignal: downstreamAbortController.signal, downstreamAbortController } : {}),
-    wantsStream,
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-    requestStartedAt: performance.now(),
-    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    currentColo: getCurrentColo(c.req.raw),
-  };
-};
+export interface CreateGatewayCtxOptions {
+  wantsStream: boolean;
+  // WebSocket-style call sites own the AbortController (so the upgrade
+  // handler can cancel mid-stream); HTTP call sites let the factory mint one
+  // when wantsStream is true.
+  downstreamAbortController?: AbortController;
+}
 
-export const createGatewayCtxForWs = (
-  c: AuthedContext,
-  downstreamAbortController: AbortController,
-): GatewayCtx => {
+export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
+  const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKeyId = c.get('apiKeyId');
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   return {
     apiKeyId,
     upstreamIds,
-    abortSignal: downstreamAbortController.signal,
-    wantsStream: true,
-    downstreamAbortController,
+    abortSignal: controller?.signal,
+    wantsStream: opts.wantsStream,
+    downstreamAbortController: controller,
     backgroundScheduler: backgroundSchedulerFromContext(c),
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),

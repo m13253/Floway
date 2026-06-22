@@ -17,7 +17,7 @@ import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider'
 const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
   const result = internalErrorResult(502, toInternalDebugError(error, 'chat-completions'));
   const { response } = await respondChatCompletions(c, result, false, false, ctx);
   return response;
@@ -34,7 +34,7 @@ export const chatCompletionsHttp = {
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const ctx = createGatewayCtxFromHono(c, { wantsStream });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await chatCompletionsServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
