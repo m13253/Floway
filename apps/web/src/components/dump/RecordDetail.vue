@@ -17,6 +17,12 @@ const record = shallowRef<DumpRecord | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 
+// Declared up front so `fetchRecord` can reset it from the first watch fire
+// without hitting the const TDZ. The toggle persists across record switches
+// otherwise — a streaming record opened after an Events-mode session would
+// land on Events even though the operator's typical entry is Collected.
+const streamView = ref<'collected' | 'events'>('collected');
+
 // Per-fetch token: only the latest call is allowed to commit. Stale A→B clicks
 // must not paint A's response on top of B's.
 let activeToken = 0;
@@ -31,10 +37,6 @@ const fetchRecord = async () => {
   const token = ++activeToken;
   loading.value = true;
   error.value = null;
-  // Reset the stream-view toggle whenever a new record starts loading. Without
-  // this the Events tab persists across record switches, so the first paint
-  // of a streaming record can land on Events even though the operator's
-  // typical entry point is the Collected reconstruction.
   streamView.value = 'collected';
   try {
     const res = await authFetch(`/api/dump/keys/${encodeURIComponent(props.keyId)}/records/${encodeURIComponent(props.recordId)}`);
@@ -83,14 +85,19 @@ interface RenderedBody {
   // banner surfaces the exact TextDecoder message so an operator can tell
   // a wrong charset apart from a genuinely binary payload.
   decodeError: string | null;
+  // Filled when the body's content-type announced JSON but `JSON.parse`
+  // threw on it. The dashboard exists to inspect broken upstream
+  // responses, so this case must be visible rather than silently rendered
+  // as raw text.
+  parseError: string | null;
   isJson: boolean;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', decodeError: null, isJson: false };
+  if (body.data.length === 0) return { text: '', decodeError: null, parseError: null, isJson: false };
   if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
   const decoded = decodeBase64Utf8(body.data);
-  if (decoded.error !== null) return { text: body.data, decodeError: decoded.error, isJson: false };
+  if (decoded.error !== null) return { text: body.data, decodeError: decoded.error, parseError: null, isJson: false };
   return renderTextBody(decoded.text, contentType);
 };
 
@@ -105,20 +112,19 @@ const renderTextBody = (body: string, contentType: string): RenderedBody => {
   if (isJsonContentType(contentType)) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return { text: JSON.stringify(parsed, null, 2), decodeError: null, isJson: true };
-    } catch {
-      return { text: body, decodeError: null, isJson: false };
+      return { text: JSON.stringify(parsed, null, 2), decodeError: null, parseError: null, isJson: true };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { text: body, decodeError: null, parseError: message, isJson: false };
     }
   }
-  return { text: body, decodeError: null, isJson: false };
+  return { text: body, decodeError: null, parseError: null, isJson: false };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
   if (!record.value) return null;
   return renderBody(record.value.request.body, contentTypeOf(record.value.request.headers));
 });
-
-const streamView = ref<'collected' | 'events'>('collected');
 
 const responseBodyRendered = computed<RenderedBody | null>(() => {
   if (!record.value) return null;
@@ -134,14 +140,17 @@ const streamEvents = computed<DumpStreamEvent[]>(() => {
 });
 
 // Pretty-print each event's `data` as JSON when it parses; otherwise pass
-// the raw payload through. Computed once per record so the v-for doesn't
-// re-parse on every render.
+// the raw payload through with the parse-error captured. Computed once per
+// record so the v-for doesn't re-parse on every render. Most upstream SSE
+// protocols (Messages, Responses, chat-completions) frame every data line
+// as JSON, so a parse failure is operator-actionable — surface it via a
+// chip in the event header rather than silently rendering as raw text.
 const eventsRendered = computed(() => streamEvents.value.map(ev => {
-  let pretty = ev.data;
   try {
-    pretty = JSON.stringify(JSON.parse(ev.data), null, 2);
-  } catch { /* not all SSE data is JSON — leave as raw */ }
-  return { event: ev.event, ts: ev.ts, pretty };
+    return { event: ev.event, ts: ev.ts, pretty: JSON.stringify(JSON.parse(ev.data), null, 2), parseError: null as string | null };
+  } catch (e) {
+    return { event: ev.event, ts: ev.ts, pretty: ev.data, parseError: e instanceof Error ? e.message : String(e) };
+  }
 }));
 
 // One-click "copy the whole SSE wire" affordance for the Events view. Joins
@@ -262,6 +271,9 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
           <p v-if="requestBody.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
             Could not decode the request body ({{ requestBody.decodeError }}); showing raw base64 below.
           </p>
+          <p v-if="requestBody.parseError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+            Content-type declared JSON but the body did not parse ({{ requestBody.parseError }}); showing raw text below.
+          </p>
           <Code flush :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
         </template>
       </section>
@@ -329,6 +341,9 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             <p v-if="responseBodyRendered.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Could not decode the response body ({{ responseBodyRendered.decodeError }}); showing raw base64 below.
             </p>
+            <p v-if="responseBodyRendered.parseError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
+              Content-type declared JSON but the body did not parse ({{ responseBodyRendered.parseError }}); showing raw text below.
+            </p>
             <Code flush :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
           </template>
         </template>
@@ -344,6 +359,13 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             <p v-else-if="collected.truncated" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Output truncated by the upstream (length cap).
             </p>
+            <p
+              v-for="(warning, i) in collected.warnings"
+              :key="`warn:${i}`"
+              class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-[11px] font-mono text-accent-amber"
+            >
+              {{ warning }}
+            </p>
             <Code v-if="collectedJson !== null" flush :code="collectedJson" language="json" :copyable="false" />
             <p v-else-if="!collected.error" class="px-4 py-3 text-xs text-gray-600">No structured result recovered from the stream.</p>
           </template>
@@ -355,9 +377,16 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
               <div class="flex items-center gap-2 px-4 pt-2 text-[11px]">
                 <span v-if="event.event" class="font-mono text-accent-cyan">{{ event.event }}</span>
                 <span v-else class="font-mono text-gray-600">(unlabeled)</span>
+                <span
+                  v-if="event.parseError"
+                  class="rounded border border-accent-rose/40 bg-accent-rose/10 px-1.5 py-0.5 font-mono text-[10px] text-accent-rose"
+                  :title="event.parseError"
+                >
+                  JSON parse failed
+                </span>
                 <span class="ml-auto font-mono text-gray-500">+{{ formatTs(event.ts) }}</span>
               </div>
-              <Code flush :code="event.pretty" language="json" :copyable="false" />
+              <Code flush :code="event.pretty" :language="event.parseError ? 'text' : 'json'" :copyable="false" />
             </li>
           </ul>
         </template>
