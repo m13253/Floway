@@ -2,6 +2,7 @@
 import { onBeforeUnmount, ref } from 'vue';
 
 import type { ClaudeCodeAuthorizeUrlResult, ClaudeCodeImportTab } from './claude-code-import-types.ts';
+import { truncateMiddle } from '../../lib/text.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
 // `pkce` and `setupTokenPkce` carry independent in-flight PKCE sessions
@@ -80,8 +81,8 @@ onBeforeUnmount(() => {
 
         <div v-else-if="pkce" class="space-y-2">
           <p class="text-xs font-medium text-gray-500">Authorize URL</p>
-          <a :href="pkce.authorize_url" target="_blank" rel="noopener" class="block break-all text-xs text-accent-cyan hover:underline">
-            {{ pkce.authorize_url }}
+          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
+            {{ truncateMiddle(pkce.authorize_url, 80) }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
             <Button size="sm" variant="secondary" @click="copyUrl(pkce.authorize_url, 'oauth')">
@@ -118,8 +119,8 @@ onBeforeUnmount(() => {
 
         <div v-else-if="setupTokenPkce" class="space-y-2">
           <p class="text-xs font-medium text-gray-500">Authorize URL</p>
-          <a :href="setupTokenPkce.authorize_url" target="_blank" rel="noopener" class="block break-all text-xs text-accent-cyan hover:underline">
-            {{ setupTokenPkce.authorize_url }}
+          <a :href="setupTokenPkce.authorize_url" :title="setupTokenPkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
+            {{ truncateMiddle(setupTokenPkce.authorize_url, 80) }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
             <Button size="sm" variant="secondary" @click="copyUrl(setupTokenPkce.authorize_url, 'setup-token')">
