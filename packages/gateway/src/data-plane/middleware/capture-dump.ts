@@ -6,7 +6,7 @@ import type { ApiKey, TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { encodeBodyForWire } from '../../shared/dump-wire.ts';
 import { ulid } from '../../shared/ulid.ts';
-import { addRespondObserver, type RespondObserver } from '../llm/shared/respond-observer.ts';
+import { addRespondObserver, type RespondObserver } from '../shared/respond-observer.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import {
   type DumpMetadata,

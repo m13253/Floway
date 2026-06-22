@@ -9,7 +9,7 @@ import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { flushBackground } from '../../test-helpers/background-tracker.ts';
 import { setupAppTest } from '../../test-helpers.ts';
-import { notifyError, notifyPlain, notifySuccess } from '../llm/shared/respond-observer.ts';
+import { notifyError, notifyPlain, notifySuccess } from '../shared/respond-observer.ts';
 import type { DumpBroker, DumpStore } from '@floway-dev/gateway';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 

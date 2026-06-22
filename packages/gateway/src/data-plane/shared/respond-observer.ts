@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import type { TokenUsage } from '../../../repo/types.ts';
+import type { TokenUsage } from '../../repo/types.ts';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
 import type { InternalErrorResult, PlainResult, TelemetryModelIdentity, UpstreamErrorResult } from '@floway-dev/provider';
 
