@@ -85,12 +85,6 @@ export const respondGemini = async (
   return { success: true, response };
 };
 
-// `promptTokenCount` includes cached input bytes, so subtract
-// `cachedContentTokenCount` to recover the disjoint non-cached input
-// (https://github.com/googleapis/python-genai/blob/84aa3ae82fa5cc0fd3c3c9ddb19d36cd0b6de425/google/genai/types.py#L7960).
-// Reasoning (`thoughtsTokenCount`) is billed as output alongside the
-// candidates (https://ai.google.dev/gemini-api/docs/thinking — "response
-// pricing is the sum of output tokens and thinking tokens").
 const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
   const cacheRead = m.cachedContentTokenCount ?? 0;
   return tokenUsage({
