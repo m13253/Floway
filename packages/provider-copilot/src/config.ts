@@ -1,4 +1,3 @@
-import { isCopilotAccountType, type CopilotAccountType } from './auth.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 export interface CopilotUpstreamUser {
@@ -10,7 +9,6 @@ export interface CopilotUpstreamUser {
 
 export interface CopilotUpstreamConfig {
   githubToken: string;
-  accountType: CopilotAccountType;
   user: CopilotUpstreamUser;
 }
 
@@ -23,13 +21,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const stringField = (value: unknown, field: string): string => {
   if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
-  return value;
-};
-
-const accountTypeField = (value: unknown): CopilotAccountType => {
-  if (!isCopilotAccountType(value)) {
-    throw new Error('Malformed copilot upstream config: accountType must be one of individual, business, enterprise');
-  }
   return value;
 };
 
@@ -53,6 +44,11 @@ const copilotUserField = (value: unknown): CopilotUpstreamUser => {
   };
 };
 
+// Tolerates an unread `accountType` field surviving in legacy config_json
+// rows: that field used to drive the per-tier base URL, but the data-plane
+// host now travels with the bearer token (state.copilotToken.baseUrl) per
+// vscode-copilot-chat 5863f5a7 domainServiceImpl.ts. New writes never emit
+// it; a follow-up data migration will strip it from existing rows.
 export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
   if (record.provider !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.provider}`);
   if (!isRecord(record.config)) throw new Error('Malformed copilot upstream config: config must be an object');
@@ -61,7 +57,6 @@ export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpst
     provider: 'copilot',
     config: {
       githubToken: stringField(record.config.githubToken, 'githubToken'),
-      accountType: accountTypeField(record.config.accountType),
       user: copilotUserField(record.config.user),
     },
   };

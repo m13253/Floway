@@ -2,7 +2,7 @@
 
 import CopilotDeviceFlow from './CopilotDeviceFlow.vue';
 import CopilotInfo from './CopilotInfo.vue';
-import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, CopilotUpstreamState, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 
 defineProps<{
   record: UpstreamRecord | null;
@@ -19,6 +19,7 @@ defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
     v-if="record"
     :upstream-id="record.id"
     :config="record.config as CopilotUpstreamConfig"
+    :state="record.state as CopilotUpstreamState | null"
     :initial-quota="initialQuota"
     :initial-quota-error="initialQuotaError"
   />

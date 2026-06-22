@@ -26,6 +26,7 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -83,6 +84,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -151,6 +153,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -406,6 +409,7 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
@@ -452,6 +456,7 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {

@@ -129,7 +129,6 @@ const azureConfigSchema = z.object({
 
 const copilotConfigSchema = z.object({
   githubToken: z.string().min(1),
-  accountType: z.enum(['individual', 'business', 'enterprise']),
   user: z.object({
     login: z.string(),
     avatar_url: z.string(),

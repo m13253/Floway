@@ -19,6 +19,7 @@ test('/v1beta/models lists Copilot LLM models in Gemini model shape', async () =
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {
@@ -99,6 +100,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models') {

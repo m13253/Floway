@@ -6,11 +6,15 @@ import type { CopilotKnownModels } from './known-models.ts';
 
 // Short-lived Copilot session token minted by exchanging the operator-supplied
 // GitHub PAT against /copilot_internal/v2/token. The PAT itself lives in
-// CopilotUpstreamConfig; only the minted token (and its expiry) belong in
-// state.
+// CopilotUpstreamConfig; everything that comes back from the exchange — the
+// bearer token, its expiry, and the per-tier `endpoints.api` GitHub routes us
+// to — belongs in state. The base URL travels with the token because they
+// share a lifetime: a seat upgraded to a different tier yields a new bearer
+// and a new endpoints.api in the same response.
 export interface CopilotTokenEntry {
   token: string;
   expiresAt: number;
+  baseUrl: string;
 }
 
 export interface CopilotUpstreamState {
@@ -26,6 +30,7 @@ const ALLOWED_STATE_KEYS_MAP: Record<keyof CopilotUpstreamState, true> = {
 const ALLOWED_TOKEN_KEYS_MAP: Record<keyof CopilotTokenEntry, true> = {
   token: true,
   expiresAt: true,
+  baseUrl: true,
 };
 
 const assertCopilotTokenEntry = (value: unknown, where: string): void => {
@@ -43,6 +48,9 @@ const assertCopilotTokenEntry = (value: unknown, where: string): void => {
   }
   if (typeof obj.expiresAt !== 'number' || !Number.isFinite(obj.expiresAt)) {
     throw new TypeError(`${where}.expiresAt must be a finite number`);
+  }
+  if (typeof obj.baseUrl !== 'string' || obj.baseUrl === '') {
+    throw new TypeError(`${where}.baseUrl must be a non-empty string`);
   }
 };
 

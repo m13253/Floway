@@ -7,6 +7,7 @@ import { initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-de
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
+const TOKEN_BASE_URL = 'https://api.individual.githubcopilot.com';
 
 const installRepoAndClearCache = async () => {
   let state: unknown = null;
@@ -22,7 +23,7 @@ const installRepoAndClearCache = async () => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
-    config: { githubToken: 'ghu_test', accountType: 'individual', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -50,7 +51,12 @@ const mockTokenAndCapture = async (
     async request => {
       const url = new URL(request.url);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'tok-test', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800 });
+        return jsonResponse({
+          token: 'tok-test',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: TOKEN_BASE_URL },
+        });
       }
       captured = new Headers(request.headers);
       return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
@@ -59,7 +65,7 @@ const mockTokenAndCapture = async (
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test', accountType: 'individual' },
+        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
         extraHeaders ? { headers: extraHeaders, fetcher: directFetcher } : { fetcher: directFetcher },
       );
     },
@@ -86,7 +92,7 @@ test('copilotAuthedFetch deletes a base header when the interceptor passes an em
   });
 });
 
-test('copilotAuthedFetch persists the minted Copilot token into state_json.copilotToken', async () => {
+test('copilotAuthedFetch persists the minted Copilot token (with baseUrl) into state_json.copilotToken', async () => {
   const harness = await installRepoAndClearCache();
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
 
@@ -94,7 +100,12 @@ test('copilotAuthedFetch persists the minted Copilot token into state_json.copil
     async request => {
       const url = new URL(request.url);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'tok-persisted', expires_at: expiresAt, refresh_in: 1800 });
+        return jsonResponse({
+          token: 'tok-persisted',
+          expires_at: expiresAt,
+          refresh_in: 1800,
+          endpoints: { api: TOKEN_BASE_URL },
+        });
       }
       return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
     },
@@ -102,7 +113,7 @@ test('copilotAuthedFetch persists the minted Copilot token into state_json.copil
       await copilotAuthedFetch(
         '/v1/messages',
         { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test', accountType: 'individual' },
+        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
         { fetcher: directFetcher },
       );
     },
@@ -112,6 +123,36 @@ test('copilotAuthedFetch persists the minted Copilot token into state_json.copil
   if (!persisted) throw new Error('expected state_json to be written');
   assertEquals(persisted.copilotToken?.token, 'tok-persisted');
   assertEquals(persisted.copilotToken?.expiresAt, expiresAt);
+  assertEquals(persisted.copilotToken?.baseUrl, TOKEN_BASE_URL);
+});
+
+test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub stamped on the token', async () => {
+  await installRepoAndClearCache();
+  let observedUrl: string | null = null;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tok-test',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: 'https://api.enterprise.githubcopilot.com' },
+        });
+      }
+      observedUrl = request.url;
+      return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+    },
+    async () => {
+      await copilotAuthedFetch(
+        '/v1/messages',
+        { method: 'POST', body: '{}' },
+        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
+        { fetcher: directFetcher },
+      );
+    },
+  );
+  assertEquals(observedUrl, 'https://api.enterprise.githubcopilot.com/v1/messages');
 });
 
 test('copilotAuthedFetch reads a still-valid Copilot token from state_json instead of refreshing', async () => {
@@ -124,7 +165,12 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       const url = new URL(request.url);
       if (url.pathname === '/copilot_internal/v2/token') {
         tokenFetches++;
-        return jsonResponse({ token: 'tok-persisted', expires_at: Math.floor(Date.now() / 1000) + 3600, refresh_in: 1800 });
+        return jsonResponse({
+          token: 'tok-persisted',
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_in: 1800,
+          endpoints: { api: TOKEN_BASE_URL },
+        });
       }
       upstreamFetches++;
       authHeader = request.headers.get('authorization');
@@ -134,7 +180,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       const args = [
         '/v1/messages',
         { method: 'POST' as const, body: '{}' },
-        { id: UPSTREAM_ID, githubToken: 'ghu_test', accountType: 'individual' as const },
+        { id: UPSTREAM_ID, githubToken: 'ghu_test' },
         { fetcher: directFetcher },
       ] as const;
       await copilotAuthedFetch(...args);

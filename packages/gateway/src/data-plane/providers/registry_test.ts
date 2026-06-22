@@ -150,6 +150,7 @@ test('getInternalModels returns the catalog projection without execution binding
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
@@ -222,6 +223,7 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {

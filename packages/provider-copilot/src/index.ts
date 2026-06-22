@@ -2,10 +2,8 @@ export { createCopilotProvider } from './provider.ts';
 export {
   clearCopilotTokenCache,
   clearInProcessCopilotTokenCache,
-  copilotPlanToAccountType,
+  exchangeCopilotToken,
   githubHeaders,
-  isCopilotAccountType,
-  type CopilotAccountType,
 } from './auth.ts';
 export {
   assertCopilotUpstreamRecord,

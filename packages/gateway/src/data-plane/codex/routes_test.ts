@@ -24,7 +24,7 @@ const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: numbe
       return jsonResponse(['1.110.1']);
     }
     if (url.pathname === '/copilot_internal/v2/token') {
-      return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600 });
+      return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
     }
     if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
       return jsonResponse(copilotModels(models));

@@ -66,14 +66,13 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }]);
 });
 
-test('upstreamRecordToJson redacts Copilot GitHub token inside config', () => {
+test('upstreamRecordToJson redacts Copilot GitHub token inside config and exposes the state baseUrl', () => {
   const result = upstreamRecordToJson({
     ...custom,
     id: 'up_copilot_test',
     provider: 'copilot',
     config: {
       githubToken: 'ghu_secret',
-      accountType: 'individual',
       user: {
         id: 100,
         login: 'octo',
@@ -81,19 +80,25 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config', () => {
         avatar_url: 'https://example.com/avatar.png',
       },
     },
+    state: {
+      copilotToken: { token: 'tok-secret', expiresAt: 4102444800, baseUrl: 'https://api.enterprise.githubcopilot.com' },
+    },
   });
   const config = result.config as Record<string, unknown>;
+  const state = result.state as Record<string, unknown>;
 
   assertEquals(result.provider, 'copilot');
   assertEquals(config.githubToken, undefined);
   assertEquals(config.githubTokenSet, true);
-  assertEquals(config.accountType, 'individual');
+  assertEquals(config.accountType, undefined);
   assertEquals(config.user, {
     id: 100,
     login: 'octo',
     name: null,
     avatar_url: 'https://example.com/avatar.png',
   });
+  // baseUrl surfaces; bearer token and expiry stay server-side.
+  assertEquals(state.copilotToken, { baseUrl: 'https://api.enterprise.githubcopilot.com' });
 });
 
 test('upstreamRecordToFullJson includes provider config secrets for export', () => {

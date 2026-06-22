@@ -70,7 +70,6 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
     };
   case 'copilot':
     return {
-      ...(config.accountType !== undefined ? { accountType: clone(config.accountType) } : {}),
       ...(config.user !== undefined ? { user: clone(config.user) } : {}),
       githubTokenSet: hasSecret(config.githubToken),
     };
@@ -115,7 +114,14 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
         refresh_token_set: hasSecret(a.refresh_token),
       })),
     };
-  case 'copilot':
+  case 'copilot': {
+    // Expose only the per-tier baseUrl the dashboard renders an account-type
+    // badge from. Bearer token + expiry stay server-side: short-lived auth
+    // material has no presentation use.
+    const token = isRecord(state.copilotToken) ? state.copilotToken : null;
+    const baseUrl = typeof token?.baseUrl === 'string' ? token.baseUrl : null;
+    return { copilotToken: baseUrl !== null ? { baseUrl } : null };
+  }
   case 'custom':
   case 'azure':
   case 'ollama':

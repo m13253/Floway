@@ -20,7 +20,7 @@ const installRepoAndConfig = async () => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
-    config: { githubToken, accountType: 'individual', user: { id: 1, login: 't', name: null, avatar_url: '' } },
+    config: { githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     upstreams: {
@@ -29,14 +29,14 @@ const installRepoAndConfig = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-  return { id, githubToken, accountType: 'individual' as const };
+  return { id, githubToken };
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {
   const url = new URL(request.url);
   if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
   if (url.pathname === '/copilot_internal/v2/token') {
-    return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+    return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
   }
   return null;
 };
