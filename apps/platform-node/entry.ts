@@ -1,5 +1,24 @@
 import { serve, upgradeWebSocket } from '@hono/node-server';
+import { Agent, Pool, setGlobalDispatcher } from 'undici';
 import { WebSocketServer } from 'ws';
+
+// api.{individual,business,enterprise}.githubcopilot.com closes its keep-alive
+// socket right after each response; reusing it surfaces as UND_ERR_SOCKET or
+// RequestContentLengthMismatchError. `pipelining: 0` disables keep-alive.
+//
+// Refs: https://github.com/nodejs/undici/blob/v6.21.0/docs/docs/api/Client.md#parameter-clientoptions
+//       https://github.com/Menci/Floway/pull/78#issuecomment-4765475966
+const COPILOT_HOSTS = new Set([
+  'api.individual.githubcopilot.com',
+  'api.business.githubcopilot.com',
+  'api.enterprise.githubcopilot.com',
+]);
+setGlobalDispatcher(new Agent({
+  factory: (origin, opts) => {
+    const hostname = typeof origin === 'string' ? new URL(origin).hostname : origin.hostname;
+    return new Pool(origin, COPILOT_HOSTS.has(hostname) ? { ...opts, pipelining: 0 } : opts);
+  },
+}));
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';

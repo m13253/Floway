@@ -2,17 +2,38 @@ import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamS
 import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
 const COPILOT_BASE_URLS = {
-  individual: 'https://api.githubcopilot.com',
+  individual: 'https://api.individual.githubcopilot.com',
   business: 'https://api.business.githubcopilot.com',
   enterprise: 'https://api.enterprise.githubcopilot.com',
 } as const;
 
 export type CopilotAccountType = keyof typeof COPILOT_BASE_URLS;
 
-const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const satisfies readonly CopilotAccountType[];
+const COPILOT_ACCOUNT_TYPES = Object.keys(COPILOT_BASE_URLS) as readonly CopilotAccountType[];
 
+// Pro+, Max, and EDU all share the individual data-plane host. Full plan list:
+// https://github.com/microsoft/vscode/blob/9fc5f412c92925bd5b2e41e2029006847432bde6/src/vs/workbench/services/chat/common/chatEntitlementService.ts
+const COPILOT_PLAN_TO_ACCOUNT_TYPE: Record<string, CopilotAccountType> = {
+  individual: 'individual',
+  individual_pro: 'individual',
+  individual_max: 'individual',
+  individual_edu: 'individual',
+  business: 'business',
+  enterprise: 'enterprise',
+};
+
+// For already-normalized data-plane values; wire-side `copilot_plan` needs
+// copilotPlanToAccountType() to collapse aliases first.
 export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
   typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
+
+// GitHub may grow new `copilot_plan` strings without notice, so unknown values
+// throw rather than mapping to a default.
+export const copilotPlanToAccountType = (plan: unknown): CopilotAccountType => {
+  const accountType = typeof plan === 'string' ? COPILOT_PLAN_TO_ACCOUNT_TYPE[plan] : undefined;
+  if (!accountType) throw new Error(`Unknown GitHub Copilot plan: ${JSON.stringify(plan)}`);
+  return accountType;
+};
 
 // Version constants pinned to a known-good set. GitHub Copilot rejects too-new
 // editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded
