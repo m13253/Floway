@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { reassembleMessagesEvents } from './reassemble.ts';
 import type {
   MessagesResult,
   MessagesSearchResultBlock,
@@ -12,7 +11,8 @@ import type {
   MessagesToolResultContentBlock,
   MessagesWebSearchResultBlock,
   MessagesWebSearchToolResultBlock,
-} from '@floway-dev/protocols/messages';
+} from './index.ts';
+import { reassembleMessagesEvents } from './reassemble.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 function makeEvents<T = MessagesStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {

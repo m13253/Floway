@@ -1,6 +1,6 @@
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from './index.ts';
 import { reassembleChatCompletionsEvents } from './reassemble.ts';
-import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { type ProtocolFrame } from '@floway-dev/protocols/common';
+import { type ProtocolFrame } from '../common/index.ts';
 
 export const CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE = 'Chat Completions stream ended without a DONE sentinel.';
 

@@ -1,6 +1,6 @@
+import type { MessagesResult, MessagesStreamEvent } from './index.ts';
 import { reassembleMessagesEvents } from './reassemble.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ProtocolFrame } from '../common/index.ts';
 
 export const MESSAGES_MISSING_TERMINAL_MESSAGE = 'Messages stream ended without a message_stop event.';
 

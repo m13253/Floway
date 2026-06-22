@@ -350,3 +350,6 @@ export { parseMessagesStream, type ParseMessagesStreamOptions } from './stream.t
 // extra guard.
 export const parseAnthropicBetaHeader = (raw: string | null | undefined): readonly string[] =>
   raw ? raw.split(',').map(part => part.trim()).filter(part => part.length > 0) : [];
+
+export { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './to-result.ts';
+export { reassembleMessagesEvents } from './reassemble.ts';

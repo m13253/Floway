@@ -1,6 +1,6 @@
-import { captureExtras } from '../../../../shared/reassemble-extras.ts';
-import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
-import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage } from './index.ts';
+import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
+import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field a Chat Completions upstream emits must
 // reach the non-streaming client untouched. The stream path achieves this for

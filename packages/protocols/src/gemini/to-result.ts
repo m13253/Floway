@@ -1,6 +1,6 @@
-import { captureExtras } from '../../../../shared/reassemble-extras.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiCandidate, GeminiErrorResponse, GeminiResult, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiCandidate, GeminiErrorResponse, GeminiResult, GeminiPart, GeminiStreamEvent } from './index.ts';
+import type { ProtocolFrame } from '../common/index.ts';
+import { captureExtras } from '../common/reassemble-extras.ts';
 
 export const GEMINI_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a terminal event.';
 

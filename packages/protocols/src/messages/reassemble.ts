@@ -1,5 +1,5 @@
-import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { captureExtras } from '../../../../shared/reassemble-extras.ts';
+import { isJsonObject } from '../common/json.ts';
+import { captureExtras } from '../common/reassemble-extras.ts';
 import type {
   MessagesAssistantContentBlock,
   MessagesRedactedThinkingBlock,

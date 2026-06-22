@@ -722,3 +722,6 @@ export { responsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream.ts';
+
+export { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './to-result.ts';
+export { reassembleResponsesEvents } from './reassemble.ts';

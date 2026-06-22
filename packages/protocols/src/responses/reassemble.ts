@@ -1,4 +1,4 @@
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesResult, ResponsesStreamEvent } from './index.ts';
 
 type ResponsesReassembleEvent =
   | ResponsesStreamEvent

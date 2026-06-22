@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -11,6 +10,7 @@ import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';

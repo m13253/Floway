@@ -1,14 +1,13 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './events/to-result.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';

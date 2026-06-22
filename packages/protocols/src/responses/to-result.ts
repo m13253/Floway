@@ -1,6 +1,6 @@
+import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from './index.ts';
 import { reassembleResponsesEvents } from './reassemble.ts';
-import { type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { type ProtocolFrame } from '../common/index.ts';
 
 export const RESPONSES_MISSING_TERMINAL_MESSAGE = 'Responses stream ended without a terminal event.';
 
