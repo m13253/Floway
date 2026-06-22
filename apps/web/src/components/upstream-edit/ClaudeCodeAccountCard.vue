@@ -170,6 +170,11 @@ interface WindowRow {
 const headerFetchedAt = computed<number | null>(() => credential.value?.quotaSnapshot?.fetchedAt ?? null);
 const probeFetchedAt = computed<number | null>(() => credential.value?.usageProbeSnapshot?.fetchedAt ?? null);
 
+// `/v1/messages` response headers (`anthropic-ratelimit-unified-*`) report
+// utilization on a 0..1 fraction; the active `/api/oauth/usage` probe reports
+// the same metric pre-multiplied to 0..100. Both paths land in a single
+// `percent: number` column (0..100) so downstream rendering can stay scale-
+// agnostic.
 const pickWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null | undefined): WindowRow | null => {
   const headerUtil = headerWin?.utilization ?? null;
   const probeUtil = probeWin?.utilization ?? null;
@@ -177,7 +182,7 @@ const pickWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow
   const probeTs = probeFetchedAt.value;
   const preferProbe = probeUtil !== null && probeTs !== null && (headerUtil === null || headerTs === null || probeTs > headerTs);
   if (preferProbe && probeWin && probeUtil !== null && probeTs !== null) {
-    return { key, label, percent: probeUtil * 100, resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeTs };
+    return { key, label, percent: probeUtil, resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeTs };
   }
   if (headerUtil !== null && headerWin && headerTs !== null) {
     return { key, label, percent: headerUtil * 100, resetAt: headerWin.reset, status: headerWin.status, source: 'header', fetchedAt: headerTs };
@@ -194,7 +199,7 @@ const windows = computed<WindowRow[]>(() => {
   const sonnet = probe.value?.sevenDaySonnet;
   const probeTs = probeFetchedAt.value;
   if (sonnet && typeof sonnet.utilization === 'number' && probeTs !== null) {
-    rows.push({ key: 'seven_day_sonnet', label: '7-day Sonnet', percent: sonnet.utilization * 100, resetAt: sonnet.resetAt, status: null, source: 'probe', fetchedAt: probeTs });
+    rows.push({ key: 'seven_day_sonnet', label: '7-day Sonnet', percent: sonnet.utilization, resetAt: sonnet.resetAt, status: null, source: 'probe', fetchedAt: probeTs });
   }
   return rows;
 });
