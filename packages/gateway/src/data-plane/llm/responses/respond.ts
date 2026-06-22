@@ -26,7 +26,7 @@ export const respondResponses = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result); void (`upstream error ${result.status}`);
+    notifyUpstreamError(c, result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
@@ -74,7 +74,7 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, 'responses stream failed (completion=${completion}, source-failed=${state.failed})');
+        notifyError(c, `responses stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
         notifySuccess(c, metadata.modelIdentity, state.usage);
       }

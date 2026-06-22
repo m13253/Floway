@@ -27,7 +27,7 @@ export const respondGemini = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result); void (`upstream error ${result.status}`);
+    notifyUpstreamError(c, result);
     return { success: false, response: geminiUpstreamErrorResponse(result) };
   }
 
@@ -74,7 +74,7 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, 'gemini stream failed (completion=${completion}, source-failed=${state.failed})');
+        notifyError(c, `gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
         notifySuccess(c, metadata.modelIdentity, state.usage);
       }
