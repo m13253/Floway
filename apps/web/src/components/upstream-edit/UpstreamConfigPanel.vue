@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
 
 import AzureConfigPanel from './AzureConfigPanel.vue';
 import CodexConfigPanel from './CodexConfigPanel.vue';
@@ -12,6 +12,7 @@ import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProviderPicker from './ProviderPicker.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { CopilotQuotaSnapshot, FlagDef, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import { assertNever } from '../../utils/assert-never.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
 const activeProvider = defineModel<UpstreamProviderKind>('provider', { required: true });
@@ -24,7 +25,7 @@ const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
-defineProps<{
+const props = defineProps<{
   mode: 'create' | 'edit';
   record: UpstreamRecord | null;
   flags: FlagDef[];
@@ -54,15 +55,20 @@ defineEmits<{
   'codex-error': [message: string];
 }>();
 
+// Per-provider narrowed views of the record so each child panel receives the
+// matching discriminated variant without inline casts.
+const codexRecord = computed(() => props.record?.provider === 'codex' ? props.record : null);
+const copilotRecord = computed(() => props.record?.provider === 'copilot' ? props.record : null);
+
 const providerBadgeClass = (kind: UpstreamProviderKind) => {
   switch (kind) {
   case 'azure': return 'border-accent-emerald/30 bg-accent-emerald/10 text-accent-emerald';
   case 'copilot': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
   case 'codex': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
   case 'ollama': return 'border-accent-rose/30 bg-accent-rose/10 text-accent-rose';
-  case 'custom':
-  default: return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
+  case 'custom': return 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber';
   }
+  return assertNever(kind);
 };
 
 // Intrinsic floor for the aside: smallest height at which every
@@ -170,7 +176,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
       <section v-else-if="activeProvider === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
-          :record="record"
+          :record="copilotRecord"
           :initial-quota="initialCopilotQuota"
           :initial-quota-error="initialCopilotQuotaError"
           :proxy-fallback-list="proxyFallbackList"
@@ -181,7 +187,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section v-else-if="activeProvider === 'codex'" class="shrink-0">
         <CodexConfigPanel
           :mode="mode"
-          :record="record"
+          :record="codexRecord"
           :proxy-fallback-list="proxyFallbackList"
           @imported="u => $emit('codex-imported', u)"
           @error="m => $emit('codex-error', m)"

@@ -137,9 +137,8 @@ export interface CodexQuotaSnapshot {
   ratelimited_until?: string;
 }
 
-export interface UpstreamRecord {
+interface UpstreamRecordBase {
   id: string;
-  provider: UpstreamProviderKind;
   name: string;
   enabled: boolean;
   sort_order: number;
@@ -150,16 +149,12 @@ export interface UpstreamRecord {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  config: CustomUpstreamConfig | AzureUpstreamConfig | CopilotUpstreamConfig | CodexUpstreamConfig | OllamaUpstreamConfig;
   // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
   // string `'direct'` for "no proxy") and an optional `colos` whitelist that
   // scopes the entry to specific Cloudflare colos / Node RUNTIME_LOCATION
   // tags. Empty/missing whitelist means "active in all colos". Empty top-
   // level list means "always direct".
   proxy_fallback_list: ProxyFallbackEntry[];
-  // Codex is the only provider that ships gateway-managed state on the row
-  // today; the other providers serialize this as null.
-  state: CodexUpstreamState | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
@@ -168,10 +163,18 @@ export interface UpstreamRecord {
     fetchedAt: number | null;
     lastError: { message: string; at: number } | null;
   };
-  // Present only for provider === 'codex'; serialized inline so the dashboard
-  // renders the quota panel without a follow-up fetch.
-  codex_quota?: CodexQuotaSnapshot | null;
 }
+
+// Provider-keyed discriminated union: each variant pins `provider` and the
+// matching `config` / `state` shape, so `switch (record.provider)` narrows
+// both fields without an `as` cast. Codex's `codex_quota` field rides on the
+// codex variant only.
+export type UpstreamRecord =
+  | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
+  | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
   id: string;

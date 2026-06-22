@@ -21,7 +21,7 @@ import {
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
-import type { AzureUpstreamConfig, CopilotQuotaSnapshot, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
@@ -97,7 +97,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
   proxyFallbackList.value = r.proxy_fallback_list.map(e => ({ id: e.id, ...(e.colos ? { colos: [...e.colos] } : {}) }));
 
   if (r.provider === 'custom') {
-    const cfg = r.config as CustomUpstreamConfig;
+    const cfg = r.config;
     customDraft.value = {
       baseUrl: cfg.baseUrl,
       authStyle: cfg.authStyle,
@@ -114,14 +114,14 @@ const seedFromRecord = (r: UpstreamRecord) => {
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
   } else if (r.provider === 'azure') {
-    const cfg = r.config as AzureUpstreamConfig;
+    const cfg = r.config;
     azureDraft.value = {
       endpoint: cfg.endpoint,
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
   } else if (r.provider === 'ollama') {
-    const cfg = r.config as OllamaUpstreamConfig;
+    const cfg = r.config;
     ollamaDraft.value = {
       baseUrl: cfg.baseUrl,
       apiKey: '',
@@ -156,12 +156,12 @@ const setActiveProvider = (next: UpstreamProviderKind) => {
 };
 
 const customBearerTokenSet = computed(() => {
-  const cfg = props.record?.config as CustomUpstreamConfig | undefined;
-  return cfg?.bearerTokenSet === true;
+  if (props.record?.provider !== 'custom') return false;
+  return props.record.config.bearerTokenSet === true;
 });
 const azureApiKeySet = computed(() => {
-  const cfg = props.record?.config as AzureUpstreamConfig | undefined;
-  return cfg?.apiKeySet === true;
+  if (props.record?.provider !== 'azure') return false;
+  return props.record.config.apiKeySet === true;
 });
 const ollamaApiKeySet = computed(() => {
   const cfg = props.record?.config as OllamaUpstreamConfig | undefined;
