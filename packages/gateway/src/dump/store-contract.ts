@@ -1,4 +1,4 @@
-import type { DumpMetadata, DumpRecord, DumpRecordId } from '@floway-dev/protocols/dump';
+import type { DumpMetadata, DumpRecord, DumpRecordId } from './types.ts';
 
 // Per-API-key request dump storage contract: metadata in SQL, bytes in
 // FileProvider. Concrete impls live in `apps/platform-*`.

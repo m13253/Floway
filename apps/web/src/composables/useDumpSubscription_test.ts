@@ -4,7 +4,7 @@ import { effectScope, nextTick, ref } from 'vue';
 
 import { useDumpSubscription } from './useDumpSubscription.ts';
 import { useAuthStore } from '../stores/auth.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 // Minimal EventSource shim mirroring the surface the composable touches:
 // `addEventListener('snapshot' | 'appended' | 'error')`, `readyState`, `close`,

@@ -1,4 +1,4 @@
-import type { DumpBody } from '@floway-dev/protocols/dump';
+import type { DumpBody } from './types.ts';
 
 const TEXT_LIKE_PREFIXES = ['text/', 'application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded'];
 

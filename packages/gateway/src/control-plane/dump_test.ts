@@ -4,7 +4,7 @@ import { initDumpBroker, initDumpStore } from '../dump/registry.ts';
 import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-helpers.ts';
 import type { DumpStore } from '@floway-dev/gateway';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/protocols/dump';
+import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>

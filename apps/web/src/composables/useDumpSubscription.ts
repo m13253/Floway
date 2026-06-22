@@ -2,7 +2,7 @@ import { onScopeDispose, ref, watch, type Ref } from 'vue';
 
 import { authFetch } from '../api/client.ts';
 import { useAuthStore } from '../stores/auth.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 // Rebuild the dedup set after this many ids to bound memory on long-lived subscriptions.
 const DEDUP_REBUILD_THRESHOLD = 10_000;

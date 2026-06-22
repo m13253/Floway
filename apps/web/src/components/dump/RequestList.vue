@@ -4,7 +4,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
 import { rowTintClass, statusBadgeClass } from './badge.ts';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 dayjs.extend(relativeTime);

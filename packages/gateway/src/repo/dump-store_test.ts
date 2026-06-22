@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
+import type { DumpRecord } from '../dump/types.ts';
 import { MemoryFileProvider } from '@floway-dev/platform';
 import type { FileProvider, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import type { DumpRecord } from '@floway-dev/protocols/dump';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // Thin SqlDatabase adapter over node:sqlite's DatabaseSync, kept inside the

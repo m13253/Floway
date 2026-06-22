@@ -1,7 +1,7 @@
 // Wire-level shapes for the per-API-key request dump feature, shared by
 // the gateway, platform impls, and the dashboard SPA.
 
-import type { ProtocolFrame } from '../common/index.ts';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export type DumpRecordId = string;
 

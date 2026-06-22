@@ -1,6 +1,4 @@
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
-import { decodeBodyFromWire, encodeBodyForWire } from '../dump/wire.ts';
-import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 import type {
   DumpMetadata,
   DumpRecord,
@@ -9,7 +7,9 @@ import type {
   DumpResponse,
   DumpResponseBody,
   DumpStreamEvent,
-} from '@floway-dev/protocols/dump';
+} from '../dump/types.ts';
+import { decodeBodyFromWire, encodeBodyForWire } from '../dump/wire.ts';
+import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
 // The hour bucket lets the cron sweep `deletePrefix` whole expired hours.

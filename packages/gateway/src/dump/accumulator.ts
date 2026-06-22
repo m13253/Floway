@@ -10,19 +10,19 @@
 import type { Context } from 'hono';
 
 import { getDumpBroker, getDumpStore } from './registry.ts';
-import { encodeBodyForWire } from './wire.ts';
-import { getRepo } from '../repo/index.ts';
-import type { ApiKey, TokenUsage } from '../repo/types.ts';
-import { ulid } from '../shared/ulid.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   DumpMetadata,
   DumpRecord,
   DumpResponseBody,
   DumpStreamEvent,
   DumpUpstreamRef,
-} from '@floway-dev/protocols/dump';
+} from './types.ts';
+import { encodeBodyForWire } from './wire.ts';
+import { getRepo } from '../repo/index.ts';
+import type { ApiKey, TokenUsage } from '../repo/types.ts';
+import { ulid } from '../shared/ulid.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { InternalErrorResult, TelemetryModelIdentity, UpstreamErrorResult } from '@floway-dev/provider';
 
 // Inbound body bytes the handler reads once and forwards into the

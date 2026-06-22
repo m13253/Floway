@@ -2,12 +2,12 @@
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
 import { statusBadgeClass } from './badge.ts';
-import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from './collect.ts';
 import HeaderTable from './HeaderTable.vue';
 import { authFetch } from '../../api/client.ts';
+import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from '@floway-dev/gateway/dump-collect';
+import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { chatCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
-import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/protocols/dump';
 import { geminiProtocolFrameToSSEFrame } from '@floway-dev/protocols/gemini';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
 import { responsesProtocolFrameToSSEFrame } from '@floway-dev/protocols/responses';
@@ -190,7 +190,7 @@ const collectKind = computed(() => record.value ? detectCollectKind(record.value
 // Folding is async (the shared reassembler consumes an AsyncIterable);
 // drive it through a watch so the `collected` ref settles on each event
 // or kind change.
-const collected = shallowRef<CollectOutcome | null>(null);
+const collected = shallowRef<CollectOutcome<unknown> | null>(null);
 watchEffect(() => {
   if (record.value?.response.type !== 'stream' || collectKind.value === null) {
     collected.value = null;

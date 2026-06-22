@@ -6,6 +6,7 @@ import { cloudflareSocketDial } from './socket-dial.ts';
 import { cloudflareRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
@@ -17,7 +18,6 @@ import {
   initSocketDial,
   type SqlDatabase,
 } from '@floway-dev/platform';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 export interface CloudflareEnv {
   DB: SqlDatabase;

@@ -7,6 +7,7 @@ import { SqliteImageCache } from './sqlite-image-cache.ts';
 import { nodeRuntimeRootCAs } from './tls-trust.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump';
+import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   getEnvOptional,
@@ -19,7 +20,6 @@ import {
   initSocketDial,
   type SqlDatabase,
 } from '@floway-dev/platform';
-import type { DumpMetadata } from '@floway-dev/protocols/dump';
 
 export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initEnv(name => process.env[name]);
