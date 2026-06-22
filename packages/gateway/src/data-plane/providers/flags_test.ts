@@ -56,9 +56,6 @@ test('provider flags: defaultsForProvider returns the catalog-declared defaults'
 });
 
 test('provider flags: defaultsForProvider memoizes the set per provider kind', () => {
-  // Azure's per-deployment getProvidedModels loop calls this once per
-  // deployment per request; repeated calls must return the same frozen set
-  // reference so the memo never regresses into per-call allocations.
   assertEquals(defaultsForProvider('copilot') === defaultsForProvider('copilot'), true);
   assertEquals(defaultsForProvider('azure') === defaultsForProvider('azure'), true);
   assertEquals(defaultsForProvider('custom') === defaultsForProvider('custom'), true);

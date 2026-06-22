@@ -7,12 +7,10 @@ export interface EventResult<T> {
   modelIdentity: TelemetryModelIdentity;
   performance?: PerformanceTelemetryContext;
   finalMetadata?: Promise<EventResultMetadata>;
-  // Upstream HTTP response headers, propagated from the provider's
-  // `ProviderStreamResult` so the source-side `respond` layer can forward
-  // billing/rate-limit hints (e.g. `anthropic-ratelimit-*`) to the
-  // downstream client. Absent on lifted/synthesized streams that have no
-  // raw upstream Response.
-  responseHeaders?: Headers;
+  // Raw upstream response headers for the source-side `respond` layer to
+  // forward (blocklist in gateway `shared/respond.ts`). Absent on
+  // lifted/synthesized streams that have no upstream Response behind them.
+  headers?: Headers;
 }
 
 export interface EventResultMetadata {
@@ -49,17 +47,21 @@ export interface PlainResult {
 
 export type ExecuteResult<T> = EventResult<T> | UpstreamErrorResult | InternalErrorResult;
 
+export interface EventResultOptions {
+  performance?: PerformanceTelemetryContext;
+  finalMetadata?: Promise<EventResultMetadata>;
+  headers?: Headers;
+}
+
 export const eventResult = <T>(
   events: AsyncIterable<T>,
   modelIdentity: TelemetryModelIdentity,
-  performance?: PerformanceTelemetryContext,
-  finalMetadata?: Promise<EventResultMetadata>,
-  responseHeaders?: Headers,
+  options: EventResultOptions = {},
 ): EventResult<T> => {
   const result: EventResult<T> = { type: 'events', events, modelIdentity };
-  if (performance !== undefined) result.performance = performance;
-  if (finalMetadata !== undefined) result.finalMetadata = finalMetadata;
-  if (responseHeaders !== undefined) result.responseHeaders = responseHeaders;
+  if (options.performance !== undefined) result.performance = options.performance;
+  if (options.finalMetadata !== undefined) result.finalMetadata = options.finalMetadata;
+  if (options.headers !== undefined) result.headers = options.headers;
   return result;
 };
 

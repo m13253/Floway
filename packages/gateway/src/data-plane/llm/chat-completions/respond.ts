@@ -3,11 +3,11 @@ import { streamSSE } from 'hono/streaming';
 
 import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './events/to-result.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
-import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -47,14 +47,14 @@ export const respondChatCompletions = async (
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.responseHeaders) }) };
+      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error, 'chat-completions')) };
     }
   }
 
-  forwardUpstreamHeaders(c, result.responseHeaders);
+  forwardUpstreamHeaders(c, result.headers);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
@@ -75,25 +75,6 @@ export const respondChatCompletions = async (
   });
 
   return { success: true, response };
-};
-
-// --- token usage ---
-
-// OpenAI Chat usage reports prompt_tokens inclusive of cached and
-// cache-creation tokens; subtract them to recover the disjoint bare input.
-// The top-level `service_tier` echoes the actual processing tier; surface it
-// as the `tier` slot so per-tier pricing overrides resolve at recording time
-// (dropping `default` and `auto`, both of which denote base pricing).
-const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
-  const cacheRead = u.prompt_tokens_details?.cached_tokens ?? 0;
-  const cacheWrite = u.prompt_tokens_details?.cache_creation_input_tokens ?? 0;
-  return tokenUsage({
-    input: u.prompt_tokens - cacheRead - cacheWrite,
-    input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
-    output: u.completion_tokens,
-    ...(serviceTier != null && serviceTier !== 'default' && serviceTier !== 'auto' ? { tier: serviceTier } : {}),
-  });
 };
 
 // --- error rendering ---

@@ -83,13 +83,13 @@ const sseResponse = (): Response => new Response(
 );
 
 const cliClientCallOpts = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
-  ...noopUpstreamCallOptions,
-  clientRequestHeaders: {
+  ...noopUpstreamCallOptions(),
+  headers: new Headers({
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
     'anthropic-beta': 'oauth-2025-04-20',
     'anthropic-version': '2023-06-01',
-  },
+  }),
   ...overrides,
 });
 
@@ -108,7 +108,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = await createClaudeCodeProvider(currentRecord);
-    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);
+    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions().fetcher);
     expect(models.map(m => m.id)).toEqual([
       'claude-fable-5',
       'claude-opus-4-7',
@@ -124,7 +124,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     // stays empty regardless of the other providers' defaults.
     stubModelsListFetch();
     const instance = await createClaudeCodeProvider(currentRecord);
-    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions.fetcher);
+    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions().fetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
     }
@@ -160,9 +160,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       upstreamModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
-      {},
-      undefined,
-      noopUpstreamCallOptions,
+      noopUpstreamCallOptions(),
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
@@ -180,7 +178,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     expect(body.metadata.user_id.startsWith('{')).toBe(true);
   });
 
-  test('shaped request (CC fingerprint on clientRequestHeaders) preserves caller-supplied system + headers (chain skipped)', async () => {
+  test('shaped request preserves caller-supplied system + headers (chain skipped)', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
@@ -193,8 +191,6 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
         system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
         metadata: { user_id: userId },
       },
-      undefined,
-      {},
       undefined,
       cliClientCallOpts(),
     );
@@ -226,9 +222,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
       upstreamModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
-      {},
-      undefined,
-      { ...noopUpstreamCallOptions, clientRequestHeaders: { 'user-agent': 'claude-cli/2.1.181' } },
+      { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;

@@ -43,7 +43,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
 
     getPricingForModelKey: pricingForClaudeCodeModelKey,
 
-    callMessages: async (model, body, signal, _headers, _anthropicBeta, opts) => {
+    callMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
       const ctx: ClaudeCodeMessagesBoundaryCtx = {
         payload: { ...body, model: model.id },
         model,
@@ -57,17 +57,13 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
       // shaped path skips straight to the terminal call, which forwards the
       // caller's headers and body byte-for-byte (Authorization swap only).
       //
-      // `clientRequestHeaders` carries the inbound HTTP request's identity
-      // (UA, anthropic-version, x-app). When the gateway is invoked outside a
-      // real Hono request (synthetic tests, translation chains that never
-      // originated as /v1/messages), it is undefined and detection downgrades
-      // to "not shaped".
-      const looksShaped = opts.clientRequestHeaders !== undefined
-        && isClaudeCodeShapedRequest({
-          headers: new Headers(opts.clientRequestHeaders),
-          body: ctx.payload,
-          isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
-        });
+      // `opts.headers` carries the inbound HTTP request's identity
+      // (UA, anthropic-version, x-app) used by the shape detector.
+      const looksShaped = isClaudeCodeShapedRequest({
+        headers: opts.headers,
+        body: ctx.payload,
+        isMaxTokensOneHaikuProbe: detectHaikuProbe(ctx.payload),
+      });
 
       const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
         // Drop `model` from the payload: callClaudeCodeMessages re-attaches the

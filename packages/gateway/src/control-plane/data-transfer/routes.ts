@@ -26,7 +26,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { parseFlagOverridesWire } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -63,7 +63,7 @@ interface ExportPayload {
 const EXPORT_VERSION = 6;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
-const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']);
+const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -410,8 +410,15 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
     if (record.tier !== undefined && record.tier !== null && typeof record.tier !== 'string') {
-      return { type: 'invalid', index: i, error: 'record has invalid tier (must be a string or null)' };
+      return { type: 'invalid', index: i, error: 'tier, when present, must be a string or null' };
     }
+    if (record.tier === '') {
+      return { type: 'invalid', index: i, error: 'tier must be a non-empty string or null/absent' };
+    }
+    // Empty-string is rejected rather than normalized to null: the unique
+    // index folds NULL/'' under COALESCE, so a '' import would silently
+    // merge with base-tier rows.
+    const tier: string | null = typeof record.tier === 'string' ? record.tier : null;
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     const costResult = parseImportedCost(record.cost);
@@ -422,7 +429,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       upstream: record.upstream,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier: (record.tier as string | null | undefined) ?? null,
+      tier,
       requests: record.requests,
       tokens: tokensResult.tokens,
       cost: costResult.cost,

@@ -14,25 +14,19 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
   cost: candidate.binding.provider.getPricingForModelKey(modelKey),
 });
 
-// Assemble the per-call `UpstreamCallOptions` from the request-scoped pieces
-// the attempt layer already has on hand. The optional `clientRequest*` fields
-// only appear when the gateway is serving a real Hono request (so the
-// claude-code provider can decide whether the inbound call is already
-// CC-shaped); translated or synthesized callsites that have no inbound HTTP
-// context leave them undefined. `waitUntil` reuses the request-scoped
-// background scheduler — they share the runtime primitive
-// (`ExecutionContext.waitUntil` on workerd, a no-op on Node) and the
-// per-call name reads more naturally at the provider boundary.
+// Per-call UpstreamCallOptions for the chosen candidate; see
+// UpstreamCallOptions in `@floway-dev/provider` for the contract on each
+// field, especially header ownership.
 export const buildUpstreamCallOptions = (
   candidate: ProviderCandidate,
   ctx: GatewayCtx,
   recordUpstreamLatency: UpstreamCallOptions['recordUpstreamLatency'],
+  headers: Headers,
 ): UpstreamCallOptions => ({
   fetcher: candidate.fetcher,
   recordUpstreamLatency,
   waitUntil: ctx.backgroundScheduler,
-  ...(ctx.clientRequestHeaders !== undefined ? { clientRequestHeaders: ctx.clientRequestHeaders } : {}),
-  ...(ctx.clientRequestPathname !== undefined ? { clientRequestPathname: ctx.clientRequestPathname } : {}),
+  headers,
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult
@@ -56,8 +50,6 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   return eventResult(
     withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, durationMs),
     telemetryModelIdentity(candidate, providerResult.modelKey),
-    context,
-    undefined,
-    providerResult.responseHeaders,
+    { performance: context, headers: providerResult.headers },
   );
 };

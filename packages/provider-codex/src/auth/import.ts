@@ -105,11 +105,10 @@ export const extractCodexCallbackParams = (input: string): { code: string; state
 
 // Exchange the authorization code for tokens, then derive identity from the
 // returned id_token. The PKCE verifier was stored at PKCE-start time and is
-// supplied here. The optional `fetcher` lets the control-plane import route
-// thread an operator-supplied proxy fallback chain through the token
-// exchange — the only network call on this path, since identity is parsed
-// locally from the id_token.
-export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher?: Fetcher }): Promise<CodexImportResult> => {
+// supplied here. The token exchange is the only network hop on this path
+// (identity parses locally from the id_token), so `fetcher` is where the
+// caller picks egress for the whole import.
+export const importCodexFromCallback = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexImportResult> => {
   const tokens = await exchangeCodexAuthorizationCode({ code: opts.code, codeVerifier: opts.codeVerifier, fetcher: opts.fetcher });
   const identity = parseCodexIdTokenClaims(tokens.id_token);
   return buildCodexImportResult({

@@ -5,12 +5,9 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*_test.ts'],
     restoreMocks: false,
-    // 30s default: control-plane route tests use `setupAppTest` which spins
-    // up the full Hono app + memory D1 mock + admin session per test. Real
-    // work is hundreds of milliseconds but under workspace-parallel load
-    // (worker contention + GC pauses) several push past vitest's 10s
-    // default and flake intermittently. 30s gives headroom without masking
-    // actual hangs.
+    // `setupAppTest` builds the full Hono app + memory D1 + admin session per
+    // test; under workspace-parallel load that occasionally pushes past 10s.
+    // 30s absorbs the contention without masking actual hangs.
     testTimeout: 30_000,
     setupFiles: ['./vitest.setup.ts'],
   },

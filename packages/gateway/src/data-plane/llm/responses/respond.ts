@@ -3,12 +3,12 @@ import { streamSSE } from 'hono/streaming';
 
 import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { upstreamErrorToResponse } from '@floway-dev/provider';
 
@@ -44,14 +44,14 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
       recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed');
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.responseHeaders) }) };
+      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error, 'responses')) };
     }
   }
 
-  forwardUpstreamHeaders(c, result.responseHeaders);
+  forwardUpstreamHeaders(c, result.headers);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
@@ -72,29 +72,6 @@ export const respondResponses = async (
   });
 
   return { success: true, response };
-};
-
-// --- token usage ---
-
-// OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input. The top-level
-// `service_tier` echoes the actual processing tier the upstream served the
-// request at (priority, flex, scale, default, auto), which we surface as the
-// `tier` slot so per-tier pricing overrides resolve at recording time. We
-// drop `default` and `auto` — both denote base pricing, and stamping every
-// row with one of them would split base-tier buckets pointlessly from rows
-// where the upstream omitted the field.
-const tokenUsageFromResponsesResult = (r: ResponsesResult) => {
-  const u = r.usage;
-  if (!u) return null;
-  const cacheRead = u.input_tokens_details?.cached_tokens ?? 0;
-  const tier = r.service_tier;
-  return tokenUsage({
-    input: u.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: u.output_tokens,
-    ...(tier != null && tier !== 'default' && tier !== 'auto' ? { tier } : {}),
-  });
 };
 
 // --- error rendering ---

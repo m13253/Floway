@@ -4,7 +4,8 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from './events/to-result.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
+import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
@@ -155,7 +156,7 @@ const handleClientMessage = async (
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, store, snapshotMode });
+      result = await responsesServe.generate({ payload, ctx, store, snapshotMode, headers: inboundHeadersForUpstream(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
@@ -397,19 +398,6 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   ...toInternalDebugError(error, 'responses'),
   code: 'internal_error',
 });
-
-const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
-  const usage = response.usage;
-  if (!usage) return null;
-  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
-  const tier = response.service_tier;
-  return tokenUsage({
-    input: usage.input_tokens - cacheRead,
-    input_cache_read: cacheRead,
-    output: usage.output_tokens,
-    ...(tier != null && tier !== 'default' && tier !== 'auto' ? { tier } : {}),
-  });
-};
 
 const responseDoneSummary = (event: unknown) => {
   if (!event || typeof event !== 'object') return null;

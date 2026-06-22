@@ -8,23 +8,27 @@
 // https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
 //
 // Source of truth for OpenAI public API prices the table is derived from:
-// https://openai.com/api/pricing/ (verified 2026-06-19 against the live tier
-// breakdown at https://platform.openai.com/docs/pricing).
+// https://developers.openai.com/api/docs/pricing
+// Refresh procedure: .agents/skills/fetching-models-pricing/.
 //
-// Per-tier overrides cover the two service tiers Codex CLI exposes:
-//   - `flex` (50% discount, slower) — set by `service_tier: "flex"` body field
-//   - `priority` (premium for guaranteed latency) — Codex CLI's `/fast` toggle
-//     writes `service_tier: "priority"` per
-//     https://github.com/openai/codex/blob/main/codex-rs/protocol/src/config_types.rs
-// OpenAI reports the actual tier used in `usage.service_tier` and the gateway
-// captures it onto `TokenUsage.tier` so cost compute can pick the right row.
+// Per-tier overrides cover the two OpenAI service-tier wire values reachable
+// through the Codex CLI's `ServiceTier` enum (`priority` / `flex`):
+//   - `flex` — discounted, latency-tolerant; the CLI sets `service_tier: "flex"`.
+//     https://developers.openai.com/api/docs/guides/flex-processing
+//   - `priority` — premium-priced, lower-latency lane; the CLI's `/fast` toggle
+//     stamps `service_tier: "priority"`.
+//     https://developers.openai.com/api/docs/guides/priority-processing
+// https://github.com/openai/codex/blob/f774455c3a831dfab2c6f37a1f624b8097f6f2c2/codex-rs/protocol/src/config_types.rs#L445
+// Whether a request actually goes through at the requested tier depends on
+// what each model's catalog entry (`service_tiers` block in upstream
+// `models.json`) accepts and on remaining capacity; OpenAI reports the
+// actually-served tier in `usage.service_tier` and the gateway captures it
+// onto `TokenUsage.tier` so cost compute picks the right row.
 //
 // Coverage: every slug surfaced by /codex/models for ChatGPT Plus today
 // (gpt-5.5, gpt-5.4, gpt-5.4-mini, codex-auto-review). New slugs the upstream
 // rolls out at higher plans (Pro / Team / Enterprise) should be added here so
 // the dashboard reports their cost too.
-//
-// Refresh procedure: .agents/skills/fetching-models-pricing/.
 
 import type { ModelPricing } from '@floway-dev/protocols/common';
 
@@ -58,9 +62,9 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
       priority: { input: 1.5, input_cache_read: 0.15, output: 9 },
     },
   }],
-  // Internal review model gated under codex_cli_rs's auto-review feature; runs
-  // on the same compute as gpt-5.4 and is billed identically (including tier
-  // overrides — auto-review honors `service_tier` the same way).
+  // Internal review model gated under codex_cli_rs's auto-review feature. No
+  // public price surface; billed as a notional clone of gpt-5.4 (closest
+  // analogue we have).
   ['codex-auto-review', GPT_5_4_PRICING],
 ];
 

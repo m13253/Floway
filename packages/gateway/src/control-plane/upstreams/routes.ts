@@ -15,7 +15,15 @@ import { shortId } from '../../shared/short-id.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { claudeCodeImportBody, claudeCodePkceStartBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexImportBody, codexPkceStartBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
-import { directFetcher, ProviderModelsUnavailableError, getFlagCatalog, type Fetcher, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import {
+  directFetcher,
+  getFlagCatalog,
+  ProviderModelsUnavailableError,
+  type Fetcher,
+  type ProxyFallbackEntry,
+  type UpstreamProviderKind,
+  type UpstreamRecord,
+} from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import {
   type ClaudeCodeAccountCredential,
@@ -568,8 +576,10 @@ const ingestCodexCredential = async (
 
 export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
+    // First-time import has no upstream id, so the resolver falls back to
+    // direct egress when the operator left the override empty.
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -612,8 +622,10 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
   }
 
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
+    // Re-import threads the override through the same resolver as
+    // `codexRefreshNow`; absent falls back to the persisted row's list.
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);

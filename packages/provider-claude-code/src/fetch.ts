@@ -36,7 +36,7 @@ export interface CallClaudeCodeMessagesOptions {
   body: Omit<MessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
   // traffic (operator's CC client sent through verbatim). The wire header
-  // surface is rebuilt from `opts.call.clientRequestHeaders` through a tight
+  // surface is rebuilt from `opts.call.headers` through a tight
   // whitelist that matches sub2api's `allowedHeaders`
   // (gateway_service.go:422-444), preserving the operator's genuine
   // X-Stainless-* / anthropic-beta / x-claude-code-session-id fingerprint
@@ -411,14 +411,10 @@ const performUpstreamCall = async (
   let headers: Record<string, string>;
   if (opts.shaped) {
     // Shaped path: forward the operator's inbound CC fingerprint through a
-    // tight whitelist (see SHAPED_PASSTHROUGH_HEADER_ALLOWLIST). The shaped
-    // detector guarantees `clientRequestHeaders` is set
-    // (`provider.ts:54-55` requires it before `looksShaped` can be true),
-    // so an undefined here is a programmer error worth surfacing.
-    if (!opts.call.clientRequestHeaders) {
-      throw new Error('Claude Code shaped path requires opts.call.clientRequestHeaders');
-    }
-    const inbound = new Headers(opts.call.clientRequestHeaders);
+    // tight whitelist (see SHAPED_PASSTHROUGH_HEADER_ALLOWLIST). `opts.call.headers`
+    // is always present per the UpstreamCallOptions contract; an empty bag
+    // still produces a working passthrough (just content-type + authorization).
+    const inbound = opts.call.headers;
     const passthrough: Record<string, string> = {};
     for (const [name, value] of inbound.entries()) {
       // `Headers` iterator lowercases names per the Fetch spec, so the

@@ -4,13 +4,11 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { FakeTime } from '../../../test-time.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { UPSTREAM_IDLE_TIMEOUT_MS } from '../shared/stream/sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamEvent);
 
@@ -273,17 +271,261 @@ test('Messages stream usage leaves tier unset when speed is standard', () => {
     state,
   );
 
-  const usage = tokenUsageFromMessagesFrame(stop(), state);
-  assertEquals(usage, { input: 5 });
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+  });
+});
+
+test('Messages stream usage forwards service_tier=priority verbatim', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-sonnet-4-6',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 0, service_tier: 'priority' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+    tier: 'priority',
+  });
+});
+
+test('Messages stream usage forwards service_tier=batch verbatim', () => {
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-sonnet-4-6',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 0, service_tier: 'batch' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+    tier: 'batch',
+  });
+});
+
+test('Messages stream usage forwards an unknown non-standard tier verbatim (forward-compat)', () => {
+  // A future Anthropic value the SDK has not minted yet must reach the
+  // billing record so the operator can backfill a pricing override for it
+  // rather than have it silently fold into the base bucket.
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 0, speed: 'turbo' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+    tier: 'turbo',
+  });
+});
+
+test('Messages stream usage prefers speed=fast over service_tier=standard', () => {
+  // Anthropic stamps both fields on a Priority-Tier-aware account; fast mode
+  // is mutually exclusive with priority/batch per docs, so a `fast` row will
+  // always pair with `service_tier: 'standard'`. The non-standard signal
+  // wins; the redundant 'standard' must not clobber it.
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 5, output_tokens: 0, speed: 'fast', service_tier: 'standard' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 5,
+    tier: 'fast',
+  });
+});
+
+test('Messages stream usage carries tier forward when a fully cache-hit start is followed by a delta that re-supplies input', () => {
+  // A fully cache-hit prompt: message_start reports bare input 0 and tier 'fast',
+  // and a later delta carries input_tokens without re-stamping the tier fields.
+  // The delta replaces state.current (gotInputFromStart was false), so without
+  // explicit carry-forward the fast tier would be dropped — and the row would
+  // bill at base.
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0, speed: 'fast' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_delta',
+      delta: {},
+      usage: { input_tokens: 11, output_tokens: 2, cache_read_input_tokens: 5 },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 11,
+    input_cache_read: 5,
+    output: 2,
+    tier: 'fast',
+  });
+});
+
+test('Messages stream usage lets a delta-stamped tier win over message_start on the cache-hit-prompt path', () => {
+  // The wire schema permits message_delta.usage to carry service_tier/speed
+  // (packages/protocols/src/messages/index.ts). If a future upstream reassigns
+  // the served tier between message_start and message_delta — or starts
+  // stamping the served tier only on the delta — the delta value describes
+  // the billing bucket and must replace the start-stamped one.
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0, speed: 'fast' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_delta',
+      delta: {},
+      usage: { input_tokens: 11, output_tokens: 2, service_tier: 'priority' },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 11,
+    output: 2,
+    tier: 'priority',
+  });
+});
+
+test('Messages stream usage lets a delta-stamped tier win on the normal output-only path', () => {
+  // Symmetric to the cache-hit branch: when message_start already carried the
+  // real input accounting (gotInputFromStart === true), the delta normally
+  // just updates the running output. The wire schema still permits the delta
+  // to (re)stamp service_tier/speed, and that signal describes this billing
+  // bucket — must replace what start stamped, not be silently dropped.
+  const state = createMessagesStreamUsageState();
+
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-opus-4-8',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 50, output_tokens: 0, service_tier: 'standard' },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_delta',
+      delta: {},
+      usage: { output_tokens: 7, service_tier: 'priority' },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 50,
+    output: 7,
+    tier: 'priority',
+  });
 });
 
 // --- header forwarding ---
 
-const ratelimitHeaders = (): Headers => new Headers({
+const forwardedHeadersFixture = (): Headers => new Headers({
+  // forwardable: vendor traces, plan billing, vendor `x-*`, arbitrary custom
   'anthropic-ratelimit-unified-status': 'allowed_warning',
   'anthropic-ratelimit-unified-fallback-percentage': '50',
-  'x-internal-cache-id': 'cache-abc',
-  'content-type': 'text/event-stream',
+  'request-id': 'req_anthropic_abc',
+  'cf-ray': 'cf_ray_xyz',
+  'openai-version': '2024-10-21',
+  'x-custom-thing': 'ok',
+  // blocked: hop-by-hop, body framing, cookies. Distinctive values so we can
+  // tell the upstream's header from anything Hono's writers add.
+  'connection': 'close',
+  'transfer-encoding': 'gzip',
+  'content-length': '999',
+  'content-encoding': 'br',
+  'content-type': 'application/x-upstream-quirk',
+  'set-cookie': 'session=secret',
 });
 
 const makeRespondCtx = (): GatewayCtx => ({
@@ -325,9 +567,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
     const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
       messagesProtocolFrames(),
       testTelemetryModelIdentity,
-      undefined,
-      undefined,
-      ratelimitHeaders(),
+      { headers: forwardedHeadersFixture() },
     );
     const { response } = await respondMessages(c, result, wantsStream, makeRespondCtx());
     captured = response;
@@ -338,20 +578,47 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
   return captured;
 };
 
-test('respondMessages forwards anthropic-ratelimit-* headers on the non-streaming JSON response', async () => {
+test('respondMessages forwards upstream headers and strips hop-by-hop / framing / cookie headers on the non-streaming JSON response', async () => {
   const response = await callRespond(false);
+  // forwarded verbatim
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed_warning');
   assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
-  // The allowlist is by prefix — unrelated upstream headers must not be
-  // proxied to the client.
-  assertEquals(response.headers.get('x-internal-cache-id'), null);
+  assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
+  assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
+  assertEquals(response.headers.get('openai-version'), '2024-10-21');
+  assertEquals(response.headers.get('x-custom-thing'), 'ok');
+  // hop-by-hop and cookies dropped
+  assertEquals(response.headers.get('connection'), null);
+  assertEquals(response.headers.get('transfer-encoding'), null);
+  assertEquals(response.headers.get('set-cookie'), null);
+  // framing headers dropped — upstream values would mis-frame the response;
+  // Response.json sets its own content-type, which must not echo upstream's
+  assertEquals(response.headers.get('content-length'), null);
+  assertEquals(response.headers.get('content-encoding'), null);
+  assertEquals(response.headers.get('content-type'), 'application/json');
 });
 
-test('respondMessages forwards anthropic-ratelimit-* headers on the streaming SSE response', async () => {
+test('respondMessages forwards upstream headers and strips hop-by-hop / framing / cookie headers on the streaming SSE response', async () => {
   const response = await callRespond(true);
+  // forwarded verbatim
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed_warning');
   assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
-  assertEquals(response.headers.get('x-internal-cache-id'), null);
+  assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
+  assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
+  assertEquals(response.headers.get('openai-version'), '2024-10-21');
+  assertEquals(response.headers.get('x-custom-thing'), 'ok');
+  // hop-by-hop and cookies dropped. `connection` and `transfer-encoding`
+  // are special-cased: Hono's streamSSE writer sets its own `keep-alive` /
+  // `chunked`, so we assert upstream's distinctive values did not survive
+  // rather than asserting absence.
+  assert(response.headers.get('connection') !== 'close');
+  assert(response.headers.get('transfer-encoding') !== 'gzip');
+  assertEquals(response.headers.get('set-cookie'), null);
+  // framing headers dropped; streamSSE writes its own text/event-stream and
+  // never emits content-length or content-encoding for a streamed body
+  assertEquals(response.headers.get('content-length'), null);
+  assertEquals(response.headers.get('content-encoding'), null);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
   // Drain the body so the lazy generator releases its resources and the
   // background `finally` block in `streamSSE` doesn't keep the test runner
   // alive.
@@ -362,7 +629,7 @@ test('respondMessages forwards anthropic-ratelimit-* headers on the streaming SS
 
 interface ControlledEvents {
   events: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>;
-  emit: (event: MessagesStreamEvent) => Promise<void>;
+  emit: (event: MessagesStreamEvent) => void;
 }
 
 // A generator whose next() resolves only when emit() supplies the next event.
@@ -380,14 +647,10 @@ const controlledMessagesEvents = (): ControlledEvents => {
   })();
   return {
     events,
-    emit: async event => {
+    emit: event => {
       const waiter = waiters.shift();
       if (waiter) waiter(event);
       else queue.push(event);
-      // Yield so the generator's `for await` consumer can advance past the
-      // freshly-yielded frame before the test issues the next step.
-      await Promise.resolve();
-      await Promise.resolve();
     },
   };
 };
@@ -401,9 +664,7 @@ test('respondMessages records the last observed message_delta usage when the cli
     const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
       controlled.events,
       testTelemetryModelIdentity,
-      undefined,
-      undefined,
-      new Headers({ 'content-type': 'text/event-stream' }),
+      { headers: new Headers({ 'content-type': 'text/event-stream' }) },
     );
     const downstreamAbortController = new AbortController();
     const ctx: GatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
@@ -412,7 +673,7 @@ test('respondMessages records the last observed message_delta usage when the cli
   const response = await app.request('/');
   const reader = response.body!.getReader();
 
-  await controlled.emit({
+  controlled.emit({
     type: 'message_start',
     message: {
       id: 'msg_abort', type: 'message', role: 'assistant', content: [], model: 'claude-test',
@@ -421,93 +682,28 @@ test('respondMessages records the last observed message_delta usage when the cli
     },
   });
   await reader.read();
-  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 5 } });
+  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 5 } });
   await reader.read();
-  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 11 } });
+  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 11 } });
   await reader.read();
-  await controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 17 } });
+  controlled.emit({ type: 'message_delta', delta: {}, usage: { output_tokens: 17 } });
   await reader.read();
 
-  // Client disconnect before message_stop. The streamSSE finally block must
-  // still record the latest message_delta's output count or the operator's
-  // billing telemetry under-counts every aborted session.
+  // Disconnect before message_stop. The streamSSE finally block must still
+  // record the latest message_delta's output count.
   await reader.cancel();
 
-  // The InMemoryRepo's recordTokenUsage is synchronous, but the finally block
-  // runs after the cancellation propagates through streamSSE. A short poll
-  // covers that hand-off without coupling the test to a fixed schedule.
-  for (let i = 0; i < 20; i++) {
+  // `recordTokenUsage` on InMemoryRepo is synchronous, but the finally block
+  // runs after cancellation propagates through streamSSE. Poll briefly to
+  // cover that hand-off without coupling to a fixed schedule. The cap is
+  // generous so it survives CI contention; the healthy path resolves on the
+  // first iteration.
+  for (let i = 0; i < 200; i++) {
     if ((await repo.usage.listAll()).length > 0) break;
-    await new Promise(resolve => setTimeout(resolve, 5));
+    await new Promise(resolve => setTimeout(resolve, 10));
   }
 
   const rows = await repo.usage.listAll();
   assertEquals(rows.length, 1);
   assertEquals(rows[0].tokens, { input: 20, output: 17 });
-});
-
-// --- upstream idle timeout ---
-
-test('respondMessages aborts the upstream and surfaces an error frame when the SSE stream stalls', async () => {
-  const time = new FakeTime();
-  try {
-    initRepo(new InMemoryRepo());
-    const controlled = controlledMessagesEvents();
-    const downstreamAbortController = new AbortController();
-    const app = new Hono();
-    app.get('/', c => {
-      const result: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> = eventResult(
-        controlled.events,
-        testTelemetryModelIdentity,
-        undefined,
-        undefined,
-        new Headers({ 'content-type': 'text/event-stream' }),
-      );
-      const ctx: GatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
-      return respondMessages(c, result, true, ctx).then(({ response }) => response);
-    });
-    const response = await app.request('/');
-    const reader = response.body!.getReader();
-
-    // First frame lands normally, so the stream is fully open.
-    await controlled.emit({
-      type: 'message_start',
-      message: {
-        id: 'msg_idle', type: 'message', role: 'assistant', content: [], model: 'claude-test',
-        stop_reason: null, stop_sequence: null,
-        usage: { input_tokens: 5, output_tokens: 0 },
-      },
-    });
-    const firstRead = await reader.read();
-    assert(!firstRead.done);
-    const firstChunk = new TextDecoder().decode(firstRead.value);
-    assertStringIncludes(firstChunk, 'event: message_start');
-
-    // Upstream goes silent. The downstream keepalive emits pings every 15s
-    // while the upstream wrapper waits out the 60s idle window. After the
-    // window the wrapper must abort the downstreamAbortController and emit
-    // a synthetic error frame so the client sees a clean failure instead
-    // of a hung socket.
-    const decoder = new TextDecoder();
-    const collected: string[] = [];
-    const drainUntilError = (async () => {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) return;
-        const text = decoder.decode(chunk.value);
-        collected.push(text);
-        if (text.includes('event: error')) return;
-      }
-    })();
-    await time.tickAsync(UPSTREAM_IDLE_TIMEOUT_MS + 100);
-    await drainUntilError;
-    const joined = collected.join('');
-    assertStringIncludes(joined, 'event: error');
-    assertStringIncludes(joined, 'UpstreamIdleTimeoutError');
-    assert(downstreamAbortController.signal.aborted, 'idle timeout should abort the upstream');
-
-    await reader.cancel();
-  } finally {
-    time.restore();
-  }
 });

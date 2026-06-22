@@ -9,8 +9,10 @@
 // image cache dimensions on purpose — a live probe of Azure gpt-image-2
 // confirmed its usage object never emits cached fields.
 //
-// `input_cache_write` is the 5-minute (default) TTL bucket; `input_cache_write_1h`
-// is the explicit 1-hour bucket Anthropic surfaces under
+// `input_cache_write` is the generic cache-write bucket — protocols without
+// a TTL distinction land all their writes here, and on Anthropic it covers
+// the default (5-minute) TTL bucket. `input_cache_write_1h` is the explicit
+// 1-hour bucket Anthropic surfaces under
 // `cache_creation.ephemeral_1h_input_tokens` (extended-cache-ttl-2025-04-11).
 // They are disjoint subsets of `cache_creation_input_tokens`.
 export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write' | 'input_cache_write_1h' | 'input_image' | 'output' | 'output_image';
@@ -61,6 +63,8 @@ export const unitPriceForDimension = (pricing: ModelPricing | null, dimension: B
 
 // Fold the per-tier override (if any) into a flat ModelPricing snapshot, so
 // every downstream `unitPriceForDimension` call sees one self-contained map.
+// Per-dimension shallow merge: overlay keys win, omitted keys inherit the
+// base rate (and then flow through `unitPriceForDimension`'s fallback chain).
 // Returns a fresh object that never carries `tiers` — recursion would not
 // match any real billing surface. An unknown or absent tier returns the base
 // snapshot unchanged (sans `tiers`), so old usage rows with no tier carry on

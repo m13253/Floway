@@ -41,18 +41,17 @@ export interface ProviderCallResult {
 // Streaming endpoints (Messages / Responses / ChatCompletions) return decoded
 // protocol frames directly — the provider drives the upstream fetch, parses
 // the SSE wire via @floway-dev/protocols, and emits the typed event stream.
+// `ok: true` optionally carries the raw upstream `Headers` so the source-side
+// `respond` layer can forward them to the downstream client (blocklist in
+// gateway `shared/respond.ts` — hop-by-hop, body framing, cookies). Absent
+// on lifted/synthesized streams that have no upstream Response behind them,
+// matching the same shape on `EventResult`.
 // `ok: false` carries the raw upstream Response verbatim so the gateway
-// boundary can relay status + body unchanged. Non-2xx-but-not-SSE responses
-// throw from the provider as a contract violation (provider always forces
-// stream=true on streaming endpoints).
-//
-// `responseHeaders` carries the upstream HTTP response headers so the
-// gateway boundary can forward billing/rate-limit hints to the downstream
-// client (e.g. `anthropic-ratelimit-*`). Optional because boundary chains
-// that rebuild a stream from inner work (Copilot's lower-to-stream path)
-// don't always have a raw upstream Response to read from.
+// boundary can relay status + body + headers unchanged. Non-2xx-but-not-SSE
+// responses throw from the provider as a contract violation (provider always
+// forces stream=true on streaming endpoints).
 export type ProviderStreamResult<TEvent> =
-  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; responseHeaders?: Headers }
+  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
   | { ok: false; response: Response; modelKey: string };
 
 // `/responses/compact` is non-streaming — the upstream returns a single
@@ -81,34 +80,24 @@ export type ProviderCompactionResult =
 // retries (e.g. invalidate-token-and-redo), only the most recent invocation's
 // measurement is kept.
 //
-// `clientRequestHeaders` and `clientRequestPathname` describe the inbound
-// HTTP request the gateway is serving — not the outbound wire headers we
-// build for the upstream. Both are present only for data-plane calls that
-// originated from a real Hono request; translated paths and synthesized
-// calls leave them undefined. A provider that needs to inspect the
-// incoming request shape — for instance, to decide whether a payload
-// already matches its native client's wire shape and can pass through
-// unmodified — reads from these fields.
-//
 // `waitUntil` registers a fire-and-forget promise that must outlive the
-// response. In Cloudflare Workers it maps to `ExecutionContext.waitUntil`
-// so workerd does not terminate the isolate the moment the response is
-// returned; in Node and tests it is a no-op because the process keeps
-// running anyway. Providers use it for post-response persistence (quota
-// snapshots, token refreshes) the caller has already stopped waiting on.
+// response. On workerd it maps to `ExecutionContext.waitUntil` so the
+// isolate is not terminated when the response is returned; on Node it is a
+// no-op. Providers use it for post-response persistence the caller has
+// already stopped waiting on.
+//
+// `headers` is the single inbound-headers conduit from gateway to provider.
+// The gateway seeds it from the source request's headers. Providers with no
+// boundary scrubbing (Azure, custom) thread `opts.headers` straight to the
+// upstream wire; providers that scrub (Copilot, Codex) clone via
+// `new Headers(opts.headers)` into the boundary ctx so their interceptor
+// chain mutates the clone instead of the caller's bag. The gateway owns
+// the bag and the provider must not retain a reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
   recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
-  /**
-   * Inbound request headers, forwarded as the original `Headers` instance
-   * the runtime gave us. Header lookups stay native; no per-request
-   * Record snapshot is built on the gateway hot path. Synthetic call
-   * sites may pass a plain record, which a consumer wraps with
-   * `new Headers(...)` the same way it would wrap a `Headers` value.
-   */
-  clientRequestHeaders?: Headers | Record<string, string>;
-  clientRequestPathname?: string;
-  waitUntil?: (promise: Promise<unknown>) => void;
+  waitUntil: (promise: Promise<unknown>) => void;
+  headers: Headers;
 }
 
 export interface ModelProvider {
@@ -118,31 +107,23 @@ export interface ModelProvider {
   getProvidedModels(fetcher: Fetcher): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
   getPricingForModelKey(modelKey: string): ModelPricing | null;
-  // `headers` is the mutable header bag the caller seeds. A provider may run
-  // its own boundary interceptor chain that populates headers (vision,
-  // initiator, anthropic-beta, ...) before reaching the wire; the provider
-  // passes the bag straight through to the upstream fetch unchanged. The
-  // shape is uniform across protocols so provider implementations never
-  // branch on which protocol they are serving. Image endpoints have no
-  // boundary chain today, but the parameter stays for interface uniformity.
-  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
-  // Messages and count_tokens additionally receive the source-derived
-  // `anthropicBeta` slice as a typed read-only input separate from the wire
-  // headers. Some providers select among raw upstream model variants based
-  // on caller-declared anthropic-beta values BEFORE a boundary interceptor
-  // filters the wire header down to an upstream allow-list. The typed slice
-  // gives variant selection access to the caller's full intent even when
-  // the beta is dropped before hitting the wire.
-  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, anthropicBeta: readonly string[] | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  // Same `opts.headers` shape across every protocol so provider impls never
+  // branch on the protocol when reading inbound headers. `anthropic-beta`
+  // lives on `opts.headers` like any other header; providers that need the
+  // parsed slice for variant selection (Copilot picks a raw upstream variant
+  // before the wire header is filtered down to the Copilot allow-list)
+  // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
+  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
+  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
-  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, anthropicBeta: readonly string[] | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // The provider takes ownership of `body` and may mutate it (e.g. append
   // the upstream-specific model/deployment id). Callers must allocate a
   // fresh FormData per call.
-  callImagesEdits(model: UpstreamModel, body: FormData, signal: AbortSignal | undefined, headers: Record<string, string> | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callImagesEdits(model: UpstreamModel, body: FormData, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }

@@ -63,42 +63,49 @@ export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata[
   recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
 };
 
-// Upstream-emitted billing/rate-limit hints we propagate verbatim to the
-// downstream client. Anthropic's plan-billing surface (`/v1/messages` and
-// every gateway target that translates to it) returns the
-// `anthropic-ratelimit-unified-*` family with quotas, resets, and warning
-// thresholds; the official `claude-code` CLI's `/status` indicator reads
-// them, so dropping the headers makes the gateway look like an account
-// with no rate-limit state. The allowlist is by prefix so new dimensions
-// the upstream introduces (e.g. a future `anthropic-ratelimit-tier-*`) are
-// forwarded automatically.
+// Upstream response headers we propagate verbatim to the downstream client.
+// A blocklist (not an allowlist): operators want to see what the upstream
+// actually sent — vendor traces (`request-id`, `cf-ray`), plan-billing state
+// (`anthropic-ratelimit-*`, which the official `claude-code` CLI's `/status`
+// indicator reads), and any future `x-*` an upstream introduces. We only
+// strip what we MUST or what would actively break downstream framing:
 //
-// `request-id` and `cf-ray` (the exact-name allowlist) are the trace ids
-// operators need to file Anthropic support tickets — without them, a
-// downstream client cannot correlate a failure to anything Anthropic can
-// look up. The passthrough route already forwards these
-// (`passthrough-serve.ts` retry-after / x-request-id / cf-ray); the LLM
-// response surface lagged behind. We match `request-id` (Anthropic emits
-// the bare name; some CDNs and proxies add an `x-` prefix, which is also
-// accepted).
-const FORWARDED_HEADER_PREFIXES = ['anthropic-ratelimit-'] as const;
-const FORWARDED_HEADER_NAMES: ReadonlySet<string> = new Set([
-  'request-id',
-  'x-request-id',
-  'cf-ray',
+//   - hop-by-hop headers (RFC 7230 §6.1) MUST NOT be forwarded by
+//     intermediaries.
+//   - `content-length` / `content-encoding` / `content-type` are managed by
+//     the streaming layer: it rewrites the body (SSE re-framing, optional
+//     decompression + re-encode) so upstream's values would mis-frame the
+//     downstream response. The SSE writer sets its own `text/event-stream`;
+//     non-SSE pass-throughs hand content-type back via their own path.
+//   - `set-cookie` / `set-cookie2`: we didn't issue these and propagating
+//     upstream session bindings is a footgun.
+const BLOCKED_UPSTREAM_HEADERS: ReadonlySet<string> = new Set([
+  // hop-by-hop (RFC 7230 §6.1)
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+  // body framing — owned by the streaming layer
+  'content-length',
+  'content-encoding',
+  'content-type',
+  // cookies
+  'set-cookie',
+  'set-cookie2',
 ]);
 
-export const isForwardableUpstreamHeader = (name: string): boolean => {
-  const lowered = name.toLowerCase();
-  if (FORWARDED_HEADER_NAMES.has(lowered)) return true;
-  return FORWARDED_HEADER_PREFIXES.some(prefix => lowered.startsWith(prefix));
-};
+export const isForwardableUpstreamHeader = (name: string): boolean =>
+  !BLOCKED_UPSTREAM_HEADERS.has(name.toLowerCase());
 
-// Stages allowlisted upstream headers onto the Hono context so the next
+// Stages forwardable upstream headers onto the Hono context so the next
 // `c.newResponse` (or `streamSSE`'s internal `c.newResponse`) emits them on
 // the response. Hono's `c.header()` is the only knob that survives a later
 // `c.json` or `streamSSE` call without being overwritten. Safe to call with
-// `undefined` so callers can pass `result.responseHeaders` directly.
+// `undefined` so callers can pass `result.headers` directly.
 export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined): void => {
   if (!headers) return;
   for (const [name, value] of headers) {
@@ -106,7 +113,7 @@ export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined)
   }
 };
 
-// Returns a `HeadersInit` extending `base` with every allowlisted entry from
+// Returns a `HeadersInit` extending `base` with every forwardable entry from
 // `upstream`. Used by non-streaming JSON responses where the response is
 // built directly (`Response.json(...)`) instead of through Hono's `c`.
 export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): HeadersInit => {

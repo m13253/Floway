@@ -382,7 +382,6 @@ class SqlUsageRepo implements UsageRepo {
 
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
-    const tier = record.tier ?? null;
     const statements: SqlPreparedStatement[] = dimensionRows(record).map(row =>
       this.db
         .prepare(
@@ -391,14 +390,14 @@ class SqlUsageRepo implements UsageRepo {
              tokens = tokens + excluded.tokens,
              unit_price = COALESCE(unit_price, excluded.unit_price)`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, tier, row.dimension, row.tokens, row.unitPrice));
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice));
     statements.push(
       this.db
         .prepare(
           `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, tier, record.requests),
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
     );
     await runStatements(this.db, statements);
   }
@@ -429,17 +428,16 @@ class SqlUsageRepo implements UsageRepo {
 
   async set(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
-    const tier = record.tier ?? null;
     // Replacement upsert: clear the bucket's existing dimension rows first so
     // dimensions absent from the new record do not linger.
     const statements: SqlPreparedStatement[] = [
       this.db
         .prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND COALESCE(tier, '') = COALESCE(?, '')")
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, tier),
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier),
       ...dimensionRows(record).map(row =>
         this.db
           .prepare('INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, tier, row.dimension, row.tokens, row.unitPrice)),
+          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice)),
     ];
     statements.push(
       this.db
@@ -447,7 +445,7 @@ class SqlUsageRepo implements UsageRepo {
           `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET requests = excluded.requests`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, tier, record.requests),
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
     );
     await runStatements(this.db, statements);
   }

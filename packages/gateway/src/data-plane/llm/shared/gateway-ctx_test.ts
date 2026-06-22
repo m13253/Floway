@@ -115,23 +115,6 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.wantsStream, true);
   });
 
-  test('clientRequestHeaders is the inbound Headers instance, not a Record copy', async () => {
-    // Pins the per-request no-allocation contract: forwarders read headers by
-    // reference through ctx without provoking a Record clone at construction.
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    let inbound: Headers | undefined;
-    app.get('/test', c => {
-      inbound = c.req.raw.headers;
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertExists(inbound);
-    assertEquals(ctx.clientRequestHeaders === inbound, true);
-  });
-
   test('backgroundScheduler is present and callable', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;

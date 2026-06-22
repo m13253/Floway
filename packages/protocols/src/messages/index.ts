@@ -244,10 +244,10 @@ export interface MessagesUsage {
     ephemeral_5m_input_tokens?: number;
     ephemeral_1h_input_tokens?: number;
   };
-  service_tier?: 'standard' | 'priority' | 'batch';
-  // Opus 4.6+ stamps the inference speed on the usage object; `fast` selects
-  // a per-tier pricing override (input × 6 on Opus 4.6/4.7, × 2 on Opus 4.8).
-  speed?: 'standard' | 'fast';
+  // https://docs.claude.com/en/api/service-tiers
+  service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+  // https://docs.claude.com/en/build-with-claude/fast-mode
+  speed?: 'standard' | 'fast' | (string & {});
   server_tool_use?: MessagesUsageServerToolUse;
 }
 
@@ -326,7 +326,8 @@ export interface MessagesMessageDeltaEvent {
       ephemeral_5m_input_tokens?: number;
       ephemeral_1h_input_tokens?: number;
     };
-    speed?: 'standard' | 'fast';
+    service_tier?: 'standard' | 'priority' | 'batch' | (string & {});
+    speed?: 'standard' | 'fast' | (string & {});
     server_tool_use?: MessagesUsageServerToolUse;
   };
 }
@@ -353,3 +354,10 @@ export interface MessagesErrorEvent {
 }
 
 export { parseMessagesStream, type ParseMessagesStreamOptions } from './stream.ts';
+
+// Parse an inbound `anthropic-beta` header into the comma-separated beta
+// slice that variant selection and policy filters consume. Returns an empty
+// array for a null/empty header so callers can `.includes(...)` without an
+// extra guard.
+export const parseAnthropicBetaHeader = (raw: string | null | undefined): readonly string[] =>
+  raw ? raw.split(',').map(part => part.trim()).filter(part => part.length > 0) : [];

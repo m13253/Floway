@@ -6,7 +6,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ProviderStreamResult } from '@floway-dev/provider';
+import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
@@ -82,7 +82,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const upstreamModel = stubUpstreamModel();
@@ -106,13 +106,13 @@ const makeCandidate = (overrides: {
 test('POST /v1/chat/completions streams a successful SSE body', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
   const response = await makeApp().request('/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -127,13 +127,13 @@ test('POST /v1/chat/completions streams a successful SSE body', async () => {
 test('POST /v1/chat/completions returns a single JSON body when stream is omitted', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
   const response = await makeApp().request('/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -147,13 +147,13 @@ test('POST /v1/chat/completions returns a single JSON body when stream is omitte
 test('POST /v1/chat/completions omits the usage-only chunk unless stream_options.include_usage is set', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
   const response = await makeApp().request('/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
   });
 
@@ -166,13 +166,13 @@ test('POST /v1/chat/completions omits the usage-only chunk unless stream_options
 test('POST /v1/chat/completions emits the usage-only chunk when stream_options.include_usage is true', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
   const response = await makeApp().request('/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       stream: true,
@@ -194,7 +194,7 @@ test('POST /v1/chat/completions emits the usage-only chunk when stream_options.i
 test('POST /v1/chat/completions does not write any non-auth Hono context slot', async () => {
   installRepo();
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ callChatCompletions })]);
 
@@ -211,7 +211,7 @@ test('POST /v1/chat/completions does not write any non-auth Hono context slot', 
 
   const response = await app.request('/v1/chat/completions', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: new Headers({ 'content-type': 'application/json' }),
     body: JSON.stringify({
       model: 'test-model',
       stream: true,

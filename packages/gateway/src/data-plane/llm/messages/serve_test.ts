@@ -8,7 +8,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/provider';
+import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
@@ -118,9 +118,9 @@ const makeCandidate = (overrides: {
   targetApi?: ProviderCandidate['targetApi'];
   providerKind?: ProviderCandidate['provider']['providerKind'];
   enabledFlags?: ReadonlySet<string>;
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => Promise<ProviderCallResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'messages';
@@ -184,6 +184,7 @@ test('generate routes a native Messages candidate end to end', async () => {
     ok: true,
     events: makeProtocolFrames(makeMessagesResultEvents()),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_a', callMessages })]);
 
@@ -191,6 +192,7 @@ test('generate routes a native Messages candidate end to end', async () => {
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   const events = await collectEvents(assertResultType(result, 'events').events);
@@ -204,6 +206,7 @@ test('generate translates through the Responses target when only that endpoint i
     ok: true,
     events: makeProtocolFrames([makeResponsesResultEvent()]),
     modelKey: 'responses-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
 
@@ -211,6 +214,7 @@ test('generate translates through the Responses target when only that endpoint i
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   await collectEvents(assertResultType(result, 'events').events);
@@ -220,13 +224,13 @@ test('generate translates through the Responses target when only that endpoint i
 test('generate stops at the first candidate even when it yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: { 'content-type': 'application/json' },
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: false, response: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesResultEvents('msg_second')), modelKey: 'second-key',
+    ok: true, events: makeProtocolFrames(makeMessagesResultEvents('msg_second')), modelKey: 'second-key', headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callMessages: firstCall }),
@@ -237,6 +241,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   // An upstream error from the first candidate IS the final answer — the
@@ -253,6 +258,7 @@ test('generate stops at the first candidate when the payload has no reasoning ca
     ok: true,
     events: makeProtocolFrames(makeMessagesResultEvents()),
     modelKey: 'test-model-key',
+    headers: new Headers(),
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_a', callMessages }),
@@ -263,6 +269,7 @@ test('generate stops at the first candidate when the payload has no reasoning ca
     payload: makePayload({ messages: [{ role: 'user', content: 'hi' }] }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   await collectEvents(assertResultType(result, 'events').events);
@@ -277,6 +284,7 @@ test('generate renders model-missing when no candidates are available', async ()
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   const failure = assertResultType(result, 'upstream-error');
@@ -291,7 +299,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
     response: new Response(JSON.stringify({ input_tokens: 42 }), {
       status: 200,
-      headers: { 'content-type': 'application/json' },
+      headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'test-model-key',
   }));
@@ -301,6 +309,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   const plain = assertResultType(result, 'plain');
@@ -356,6 +365,7 @@ test('claude-code binding preserves x-anthropic-billing-header system block thro
     }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   await collectEvents(assertResultType(result, 'events').events);
@@ -411,6 +421,7 @@ test('copilot binding strips x-anthropic-billing-header system block via the def
     }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
   });
 
   await collectEvents(assertResultType(result, 'events').events);

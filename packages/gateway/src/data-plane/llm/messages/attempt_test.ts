@@ -61,10 +61,10 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[], opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[], opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
+  callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'messages';
@@ -115,13 +115,14 @@ const installRepo = (): InMemoryRepo => {
 test('generate native messages target calls provider.callMessages with no rewrite', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
   const result = await messagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages }),
+    headers: new Headers(),
   });
 
   assertEquals(result.type, 'events');
@@ -144,12 +145,14 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
+    headers: new Headers(),
   }));
   const result = await messagesAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    headers: new Headers(),
   });
 
   assertEquals(result.type, 'events');
@@ -161,7 +164,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
 test('countTokens proxies the upstream response as a plain result', async () => {
   installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 7 }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    response: new Response(JSON.stringify({ input_tokens: 7 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
 
@@ -170,6 +173,7 @@ test('countTokens proxies the upstream response as a plain result', async () => 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessagesCountTokens }),
+    headers: new Headers(),
   });
 
   assertEquals(result.type, 'plain');
@@ -189,6 +193,7 @@ test('countTokens refuses a non-messages candidate', async () => {
       ctx: makeGatewayCtx(),
       store: createNonResponsesSourceStore(API_KEY_ID),
       candidate: makeCandidate({ targetApi: 'responses' }),
+      headers: new Headers(),
     });
   } catch (error) {
     thrown = error;
@@ -206,7 +211,7 @@ test('generate attaches the performance context and records upstream_success', a
     backgroundScheduler: promise => { background.push(promise); },
   };
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test',
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
   }));
 
   const result = await messagesAttempt.generate({
@@ -214,6 +219,7 @@ test('generate attaches the performance context and records upstream_success', a
     ctx,
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ upstream: 'up_perf', callMessages }),
+    headers: new Headers(),
   });
 
   assertEquals(result.type, 'events');
@@ -236,35 +242,26 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(upstreamSamples[0]?.requests, 1);
 });
 
-test('generate threads ctx.backgroundScheduler into UpstreamCallOptions.waitUntil so providers can outlive the response', async () => {
+test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
   installRepo();
-  const scheduled: Promise<unknown>[] = [];
-  const ctx: GatewayCtx = {
-    ...makeGatewayCtx(),
-    backgroundScheduler: promise => { scheduled.push(promise); },
-  };
-  let observedWaitUntil: ((p: Promise<unknown>) => void) | undefined;
-  const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal: unknown, _headers: unknown, _beta: unknown, opts?: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-    observedWaitUntil = opts?.waitUntil;
-    opts?.waitUntil?.(Promise.resolve('post-response work'));
-    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k' };
+  const upstreamHeaders = new Headers({
+    'anthropic-ratelimit-unified-status': 'allowed',
+    'request-id': 'req_messages_xyz',
   });
-
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+  }));
   const result = await messagesAttempt.generate({
     payload: makePayload(),
-    ctx,
+    ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages }),
+    headers: new Headers(),
   });
+
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.headers?.get('request-id'), 'req_messages_xyz');
   await collectEvents(result.events);
-
-  assertExists(observedWaitUntil);
-  // The provider's `opts.waitUntil(promise)` lands on the same queue the
-  // ctx-level scheduler drains, so a post-response promise actually outlives
-  // the request body. Telemetry also schedules on the same queue, so look up
-  // our marker rather than asserting a precise queue length.
-  const resolved = await Promise.all(scheduled);
-  assertEquals(resolved.includes('post-response work'), true);
 });

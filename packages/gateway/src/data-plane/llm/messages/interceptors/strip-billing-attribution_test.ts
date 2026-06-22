@@ -34,7 +34,7 @@ const invocation = (payload: MessagesPayload, { flagOn = true }: InvocationOptio
       enabledFlags: flagOn ? new Set(['strip-billing-attribution']) : new Set(),
     },
   }),
-  headers: {},
+  headers: new Headers(),
 });
 
 test('strips billing-header lines and cch hashes from a string system prompt while preserving the rest', async () => {

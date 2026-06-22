@@ -5,7 +5,7 @@ import {
   CODEX_OAUTH_USER_AGENT,
   CODEX_REDIRECT_URI,
 } from '../constants.ts';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 
 export interface CodexOAuthTokens {
   access_token: string;
@@ -122,12 +122,13 @@ const codexTokenRequest = async (
   };
 };
 
-// PKCE exchange runs before the upstream record exists, so direct egress is
-// the historical default. The fetcher is exposed as an optional parameter so
-// the control-plane import route can route the exchange through an
-// operator-supplied proxy fallback chain — the same chain that will be
-// persisted on the new upstream.
-export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher?: Fetcher }): Promise<CodexOAuthTokens> => {
+// PKCE exchange runs before the upstream record exists, so there is no
+// persisted proxy chain to read here — the caller must supply the fetcher
+// explicitly. Making `fetcher` required (rather than defaulting to direct
+// egress) keeps every call site honest: callers that want direct egress
+// pass `directFetcher` themselves, and the import path can't accidentally
+// bypass an operator-configured proxy.
+export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeVerifier: string; fetcher: Fetcher }): Promise<CodexOAuthTokens> => {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: CODEX_CLIENT_ID,
@@ -135,7 +136,11 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
     redirect_uri: CODEX_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   });
-  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher ?? directFetcher);
+  // Only `app_session_terminated` is terminal here — `invalid_grant` on
+  // exchange typically means the operator pasted a stale or wrong callback
+  // URL, which is recoverable by restarting the PKCE flow rather than
+  // re-importing.
+  return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream
@@ -148,5 +153,10 @@ export const refreshCodexAccessToken = async (refreshToken: string, fetcher: Fet
     client_id: CODEX_CLIENT_ID,
     scope: CODEX_OAUTH_SCOPE,
   });
+  // OAuth `invalid_grant` on the refresh path is ambiguous on its own — it
+  // can mean a genuinely revoked/expired refresh_token, *or* that a sibling
+  // worker raced us, won the rotation, and our copy is now stale. The
+  // access-token cache's `recoverFromRefreshRace` distinguishes by re-reading
+  // upstream state; the other codes here always mean credential death.
   return await codexTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
 };

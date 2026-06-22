@@ -45,14 +45,14 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
       recordPerformance(ctx, metadata.performance, state.failed);
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.responseHeaders) }) };
+      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
 
-  forwardUpstreamHeaders(c, result.responseHeaders);
+  forwardUpstreamHeaders(c, result.headers);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {

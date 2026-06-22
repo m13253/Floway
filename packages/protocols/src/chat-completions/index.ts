@@ -20,7 +20,7 @@ export interface ChatCompletionsPayload {
   reasoning_effort?: string | null;
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
-  service_tier?: string | null;
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   tools?: ChatCompletionsTool[] | null;
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
@@ -82,11 +82,8 @@ export interface ChatCompletionsResult {
   created: number;
   model: string;
   choices: ChatCompletionsChoiceNonStreaming[];
-  // OpenAI stamps the actual processing tier on the response object whenever
-  // the request set `service_tier`. Wire values mirror the request enum:
-  // 'auto' | 'default' | 'flex' | 'scale' | 'priority'.
   // https://platform.openai.com/docs/api-reference/chat/object
-  service_tier?: string | null;
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   usage?: ChatCompletionsUsage;
 }
 
@@ -96,7 +93,7 @@ export interface ChatCompletionsStreamEvent {
   created: number;
   model: string;
   choices: ChatCompletionsChoiceStreaming[];
-  service_tier?: string | null;
+  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   usage?: ChatCompletionsUsage;
 }
 
