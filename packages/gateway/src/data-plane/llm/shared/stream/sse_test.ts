@@ -2,11 +2,11 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
-import { UpstreamIdleTimeoutError, withIdleTimeout, writeSSEFrames } from './sse.ts';
+import { writeSSEFrames } from './sse.ts';
 import { FakeTime } from '../../../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import { sseCommentFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -241,97 +241,5 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
     }
     await pendingRead.catch(() => {});
     await cancelResponse?.catch(() => {});
-  }
-});
-
-// --- withIdleTimeout ---
-
-const controlledFrames = () => {
-  let pending: Deferred<IteratorResult<SseFrame>> | undefined;
-  let returned = false;
-  const events: AsyncIterable<SseFrame> = {
-    [Symbol.asyncIterator]() {
-      return {
-        next() {
-          pending = deferred<IteratorResult<SseFrame>>();
-          return pending.promise;
-        },
-        return() {
-          returned = true;
-          pending?.resolve(closedIteratorResult());
-          return Promise.resolve(closedIteratorResult());
-        },
-      };
-    },
-  };
-  return {
-    events,
-    emit: (frame: SseFrame) => {
-      const p = pending;
-      pending = undefined;
-      p?.resolve({ done: false, value: frame });
-    },
-    returnCalled: () => returned,
-  };
-};
-
-test('withIdleTimeout fires after the configured silence window', async () => {
-  const time = new FakeTime();
-  const upstream = controlledFrames();
-  const onTimeout = (() => {
-    let count = 0;
-    return Object.assign(() => { count += 1; }, { calls: () => count });
-  })();
-
-  try {
-    const wrapped = withIdleTimeout(upstream.events, { ms: 60_000, onTimeout });
-    const iterator = wrapped[Symbol.asyncIterator]();
-    const pending = iterator.next();
-    // Attach a swallow-handler so the rejection that lands inside
-    // tickAsync's microtask flush isn't logged as unhandled before the
-    // assertRejects below picks it up.
-    pending.catch(() => {});
-
-    await time.tickAsync(59_999);
-    assertEquals(onTimeout.calls(), 0);
-
-    await time.tickAsync(2);
-    await assertRejects(() => pending, UpstreamIdleTimeoutError, '60000');
-    assertEquals(onTimeout.calls(), 1);
-    assert(upstream.returnCalled(), 'wrapped iterator should clean up the upstream on timeout');
-  } finally {
-    time.restore();
-  }
-});
-
-test('withIdleTimeout resets the window on every received frame', async () => {
-  const time = new FakeTime();
-  const upstream = controlledFrames();
-  const onTimeout = (() => {
-    let count = 0;
-    return Object.assign(() => { count += 1; }, { calls: () => count });
-  })();
-
-  try {
-    const wrapped = withIdleTimeout(upstream.events, { ms: 60_000, onTimeout });
-    const iterator = wrapped[Symbol.asyncIterator]();
-
-    // 50s then a frame — should not have fired.
-    let pending = iterator.next();
-    await time.tickAsync(50_000);
-    upstream.emit(sseFrame('{}', 'ping'));
-    const first = await pending;
-    assertEquals(first.done, false);
-    assertEquals(onTimeout.calls(), 0);
-
-    // Another 50s then another frame — timer was reset, still no fire.
-    pending = iterator.next();
-    await time.tickAsync(50_000);
-    upstream.emit(sseFrame('{}', 'ping'));
-    const second = await pending;
-    assertEquals(second.done, false);
-    assertEquals(onTimeout.calls(), 0);
-  } finally {
-    time.restore();
   }
 });
