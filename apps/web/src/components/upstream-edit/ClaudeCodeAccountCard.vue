@@ -37,19 +37,17 @@ const emit = defineEmits<{
 
 const HEAVY_USAGE_THRESHOLD_PCT = 80;
 
-const account = computed<ClaudeCodeAccountIdentity | null>(() => props.record.config.accounts[0] ?? null);
+const account = computed<ClaudeCodeAccountIdentity>(() => props.record.config.accounts[0]);
 
 type CredentialLookup =
   | { kind: 'present'; credential: ClaudeCodeAccountCredentialSummary }
   | { kind: 'missing-state' }
-  | { kind: 'no-config-account' }
   | { kind: 'uuid-mismatch'; expectedAccountUuid: string };
 
 const credentialLookup = computed<CredentialLookup>(() => {
   const raw = props.record.state;
   if (raw === null) return { kind: 'missing-state' };
   const configured = account.value;
-  if (!configured) return { kind: 'no-config-account' };
   const match = raw.accounts.find(a => a.accountUuid === configured.accountUuid);
   if (match) return { kind: 'present', credential: match };
   return { kind: 'uuid-mismatch', expectedAccountUuid: configured.accountUuid };
@@ -122,9 +120,6 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
   if (credentialLookup.value.kind === 'uuid-mismatch') {
     return { tone: 'rose', label: 'Configured account missing from state — re-import to recover' };
   }
-  if (credentialLookup.value.kind === 'no-config-account') {
-    return { tone: 'rose', label: 'Account identity missing from config — re-import to recover' };
-  }
   const c = credential.value;
   if (c?.state === 'session_terminated') {
     return { tone: 'rose', label: 'Session terminated — re-import to recover', detail: c.stateMessage };
@@ -148,17 +143,16 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
 });
 
 const accountIdShort = computed(() => {
-  const id = account.value?.accountUuid;
-  if (!id) return '';
+  const id = account.value.accountUuid;
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 });
 
-const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(account.value?.subscriptionType, account.value?.rateLimitTier));
+const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(account.value.subscriptionType, account.value.rateLimitTier));
 
 // Email is null when the access token lacks `user:profile`. Substitute the
 // short account-uuid badge as a stable identifier so the header still names
 // the account.
-const headerLabel = computed(() => account.value?.email ?? accountIdShort.value);
+const headerLabel = computed(() => account.value.email ?? accountIdShort.value);
 
 // `seven_day_sonnet` rides only on the probe — it's surfaced only when probe
 // data exists.
@@ -264,8 +258,8 @@ const probeFetchedAtIso = computed<string | null>(() => {
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           <Badge v-if="isSetupToken" tone="violet" size="sm" class="!uppercase tracking-wide" title="Long-lived inference-only credential; cannot self-mint API keys and cannot be refreshed.">Setup Token</Badge>
           <Badge v-if="subscriptionLabel" tone="rose" size="sm" class="tracking-wide">{{ subscriptionLabel }}</Badge>
-          <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
-          <span v-if="account && account.email === null" class="text-[11px] text-gray-500" title="The OAuth token does not carry user:profile scope">no email scope</span>
+          <span class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
+          <span v-if="account.email === null" class="text-[11px] text-gray-500" title="The OAuth token does not carry user:profile scope">no email scope</span>
         </div>
       </div>
       <Badge :tone="badge.tone" size="sm">{{ badge.label }}</Badge>
@@ -280,14 +274,6 @@ const probeFetchedAtIso = computed<string | null>(() => {
       Configured account
       <code class="font-mono">{{ credentialLookup.expectedAccountUuid }}</code>
       is not present in the gateway's stored state. Re-import the credential to re-link the account.
-    </p>
-
-    <p
-      v-if="credentialLookup.kind === 'no-config-account'"
-      class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose"
-    >
-      The upstream's stored state has account credentials but the config has no
-      identity record. Re-import the credential to populate the identity.
     </p>
 
     <div class="flex flex-wrap items-center justify-between gap-2">

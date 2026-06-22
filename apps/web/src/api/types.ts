@@ -97,7 +97,7 @@ export interface CodexAccountIdentity {
 }
 
 export interface CodexUpstreamConfig {
-  accounts: CodexAccountIdentity[];
+  accounts: [CodexAccountIdentity];
 }
 
 export interface OllamaUpstreamConfig {
@@ -159,7 +159,7 @@ export interface ClaudeCodeAccountIdentity {
 }
 
 export interface ClaudeCodeUpstreamConfig {
-  accounts: ClaudeCodeAccountIdentity[];
+  accounts: [ClaudeCodeAccountIdentity];
 }
 
 export interface ClaudeCodeAccessTokenSummary {

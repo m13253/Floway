@@ -29,11 +29,12 @@ export interface ClaudeCodeAccountIdentity {
   rateLimitTier: string | null;
 }
 
-// Account pool. v1 always carries exactly one entry; the wire shape stays
-// array-of-accounts so a future fan-out / round-robin pool feature can land
-// without a schema migration.
+// Account pool. v1 always carries exactly one entry — typed as a 1-tuple so
+// callers can index accounts[0] without a nullable cushion. The wire shape
+// stays array-of-accounts so a future fan-out / round-robin pool feature
+// can widen the tuple without a schema migration.
 export interface ClaudeCodeUpstreamConfig {
-  accounts: ClaudeCodeAccountIdentity[];
+  accounts: [ClaudeCodeAccountIdentity];
 }
 
 export type ClaudeCodeUpstreamRecord = UpstreamRecord & {
@@ -80,13 +81,14 @@ function assertClaudeCodeUpstreamConfig(value: unknown): asserts value is Claude
       throw new TypeError(`ClaudeCodeUpstreamConfig has unexpected key '${key}'`);
     }
   }
-  if (!Array.isArray(obj.accounts)) {
+  const accounts = obj.accounts;
+  if (!Array.isArray(accounts)) {
     throw new TypeError('ClaudeCodeUpstreamConfig.accounts must be an array');
   }
-  if (obj.accounts.length !== 1) {
-    throw new TypeError(`ClaudeCodeUpstreamConfig.accounts must hold exactly one account (got ${obj.accounts.length})`);
+  if (accounts.length !== 1) {
+    throw new TypeError(`ClaudeCodeUpstreamConfig.accounts must hold exactly one account (got ${accounts.length})`);
   }
-  assertClaudeCodeAccountIdentity(obj.accounts[0], 'ClaudeCodeUpstreamConfig.accounts[0]');
+  assertClaudeCodeAccountIdentity(accounts[0], 'ClaudeCodeUpstreamConfig.accounts[0]');
 }
 
 export function assertClaudeCodeUpstreamRecord(record: UpstreamRecord): asserts record is ClaudeCodeUpstreamRecord {
