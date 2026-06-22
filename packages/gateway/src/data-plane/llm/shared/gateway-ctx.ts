@@ -36,8 +36,8 @@ export interface CreateGatewayCtxOptions {
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
   // snapshot reflects the exact bytes the handler parsed. WebSocket
-  // upgrades carry no body and omit this.
-  requestBody?: RequestBody;
+  // upgrades carry no body and pass `EMPTY_REQUEST_BODY` explicitly.
+  requestBody: RequestBody;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
@@ -45,7 +45,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const backgroundScheduler = backgroundSchedulerFromContext(c);
-  const dump = openDumpAccumulator(c, apiKey, opts.requestBody ?? { bytes: new Uint8Array(), streamError: null }, backgroundScheduler);
+  const dump = openDumpAccumulator(c, apiKey, opts.requestBody, backgroundScheduler);
   return {
     apiKeyId: apiKey.id,
     upstreamIds,
@@ -60,4 +60,4 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   };
 };
 
-export { readRequestBody, type RequestBody } from '../../../dump/accumulator.ts';
+export { EMPTY_REQUEST_BODY, readRequestBody, type RequestBody } from '../../../dump/accumulator.ts';

@@ -20,7 +20,7 @@ export const respondChatCompletions = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result);
+    ctx.dump?.upstreamError(result.status);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 

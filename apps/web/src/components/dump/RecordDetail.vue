@@ -123,14 +123,14 @@ const requestBody = computed<RenderedBody | null>(() => {
 const responseBodyRendered = computed<RenderedBody | null>(() => {
   if (!record.value) return null;
   const r = record.value.response;
-  if (r.type !== 'bytes') return null;
-  return renderBody(r.body, contentTypeOf(r.headers));
+  if (r.body.type !== 'bytes') return null;
+  return renderBody(r.body.body, contentTypeOf(r.headers));
 });
 
 const streamEvents = computed<DumpStreamEvent[]>(() => {
   if (!record.value) return [];
   const r = record.value.response;
-  return r.type === 'stream' ? r.events : [];
+  return r.body.type === 'stream' ? r.body.events : [];
 });
 
 // Per-protocol SSE serializer. Stored frames are protocol-typed but
@@ -192,7 +192,7 @@ const collectKind = computed(() => record.value ? detectCollectKind(record.value
 // or kind change.
 const collected = shallowRef<CollectOutcome<unknown> | null>(null);
 watchEffect(() => {
-  if (record.value?.response.type !== 'stream' || collectKind.value === null) {
+  if (record.value?.response.body.type !== 'stream' || collectKind.value === null) {
     collected.value = null;
     return;
   }
@@ -245,9 +245,9 @@ const formatTs = (ms: number) => {
   return `${(ms / 1000).toFixed(2)}s`;
 };
 
-// `status === 0` is the gateway's sentinel for "no response was produced"
+// "No response" surfaces when no upstream response status was produced
 // (transport failure, abort before bytes, dial error).
-const statusLabel = (status: number): string => status === 0 ? 'No response' : String(status);
+const statusLabel = (status: number | null): string => status === null ? 'No response' : String(status);
 
 const sectionHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-white/[0.06] bg-surface-900/85 px-4 py-2.5 backdrop-blur-md';
 const copyBtn = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-white/[0.06]';
@@ -328,7 +328,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
       <section class="border-t border-white/[0.06]">
         <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response body</span>
-          <template v-if="record.response.type === 'stream'">
+          <template v-if="record.response.body.type === 'stream'">
             <div class="ml-auto inline-flex overflow-hidden rounded border border-white/[0.08]">
               <button
                 type="button"
@@ -351,18 +351,18 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
               {{ copyLabelFor('res-events') }}
             </button>
           </template>
-          <template v-else-if="record.response.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
+          <template v-else-if="record.response.body.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
             <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.text, 'res-body')">
               {{ copyLabelFor('res-body') }}
             </button>
           </template>
         </header>
 
-        <template v-if="record.response.type === 'none'">
+        <template v-if="record.response.body.type === 'none'">
           <p class="px-4 py-3 text-xs text-gray-600">No response body — request did not produce a response.</p>
         </template>
 
-        <template v-else-if="record.response.type === 'bytes'">
+        <template v-else-if="record.response.body.type === 'bytes'">
           <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
           <template v-else>
             <p v-if="responseBodyRendered.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">

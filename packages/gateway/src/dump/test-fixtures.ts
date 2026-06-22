@@ -23,7 +23,7 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
 export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): DumpRecord => ({
   meta: fakeMeta(overrides),
   request: { method: 'POST', path: '/v1/x', headers: [], body: { encoding: 'utf8', data: '' } },
-  response: { status: 200, headers: [], type: 'none' },
+  response: { status: 200, headers: [], body: { type: 'none' } },
 });
 
 type DumpStubFailMethod =

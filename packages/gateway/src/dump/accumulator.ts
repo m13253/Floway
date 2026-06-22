@@ -23,7 +23,7 @@ import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { InternalErrorResult, TelemetryModelIdentity, UpstreamErrorResult } from '@floway-dev/provider';
+import type { InternalErrorResult, TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Inbound body bytes the handler reads once and forwards into the
 // accumulator (so the handler's payload parser AND the dump see the same
@@ -33,6 +33,11 @@ export interface RequestBody {
   readonly bytes: Uint8Array;
   readonly streamError: string | null;
 }
+
+// Shared sentinel for the WebSocket upgrade path, which carries no body.
+// Reusing one frozen instance keeps the WS site honest ("I genuinely
+// have no body") and avoids per-request allocation.
+export const EMPTY_REQUEST_BODY: RequestBody = Object.freeze({ bytes: new Uint8Array(), streamError: null });
 
 // Reads the inbound body in full into a Uint8Array. Stays here so dump
 // bytes are sourced from one place; the handler also parses its payload
@@ -132,8 +137,8 @@ export class DumpAccumulator {
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
-  upstreamError(result: UpstreamErrorResult): void {
-    this.accounting = { ...plainAccounting, error: `upstream error ${result.status}` };
+  upstreamError(status: number): void {
+    this.accounting = { ...plainAccounting, error: `upstream error ${status}` };
   }
 
   internalError(result: InternalErrorResult): void {
@@ -273,7 +278,7 @@ export class DumpAccumulator {
       response: {
         status: response.status,
         headers: response.headers.map(([k, v]) => [k, v]),
-        ...responseBody,
+        body: responseBody,
       },
     };
 

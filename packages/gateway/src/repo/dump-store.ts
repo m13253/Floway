@@ -117,13 +117,13 @@ export class FileDumpStore implements DumpStore {
       : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, contentTypeOf(record.request.headers), 'bytes');
 
     let responseDescriptor: BodyDescriptor | null = null;
-    if (record.response.type === 'bytes') {
-      const responseRaw = decodeBodyFromWire(record.response.body);
+    if (record.response.body.type === 'bytes') {
+      const responseRaw = decodeBodyFromWire(record.response.body.body);
       if (responseRaw.byteLength > 0) {
         responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, contentTypeOf(record.response.headers), 'bytes');
       }
-    } else if (record.response.type === 'stream') {
-      const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.events));
+    } else if (record.response.body.type === 'stream') {
+      const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.body.events));
       responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, contentTypeOf(record.response.headers), 'events');
     }
 
@@ -144,7 +144,7 @@ export class FileDumpStore implements DumpStore {
       record.meta.upstream?.id ?? null,
       JSON.stringify(metaToStore),
       JSON.stringify(record.request.headers),
-      record.response.type === 'none' ? null : JSON.stringify(record.response.headers),
+      record.response.body.type === 'none' ? null : JSON.stringify(record.response.headers),
       requestDescriptor === null ? null : JSON.stringify(requestDescriptor),
       responseDescriptor === null ? null : JSON.stringify(responseDescriptor),
     ).run();
@@ -222,10 +222,10 @@ export class FileDumpStore implements DumpStore {
       };
     }
 
-    const response: DumpResponse & DumpResponseBody = {
+    const response: DumpResponse = {
       status: meta.status,
       headers: responseHeaders ?? [],
-      ...responseBody,
+      body: responseBody,
     };
     return { meta, request, response };
   }

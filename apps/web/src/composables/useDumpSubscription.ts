@@ -10,9 +10,6 @@ const DEDUP_REBUILD_THRESHOLD = 10_000;
 // Matches the server's LIST_LIMIT_DEFAULT.
 const OLDER_PAGE_LIMIT = 100;
 
-// Literal of `EventSource.CLOSED`; named property would ReferenceError under the `node` test env.
-const EVENT_SOURCE_CLOSED = 2;
-
 interface DumpSubscription {
   records: Ref<DumpMetadata[]>;
   loading: Ref<boolean>;
@@ -32,22 +29,7 @@ interface ListResponse {
   records: DumpMetadata[];
 }
 
-// Injectable so node-env tests can stub without a DOM EventSource shim.
-type EventSourceFactory = (url: string) => EventSource;
-
-export interface UseDumpSubscriptionOptions {
-  eventSourceFactory?: EventSourceFactory;
-  fetcher?: (url: string) => Promise<Response>;
-}
-
-const defaultFactory: EventSourceFactory = url => new EventSource(url);
-
-export const useDumpSubscription = (
-  keyId: Ref<string>,
-  options: UseDumpSubscriptionOptions = {},
-): DumpSubscription => {
-  const factory = options.eventSourceFactory ?? defaultFactory;
-  const fetcher = options.fetcher ?? authFetch;
+export const useDumpSubscription = (keyId: Ref<string>): DumpSubscription => {
   const auth = useAuthStore();
 
   const records = ref<DumpMetadata[]>([]);
@@ -111,7 +93,7 @@ export const useDumpSubscription = (
       throw new Error('useDumpSubscription invoked without an authenticated session');
     }
     const url = `/api/dump/keys/${encodeURIComponent(id)}/stream?session=${encodeURIComponent(token)}`;
-    const es = factory(url);
+    const es = new EventSource(url);
     source = es;
 
     es.addEventListener('snapshot', ev => {
@@ -139,7 +121,7 @@ export const useDumpSubscription = (
         close();
         return;
       }
-      if (es.readyState === EVENT_SOURCE_CLOSED) {
+      if (es.readyState === EventSource.CLOSED) {
         error.value = 'Stream disconnected';
         loading.value = false;
       }
@@ -152,7 +134,7 @@ export const useDumpSubscription = (
     if (!oldest) return;
     const url = `/api/dump/keys/${encodeURIComponent(currentKeyId)}/records`
       + `?before=${encodeURIComponent(oldest.id)}&limit=${OLDER_PAGE_LIMIT}`;
-    const res = await fetcher(url);
+    const res = await authFetch(url);
     if (!res.ok) {
       error.value = `Failed to load older records: HTTP ${res.status}`;
       return;

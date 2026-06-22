@@ -72,8 +72,7 @@ const baseRecord = (id: string, completedAt: number): DumpRecord => ({
   response: {
     status: 200,
     headers: [['content-type', 'application/json']],
-    type: 'bytes',
-    body: { encoding: 'utf8', data: '{"id":"abc"}' },
+    body: { type: 'bytes', body: { encoding: 'utf8', data: '{"id":"abc"}' } },
   },
 });
 
@@ -89,9 +88,9 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
   assertEquals(fetched.meta.id, record.meta.id);
   assertEquals(fetched.request.body.encoding, 'utf8');
   assertEquals(fetched.request.body.data, '{"hello":"world"}');
-  if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.encoding, 'utf8');
-  assertEquals(fetched.response.body.data, '{"id":"abc"}');
+  if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(fetched.response.body.body.encoding, 'utf8');
+  assertEquals(fetched.response.body.body.data, '{"id":"abc"}');
 });
 
 test('FileDumpStore preserves the original content-type header on binary bodies', async () => {
@@ -104,8 +103,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
     response: {
       status: 200,
       headers: [['content-type', 'image/png']],
-      type: 'bytes',
-      body: { encoding: 'base64', data: pngMagic },
+      body: { type: 'bytes', body: { encoding: 'base64', data: pngMagic } },
     },
   };
 
@@ -114,9 +112,9 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   assertExists(fetched);
   // The header pair must survive verbatim — no `;base64` suffix tacked on.
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'image/png');
-  if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.encoding, 'base64');
-  assertEquals(fetched.response.body.data, pngMagic);
+  if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(fetched.response.body.body.encoding, 'base64');
+  assertEquals(fetched.response.body.body.data, pngMagic);
 });
 
 test('FileDumpStore preserves the bytes discriminator on an empty-body response', async () => {
@@ -131,17 +129,16 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
     response: {
       status: 204,
       headers: [['content-type', 'application/json']],
-      type: 'bytes',
-      body: { encoding: 'utf8', data: '' },
+      body: { type: 'bytes', body: { encoding: 'utf8', data: '' } },
     },
   };
 
   await store.put('key_x', record);
   const fetched = await store.get('key_x', '01HZZ0000000000000000000E1');
   assertExists(fetched);
-  if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.encoding, 'utf8');
-  assertEquals(fetched.response.body.data, '');
+  if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(fetched.response.body.body.encoding, 'utf8');
+  assertEquals(fetched.response.body.body.data, '');
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'application/json');
 });
 
@@ -154,19 +151,21 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
     response: {
       status: 200,
       headers: [['content-type', 'text/event-stream']],
-      type: 'stream',
-      events: [
-        { frame: { type: 'event', event: { type: 'message_start' } }, ts: 10 },
-        { frame: { type: 'done' }, ts: 20 },
-      ],
+      body: {
+        type: 'stream',
+        events: [
+          { frame: { type: 'event', event: { type: 'message_start' } }, ts: 10 },
+          { frame: { type: 'done' }, ts: 20 },
+        ],
+      },
     },
   };
   await store.put('key_x', record);
   const fetched = await store.get('key_x', '01HZZ0000000000000000000A2');
   assertExists(fetched);
-  if (fetched.response.type !== 'stream') throw new Error('expected stream');
-  assertEquals(fetched.response.events.length, 2);
-  assertEquals(fetched.response.events[0]!.frame.type, 'event');
+  if (fetched.response.body.type !== 'stream') throw new Error('expected stream');
+  assertEquals(fetched.response.body.events.length, 2);
+  assertEquals(fetched.response.body.events[0]!.frame.type, 'event');
 });
 
 test('FileDumpStore.list paginates newest-first with the (createdAt, id) cursor', async () => {
@@ -284,8 +283,8 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO + node:sql
     const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
     assertExists(fetched);
     assertEquals(fetched.request.body.data, '{"hello":"world"}');
-    if (fetched.response.type !== 'bytes') throw new Error('expected bytes');
-    assertEquals(fetched.response.body.data, '{"id":"abc"}');
+    if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
+    assertEquals(fetched.response.body.body.data, '{"id":"abc"}');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

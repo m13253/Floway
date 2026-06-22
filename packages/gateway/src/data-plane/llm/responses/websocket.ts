@@ -6,7 +6,7 @@ import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, EMPTY_REQUEST_BODY, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -151,7 +151,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController });
+    const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController, requestBody: EMPTY_REQUEST_BODY });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 

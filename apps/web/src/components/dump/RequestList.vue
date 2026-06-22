@@ -80,9 +80,10 @@ const upstreamKindTextClass = (kind: string): string => {
   }
 };
 
-// `status === 0` is the gateway's sentinel for "no response was produced"
-// (transport failure, abort before bytes, dial error).
-const statusLabel = (status: number) => status === 0 ? 'No response' : String(status);
+// "No response" surfaces when no upstream response status was produced
+// (transport failure, abort before bytes, dial error). Match the
+// gateway's null encoding rather than hard-coding 0.
+const statusLabel = (status: number | null) => status === null ? 'No response' : String(status);
 
 // `inputTokens` / `outputTokens` are null when the upstream didn't report
 // that dimension. Collapsing both to 0 would conflate "not measured" with

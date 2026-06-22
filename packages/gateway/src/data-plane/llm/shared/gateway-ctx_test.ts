@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono, EMPTY_REQUEST_BODY } from './gateway-ctx.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -50,7 +50,7 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
       c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'] }));
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -63,7 +63,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -76,7 +76,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -88,7 +88,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -100,7 +100,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -113,7 +113,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -128,7 +128,7 @@ describe('createGatewayCtxFromHono', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController: controller, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -143,7 +143,7 @@ describe('createGatewayCtxFromHono', () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');
@@ -160,21 +160,21 @@ describe('createGatewayCtxFromHono', () => {
     app.get('/cap-only', c => {
       // Unrestricted key (apiKey.upstreamIds null) under a capped user.
       c.set('user', buildUser({ upstreamIds: ['up-a'] }));
-      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
+      collected.capOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY }).upstreamIds;
       return c.text('ok');
     });
     app.get('/both', c => {
       // Per-key whitelist further narrows the user cap and preserves per-key order.
       c.set('user', buildUser({ upstreamIds: ['up-a', 'up-b'] }));
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
-      collected.both = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
+      collected.both = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY }).upstreamIds;
       return c.text('ok');
     });
     app.get('/key-only', c => {
       // Uncapped user with a per-key whitelist falls through to the per-key
       // list verbatim.
       c.set('apiKey', buildApiKey({ upstreamIds: ['up-x'] }));
-      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false }).upstreamIds;
+      collected.keyOnly = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY }).upstreamIds;
       return c.text('ok');
     });
     await app.request('/cap-only');
@@ -190,7 +190,7 @@ describe('createGatewayCtxFromHono', () => {
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     const before = performance.now();
     app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY });
       return c.text('ok');
     });
     await app.request('/test');

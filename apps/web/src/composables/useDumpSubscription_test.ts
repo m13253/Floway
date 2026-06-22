@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { effectScope, nextTick, ref } from 'vue';
 
 import { useDumpSubscription } from './useDumpSubscription.ts';
@@ -8,10 +8,15 @@ import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 
 // Minimal EventSource shim mirroring the surface the composable touches:
 // `addEventListener('snapshot' | 'appended' | 'error')`, `readyState`, `close`,
-// `url`. We expose `emit()` so each test drives the stream by hand.
+// `url`. `emit()` lets each test drive the stream by hand. Installed as the
+// global `EventSource` for the test environment so the composable picks it up
+// without any DI hook.
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   static lastUrl: string | null = null;
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 2;
 
   readyState = 0;
   url: string;
@@ -70,9 +75,14 @@ const meta = (id: string, overrides: Partial<DumpMetadata> = {}): DumpMetadata =
 
 const newest = (n: number) => meta(`r-${n.toString().padStart(3, '0')}`);
 
+let fetchMock: ReturnType<typeof vi.fn>;
+
 const setup = () => {
   FakeEventSource.instances = [];
   FakeEventSource.lastUrl = null;
+  fetchMock = vi.fn();
+  vi.stubGlobal('EventSource', FakeEventSource);
+  vi.stubGlobal('fetch', fetchMock);
   setActivePinia(createPinia());
   useAuthStore().setAuth({
     token: 'tok-abc',
@@ -89,14 +99,13 @@ const setup = () => {
 };
 
 beforeEach(() => setup());
+afterEach(() => vi.unstubAllGlobals());
 
 describe('useDumpSubscription', () => {
   it('is a no-op when keyId is empty', () => {
     const { scope } = setup();
     const keyId = ref('');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     expect(FakeEventSource.instances.length).toBe(0);
     expect(sub.records.value).toEqual([]);
     expect(sub.loading.value).toBe(false);
@@ -106,9 +115,7 @@ describe('useDumpSubscription', () => {
   it('opens an EventSource and rebuilds records from the snapshot', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
 
     expect(FakeEventSource.instances.length).toBe(1);
     expect(FakeEventSource.lastUrl).toContain('/api/dump/keys/key1/stream?session=tok-abc');
@@ -133,10 +140,8 @@ describe('useDumpSubscription', () => {
     // reconnect; just two emissions simulating a fresher view from the server.
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-      fetcher: async () => ({ ok: true, status: 200, json: async () => ({ records: [newest(2), newest(1)] }) } as unknown as Response),
-    }))!;
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ records: [newest(2), newest(1)] }) });
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
 
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
       records: [newest(5), newest(4), newest(3)],
@@ -162,15 +167,10 @@ describe('useDumpSubscription', () => {
     // r-002/r-001 must survive the second snapshot's rebuild.
     const { scope } = setup();
     const keyId = ref('key1');
-    let mockResponse: { ok: boolean; status: number; json: () => Promise<unknown> } = {
-      ok: true,
-      status: 200,
-      json: async () => ({ records: [newest(2), newest(1)] }),
-    };
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-      fetcher: async () => mockResponse as unknown as Response,
-    }))!;
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ records: [newest(2), newest(1)] }) })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ records: [] }) });
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
 
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
       records: [newest(5), newest(4), newest(3)],
@@ -180,7 +180,6 @@ describe('useDumpSubscription', () => {
 
     // Second snapshot frame (with a new record on top) — the paged-in
     // r-002/r-001 must survive.
-    mockResponse = { ok: true, status: 200, json: async () => ({ records: [] }) };
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({
       records: [newest(6), newest(5), newest(4), newest(3)],
     }));
@@ -191,9 +190,7 @@ describe('useDumpSubscription', () => {
   it('dedups by id on appended events', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({ records: [newest(1)] }));
     FakeEventSource.instances[0]!.emit('appended', JSON.stringify(newest(2)));
     FakeEventSource.instances[0]!.emit('appended', JSON.stringify(newest(2)));
@@ -204,9 +201,7 @@ describe('useDumpSubscription', () => {
   it('surfaces server-sent error frames to error.value', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     FakeEventSource.instances[0]!.emit('error', JSON.stringify({ message: 'broker exploded' }));
     expect(sub.error.value).toBe('broker exploded');
     scope.stop();
@@ -215,9 +210,7 @@ describe('useDumpSubscription', () => {
   it('falls back to "Stream disconnected" when transport closes with no payload', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     FakeEventSource.instances[0]!.emitClose();
     expect(sub.error.value).toBe('Stream disconnected');
     scope.stop();
@@ -226,9 +219,7 @@ describe('useDumpSubscription', () => {
   it('ignores transient transport blips during auto-reconnect', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     FakeEventSource.instances[0]!.emitTransientBlip();
     expect(sub.error.value).toBeNull();
     scope.stop();
@@ -237,9 +228,7 @@ describe('useDumpSubscription', () => {
   it('successful (re)snapshot clears a stale error banner', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
     FakeEventSource.instances[0]!.emit('error', JSON.stringify({ message: 'transient' }));
     expect(sub.error.value).toBe('transient');
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({ records: [newest(1)] }));
@@ -250,19 +239,10 @@ describe('useDumpSubscription', () => {
   it('loadOlder appends and dedups', async () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const olderPages = [
-      { records: [newest(2), newest(1)] },
-      { records: [newest(1)] }, // already-seen ids -> noop
-    ];
-    let call = 0;
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-      fetcher: async () => ({
-        ok: true,
-        status: 200,
-        json: async () => olderPages[call++],
-      } as unknown as Response),
-    }))!;
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ records: [newest(2), newest(1)] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ records: [newest(1)] }) });
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
 
     FakeEventSource.instances[0]!.emit('snapshot', JSON.stringify({ records: [newest(5), newest(3)] }));
     await sub.loadOlder();
@@ -275,9 +255,7 @@ describe('useDumpSubscription', () => {
   it('server-sent error frame closes the EventSource and re-watching the same keyId opens a fresh one', async () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    scope.run(() => useDumpSubscription(keyId))!;
     await nextTick();
 
     const first = FakeEventSource.instances[0]!;
@@ -300,9 +278,7 @@ describe('useDumpSubscription', () => {
   it('dedup rebuild past DEDUP_REBUILD_THRESHOLD preserves the just-added id', () => {
     const { scope } = setup();
     const keyId = ref('key1');
-    const sub = scope.run(() => useDumpSubscription(keyId, {
-      eventSourceFactory: url => new FakeEventSource(url) as unknown as EventSource,
-    }))!;
+    const sub = scope.run(() => useDumpSubscription(keyId))!;
 
     const es = FakeEventSource.instances[0]!;
     // Seed past the 10k threshold so the next appended event triggers rebuild

@@ -148,7 +148,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.upstreamError({ type: 'upstream-error', status: response.status, headers: new Headers(), body: new Uint8Array() });
+        ctx.dump?.upstreamError(response.status);
         return forwardUpstreamResponse(response);
       }
 

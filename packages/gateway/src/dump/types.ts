@@ -17,7 +17,7 @@ export interface DumpMetadata {
   completedAt: number;      // unix ms
   method: string;
   path: string;             // includes query string
-  status: number;           // 0 when no response status was produced
+  status: number | null;    // null when no upstream response status was produced
   upstream: DumpUpstreamRef | null;
   model: string | null;
   inputTokens: number | null;
@@ -64,12 +64,13 @@ export type DumpResponseBody =
   | { type: 'none' };
 
 export interface DumpResponse {
-  status: number;
+  status: number | null;
   headers: Array<[string, string]>;
+  body: DumpResponseBody;
 }
 
 export type DumpRecord = {
   meta: DumpMetadata;
   request: DumpRequest;
-  response: DumpResponse & DumpResponseBody;
+  response: DumpResponse;
 };
