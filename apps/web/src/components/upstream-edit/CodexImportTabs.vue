@@ -3,7 +3,6 @@
 // this component stays a presentation-only paste area.
 
 import type { CodexAuthorizeUrlResult, CodexImportTab } from './codex-import-types.ts';
-import { truncateMiddle } from '../../lib/text.ts';
 import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -58,8 +57,8 @@ const copyAuthorizeUrl = async () => {
 
         <div v-else-if="pkce" class="space-y-2">
           <p class="text-xs font-medium text-gray-500">Authorize URL</p>
-          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block overflow-hidden whitespace-nowrap text-xs text-accent-cyan hover:underline">
-            {{ truncateMiddle(pkce.authorize_url, 55) }}
+          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
+            {{ pkce.authorize_url }}
           </a>
           <div class="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
             <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
