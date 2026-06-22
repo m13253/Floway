@@ -87,3 +87,11 @@ export const tapFrames = async function* <TEvent>(
     yield frame;
   }
 };
+
+// Re-export concrete observers + the registry installer so consumers reach
+// both the contract and the assembled observer set through this single file.
+// Pattern mirrors `responses/interceptors/server-tool-shim.ts` +
+// `responses/interceptors/server-tools/`: a thin shim file alongside a
+// directory of concrete impls, composed via an `index.ts` that the shim
+// re-exports.
+export * from './respond-observers/index.ts';

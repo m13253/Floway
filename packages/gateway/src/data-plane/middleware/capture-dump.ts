@@ -2,95 +2,21 @@ import type { Context, Next } from 'hono';
 
 import { getDumpBroker, getDumpStore } from '../../dump/registry.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, TokenUsage } from '../../repo/types.ts';
+import type { ApiKey } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { encodeBodyForWire } from '../../shared/dump-wire.ts';
 import { ulid } from '../../shared/ulid.ts';
-import { addRespondObserver, type RespondObserver } from '../shared/respond-observer.ts';
+import { installRespondObservers } from '../shared/respond-observer.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import {
-  type DumpMetadata,
-  type DumpRecord,
-  type DumpRequest,
-  type DumpResponse,
-  type DumpResponseBody,
-  type DumpStreamEvent,
-  type DumpUpstreamRef,
+import type {
+  DumpMetadata,
+  DumpRecord,
+  DumpRequest,
+  DumpResponse,
+  DumpResponseBody,
+  DumpStreamEvent,
+  DumpUpstreamRef,
 } from '@floway-dev/protocols/dump';
-
-interface DumpAccounting {
-  upstreamId: string | null;
-  model: string | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  error: string | null;
-}
-
-const plainAccounting: DumpAccounting = {
-  upstreamId: null,
-  model: null,
-  inputTokens: null,
-  outputTokens: null,
-  error: null,
-};
-
-// Missing dimensions stay null (not measured); sum only the present ones.
-// Collapsing to 0 would conflate "no data" with "0 tokens".
-const tokenUsageInput = (usage: TokenUsage | null): number | null => {
-  if (!usage) return null;
-  const { input, input_cache_read, input_cache_write } = usage;
-  if (input === undefined && input_cache_read === undefined && input_cache_write === undefined) return null;
-  return (input ?? 0) + (input_cache_read ?? 0) + (input_cache_write ?? 0);
-};
-
-const tokenUsageOutput = (usage: TokenUsage | null): number | null => {
-  if (!usage) return null;
-  return usage.output ?? null;
-};
-
-// Translates `RespondObserver` lifecycle events into the dump record's
-// accounting + event stream. Created per-request by the middleware when
-// retention is on, registered against the Hono context, and read back in
-// `finalize()` to assemble the persisted `DumpRecord`. Holding state inside
-// the observer (rather than on context keys) keeps the dump-specific logic
-// out of the respond layer entirely — the source-side `respond.ts` only
-// emits lifecycle events and never names "dump" again.
-class DumpRespondObserver implements RespondObserver {
-  readonly events: DumpStreamEvent[] = [];
-  accounting: DumpAccounting = plainAccounting;
-  constructor(private readonly startedAt: number) {}
-
-  upstreamError(result: { status: number }): void {
-    this.accounting = { ...plainAccounting, error: `upstream error ${result.status}` };
-  }
-
-  internalError(result: { error: { message: string } }): void {
-    this.accounting = { ...plainAccounting, error: result.error.message };
-  }
-
-  plain(): void {
-    this.accounting = plainAccounting;
-  }
-
-  frame(sse: { event?: string; data: string } | null): void {
-    if (!sse) return;
-    this.events.push({ event: sse.event ?? null, data: sse.data, ts: Date.now() - this.startedAt });
-  }
-
-  success(identity: { upstream: string; model: string }, usage: TokenUsage | null): void {
-    this.accounting = {
-      upstreamId: identity.upstream,
-      model: identity.model,
-      inputTokens: tokenUsageInput(usage),
-      outputTokens: tokenUsageOutput(usage),
-      error: null,
-    };
-  }
-
-  error(reason: string): void {
-    this.accounting = { ...plainAccounting, error: reason };
-  }
-}
 
 export const captureRequestDump = () => async (c: Context, next: Next): Promise<void> => {
   const apiKey = c.get('apiKey') as ApiKey | undefined;
@@ -104,8 +30,14 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
   const startedAt = Date.now();
   const requestClone = c.req.raw.clone();
-  const observer = new DumpRespondObserver(startedAt);
-  addRespondObserver(c, observer);
+  const { dump } = installRespondObservers(c, { apiKey, startedAt });
+  if (!dump) {
+    // installRespondObservers returns null when the dump factory opts out —
+    // unreachable on the retention-on branch, but guarding keeps the type
+    // narrowing honest below.
+    await next();
+    return;
+  }
 
   await next();
 
@@ -146,14 +78,14 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
       method: c.req.method,
       path: pathWithQuery(c.req.raw.url),
       status: responseStatus,
-      upstream: await resolveUpstreamRef(observer.accounting.upstreamId),
-      model: observer.accounting.model,
-      inputTokens: observer.accounting.inputTokens,
-      outputTokens: observer.accounting.outputTokens,
+      upstream: await resolveUpstreamRef(dump.accounting.upstreamId),
+      model: dump.accounting.model,
+      inputTokens: dump.accounting.inputTokens,
+      outputTokens: dump.accounting.outputTokens,
       requestBytes: requestBytes.byteLength,
       responseBytes: captured.byteLength,
       durationMs: completedAt - startedAt,
-      error: observer.accounting.error ?? requestStreamError ?? captureError,
+      error: dump.accounting.error ?? requestStreamError ?? captureError,
     };
 
     const request: DumpRequest = {
@@ -170,8 +102,8 @@ export const captureRequestDump = () => async (c: Context, next: Next): Promise<
 
     // Prefer the observer's frame log over the outbound body so dumps reflect
     // the gateway's own frame sequence regardless of the negotiated wire shape.
-    const responseBody: DumpResponseBody = observer.events.length > 0
-      ? { type: 'stream', events: observer.events }
+    const responseBody: DumpResponseBody = dump.events.length > 0
+      ? { type: 'stream', events: dump.events }
       : captured.kind === 'events'
         ? { type: 'stream', events: captured.events }
         : captured.kind === 'bytes'
