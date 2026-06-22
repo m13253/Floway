@@ -16,6 +16,7 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
+import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance } from './telemetry/performance.ts';
@@ -118,9 +119,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    const { id: modelId, model: resolved } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
-      return passthroughApiError(c, `Model ${modelId} is not available on any configured upstream.`, 404);
+      return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
     for (const binding of resolved.providers) {
@@ -175,7 +176,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       return forwardUpstreamResponse(response);
     }
 
-    return passthroughApiError(c, noBindingMessage(modelId), 400);
+    return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(modelId), failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
