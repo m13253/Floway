@@ -8,7 +8,7 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { type Fetcher } from '@floway-dev/provider';
 
 // Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
 // sign-in: 6-scope grant that mints a short-lived access token + rotating
@@ -143,26 +143,24 @@ const claudeCodeTokenRequest = async (
   };
 };
 
-// PKCE exchange runs before the upstream record exists, so direct egress is
-// the default. The fetcher is exposed as an optional parameter so
-// the control-plane import route can route the exchange through an
-// operator-supplied proxy fallback chain — the same chain that will be
-// persisted on the new upstream.
-//
 // `kind: 'setup-token'` switches the exchange to request the 1-year
 // inference-only bearer by adding `expires_in: 31536000` to the body —
 // matches sub2api `claude_oauth_service.go:200-203` and crs
 // `oauthHelper.js:386`. The response has no `refresh_token`; callers reading
 // `result.refresh_token` after a setup-token exchange must tolerate
 // `undefined`.
+//
+// `fetcher` is caller-supplied so the control-plane import route can route
+// the exchange through an operator-supplied proxy fallback chain — the same
+// chain that will be persisted on the new upstream. Pass `directFetcher`
+// for direct egress.
 export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   code: string;
   codeVerifier: string;
   state: string;
-  kind?: ClaudeCodeOAuthFlowKind;
-  fetcher?: Fetcher;
+  kind: ClaudeCodeOAuthFlowKind;
+  fetcher: Fetcher;
 }): Promise<ClaudeOAuthTokenResponse> => {
-  const kind = opts.kind ?? 'oauth';
   const body: Record<string, string | number> = {
     grant_type: 'authorization_code',
     code: opts.code,
@@ -175,10 +173,10 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
     // claude-relay-service, which both include it on every exchange.
     state: opts.state,
   };
-  if (kind === 'setup-token') {
+  if (opts.kind === 'setup-token') {
     body.expires_in = CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS;
   }
-  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher ?? directFetcher);
+  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
 };
 
 // `fetcher` is required because the refresh has an associated upstream

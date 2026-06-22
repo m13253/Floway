@@ -5,7 +5,7 @@ import {
 import { logInfo, logWarn } from './log.ts';
 import {
   readClaudeCodeUpstreamState,
-  replaceAccountAt,
+  replaceSoleAccount,
   type ClaudeCodeAccessTokenEntry,
   type ClaudeCodeUpstreamState,
 } from './state.ts';
@@ -105,8 +105,7 @@ const ensureClaudeCodeAccessTokenInner = async (
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
-  const accountIndex = 0;
-  const account = state.accounts[accountIndex];
+  const account = state.accounts[0];
   if (account.state !== 'active') {
     // Surface the stored health state as the `code` so a caller distinguishing
     // by code (e.g. metrics) reflects the persisted reason, not a synthetic
@@ -125,7 +124,7 @@ const ensureClaudeCodeAccessTokenInner = async (
       return { entry: account.accessToken, freshlyMinted: false };
     }
     const message = 'Setup token expired or absent; re-import to recover';
-    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, {
+    await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, {
       reason: 'setup_token_expired',
       message,
       oauthCode: null,
@@ -146,7 +145,7 @@ const ensureClaudeCodeAccessTokenInner = async (
         const recovered = await recoverFromRefreshRace(args, account.refreshToken);
         if (recovered) return recovered;
       }
-      await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, accountIndex, {
+      await persistTerminalState(args.repo, args.upstreamId, fresh.state, state, {
         reason: 'oauth_refresh_failed',
         message: error.upstreamMessage,
         oauthCode: error.code,
@@ -171,7 +170,7 @@ const ensureClaudeCodeAccessTokenInner = async (
   if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
     throw new Error('Claude Code refresh response missing refresh_token');
   }
-  const rotated = replaceAccountAt(state, accountIndex, () => ({
+  const rotated = replaceSoleAccount(state, () => ({
     ...account,
     refreshToken: rotatedRefreshToken,
     accessToken: newAccessTokenEntry,
@@ -202,7 +201,6 @@ const persistTerminalState = async (
   upstreamId: string,
   expectedState: unknown,
   current: ClaudeCodeUpstreamState,
-  accountIndex: number,
   fields: {
     reason: string;
     message: string;
@@ -213,8 +211,8 @@ const persistTerminalState = async (
     oauthCode: string | null;
   },
 ): Promise<void> => {
-  const previousAccount = current.accounts[accountIndex];
-  const flipped = replaceAccountAt(current, accountIndex, account => ({
+  const previousAccount = current.accounts[0];
+  const flipped = replaceSoleAccount(current, account => ({
     ...account,
     state: 'refresh_failed',
     stateMessage: fields.message,
@@ -284,9 +282,8 @@ export const invalidateClaudeCodeAccessToken = async (args: {
   const fresh = await args.repo.getById(args.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} disappeared mid-request`);
   const state = readClaudeCodeUpstreamState(fresh.state);
-  const accountIndex = 0;
-  const account = state.accounts[accountIndex];
+  const account = state.accounts[0];
   if (account.accessToken === null) return;
-  const cleared = replaceAccountAt(state, accountIndex, account => ({ ...account, accessToken: null }));
+  const cleared = replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
   await args.repo.saveState(args.upstreamId, cleared, { expectedState: fresh.state });
 };

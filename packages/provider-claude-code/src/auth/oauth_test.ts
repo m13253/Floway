@@ -26,7 +26,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('exchangeClaudeCodeAuthorizationCode', () => {
   test('POSTs JSON and returns parsed tokens', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okResponse(tokenBody));
-    const result = await exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE' });
+    const result = await exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher });
     expect(result.access_token).toBe('at');
     expect(result.refresh_token).toBe('rt');
     expect(result.expires_in).toBe(3600);
@@ -58,7 +58,7 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       errorResponse(400, { error: 'invalid_grant', error_description: 'Authorization code expired' }),
     );
-    const promise = exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE' });
+    const promise = exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher });
     await expect(promise).rejects.not.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
     await expect(promise).rejects.toThrow(/400/);
   });
@@ -67,7 +67,7 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       errorResponse(400, { error: { code: 'app_session_terminated', message: 'Session ended' } }),
     );
-    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE' }))
+    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher }))
       .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
   });
 
@@ -75,13 +75,13 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       errorResponse(400, { error: 'invalid_request', error_description: 'missing redirect_uri' }),
     );
-    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE' }))
+    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher }))
       .rejects.toThrow(/400/);
   });
 
   test('rethrows network failures unchanged', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('fetch failed'));
-    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE' }))
+    await expect(exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher }))
       .rejects.toThrow('fetch failed');
   });
 });
@@ -162,7 +162,7 @@ describe('exchangeClaudeCodeAuthorizationCode (setup-token)', () => {
       scope: 'user:inference',
     }));
     const result = await exchangeClaudeCodeAuthorizationCode({
-      code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'setup-token',
+      code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'setup-token', fetcher: directFetcher,
     });
     expect(result.access_token).toBe('st_long');
     expect(result.refresh_token).toBeUndefined();

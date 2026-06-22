@@ -48,28 +48,28 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
 };
 
 // Both calls (OAuth token exchange + /api/oauth/profile) run through the
-// caller-supplied `fetcher` (default: direct). The import flow runs before
-// the upstream record exists, so the fetcher cannot be resolved from a
-// persisted proxy_fallback_list — the control-plane import route builds it
-// from the operator's in-flight form override and threads it in here.
+// caller-supplied `fetcher`. The import flow runs before the upstream
+// record exists, so the fetcher cannot be resolved from a persisted
+// proxy_fallback_list — the control-plane import route builds it from the
+// operator's in-flight form override and threads it in here. Pass
+// `directFetcher` for direct egress.
 export const importClaudeCodeFromCallback = async (opts: {
   code: string;
   pkceVerifier: string;
   state: string;
-  fetcher?: Fetcher;
+  fetcher: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
-  const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
     state: opts.state,
     kind: 'oauth',
-    fetcher,
+    fetcher: opts.fetcher,
   });
   if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
     throw new Error('Claude Code OAuth /token response missing refresh_token on full-scope exchange');
   }
-  const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
+  const identity = await fetchClaudeCodeIdentity(tokens.access_token, opts.fetcher);
   return buildClaudeCodeImportResult({
     identity,
     tokenKind: 'oauth',
@@ -91,17 +91,16 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
   code: string;
   pkceVerifier: string;
   state: string;
-  fetcher?: Fetcher;
+  fetcher: Fetcher;
 }): Promise<ClaudeCodeImportResult> => {
-  const fetcher = opts.fetcher ?? directFetcher;
   const tokens = await exchangeClaudeCodeAuthorizationCode({
     code: opts.code,
     codeVerifier: opts.pkceVerifier,
     state: opts.state,
     kind: 'setup-token',
-    fetcher,
+    fetcher: opts.fetcher,
   });
-  const identity = await fetchClaudeCodeIdentity(tokens.access_token, fetcher);
+  const identity = await fetchClaudeCodeIdentity(tokens.access_token, opts.fetcher);
   return buildClaudeCodeImportResult({
     identity,
     tokenKind: 'setup-token',

@@ -5,7 +5,7 @@ import {
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
 } from './import.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 const profileResponse = {
   account: {
@@ -42,7 +42,7 @@ describe('importClaudeCodeFromCallback', () => {
       .mockResolvedValueOnce(jsonResponse(tokenResponse))
       .mockResolvedValueOnce(jsonResponse(profileResponse));
 
-    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
@@ -74,7 +74,7 @@ describe('importClaudeCodeFromCallback', () => {
         account: { uuid: 'acc-uuid-personal', email: 'me@example.com', has_claude_pro: true },
       }));
 
-    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
 
     expect(result.config.accounts).toEqual([{
       email: 'me@example.com',
@@ -96,7 +96,7 @@ describe('importClaudeCodeFromCallback', () => {
         organization: { uuid: 'org-uuid-future', organization_type: 'claude_personal', rate_limit_tier: 'default_claude_personal' },
       }));
 
-    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
     expect(result.config.accounts[0].subscriptionType).toBeNull();
     expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_personal');
     expect(result.config.accounts[0].organizationUuid).toBe('org-uuid-future');
@@ -114,7 +114,7 @@ describe('importClaudeCodeFromCallback', () => {
         organization: { uuid: 'org-uuid-2', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_99x' },
       }));
 
-    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
     expect(result.config.accounts[0].subscriptionType).toBe('max');
     expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_99x');
   });
@@ -292,7 +292,7 @@ describe('importClaudeCodeFromSetupTokenCallback', () => {
       .mockResolvedValueOnce(jsonResponse(setupTokenResponse))
       .mockResolvedValueOnce(jsonResponse(permissionError403, 403));
 
-    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
@@ -333,7 +333,7 @@ describe('importClaudeCodeFromSetupTokenCallback', () => {
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(setupTokenResponse))
       .mockResolvedValueOnce(jsonResponse(profileResponse));
-    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
     expect(result.config.accounts[0].email).toBe('user@example.com');
     expect(result.config.accounts[0].accountUuid).toBe('acc-uuid-1');
     expect(result.state.accounts[0].tokenKind).toBe('setup-token');

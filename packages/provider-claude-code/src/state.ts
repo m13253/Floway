@@ -231,16 +231,15 @@ export const readClaudeCodeUpstreamState = (raw: unknown): ClaudeCodeUpstreamSta
   return raw;
 };
 
-// Immutable patch helper: replace the account at `index` by running `patch`
-// over it, leaving the rest of the state untouched. The v1 invariant pins
-// the array to exactly one account, but `index` stays explicit so the
-// asserter's exactly-one rule and the call site's positional assumption
-// are visible at the call rather than baked into a `0` literal.
-export const replaceAccountAt = (
+// Immutable patch helper: replace the sole account by running `patch` over
+// it. The asserter pins `accounts` to exactly one entry, so this helper
+// always rewrites index 0; encoding that invariant in the name keeps call
+// sites free of a `0` literal whose meaning would otherwise have to be
+// re-derived on every read.
+export const replaceSoleAccount = (
   state: ClaudeCodeUpstreamState,
-  index: number,
   patch: (account: ClaudeCodeAccountCredential) => ClaudeCodeAccountCredential,
 ): ClaudeCodeUpstreamState => ({
   ...state,
-  accounts: state.accounts.map((account, i) => (i === index ? patch(account) : account)),
+  accounts: [patch(state.accounts[0])],
 });

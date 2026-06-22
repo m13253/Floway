@@ -5,7 +5,7 @@ import { logWarn, logInfo } from './log.ts';
 import { parseClaudeCodeQuotaHeaders, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import {
   readClaudeCodeUpstreamState,
-  replaceAccountAt,
+  replaceSoleAccount,
 } from './state.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -137,7 +137,7 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
   const state = readClaudeCodeUpstreamState(fresh.state);
   const account = state.accounts[0];
   const priorStatus = account.quotaSnapshot === null ? null : account.quotaSnapshot.data.status;
-  const next = replaceAccountAt(state, 0, account => ({
+  const next = replaceSoleAccount(state, account => ({
     ...account,
     quotaSnapshot: { fetchedAt: Date.now(), data: snapshot },
   }));
@@ -258,7 +258,7 @@ const persistTerminalAccountState = async (
   // skip overwriting the prior message so the dashboard keeps the first
   // signal.
   if (account.state !== 'active') return;
-  const flipped = replaceAccountAt(state, 0, account => ({
+  const flipped = replaceSoleAccount(state, account => ({
     ...account,
     state: 'refresh_failed',
     stateMessage: terminalMessage,
