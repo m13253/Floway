@@ -5,27 +5,32 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, UpstreamRecord } from '../../api/types.ts';
-import { Badge } from '@floway-dev/ui';
-
-// The Codex account card only ever renders for a codex-provider upstream.
-type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
+import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
-  record: CodexUpstreamRecord;
+  record: UpstreamRecord;
 }>();
 
-const account = computed<CodexAccountIdentity | null>(() => {
-  return props.record.config.accounts[0] ?? null;
+// Narrow once: this card only renders inside a codex upstream's edit page.
+// Pinning the narrow at the script-setup boundary lets every computed below
+// reach `config` / `state` / `codex_quota` without `as` casts.
+const codexRecord = computed(() => {
+  if (props.record.provider !== 'codex') {
+    throw new Error(`CodexAccountCard requires a codex upstream, got ${props.record.provider}`);
+  }
+  return props.record;
 });
 
+const account = computed<CodexAccountIdentity | null>(() => codexRecord.value.config.accounts[0] ?? null);
+
 const credential = computed<CodexAccountCredentialState | null>(() => {
-  const raw = props.record.state;
+  const raw = codexRecord.value.state;
   if (!raw || !Array.isArray(raw.accounts)) return null;
   if (!account.value) return raw.accounts[0] ?? null;
   return raw.accounts.find(a => a.chatgptAccountId === account.value!.chatgptAccountId) ?? raw.accounts[0] ?? null;
 });
 
-const quota = computed(() => props.record.codex_quota ?? null);
+const quota = computed(() => codexRecord.value.codex_quota ?? null);
 
 const formatTimestamp = (iso: string): string => {
   const d = new Date(iso);
@@ -76,7 +81,7 @@ const windows = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-4">
+  <Card :padded="false" class="space-y-4 p-4">
     <div class="flex items-start gap-3">
       <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-700 text-gray-400">
         <i class="i-lucide-circle-user-round size-6" />
@@ -127,5 +132,5 @@ const windows = computed(() => {
     </template>
 
     <p v-else class="text-xs text-gray-500">No quota snapshot yet. Make a Codex call to populate.</p>
-  </div>
+  </Card>
 </template>

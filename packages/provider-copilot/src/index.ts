@@ -2,6 +2,7 @@ export { createCopilotProvider } from './provider.ts';
 export {
   clearCopilotTokenCache,
   clearInProcessCopilotTokenCache,
+  copilotPlanToAccountType,
   githubHeaders,
   isCopilotAccountType,
   type CopilotAccountType,

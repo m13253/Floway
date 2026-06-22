@@ -133,7 +133,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
   } else if (r.provider === 'ollama') {
-    const cfg = r.config as OllamaUpstreamConfig;
+    const cfg = r.config;
     ollamaDraft.value = {
       baseUrl: cfg.baseUrl,
       apiKey: '',
