@@ -7,7 +7,8 @@
 //
 // Iconify classes resolve through UnoCSS's preset-icons (see uno.config.ts).
 // Brand marks come from `simple-icons`; the only non-branded entry
-// (`custom`, the generic OpenAI-compatible bearer) falls back to lucide.
+// (`custom`, the generic OpenAI- or Anthropic-compatible endpoint) falls
+// back to lucide.
 
 import type { UpstreamProviderKind } from '../../api/types.ts';
 
@@ -28,7 +29,7 @@ export const PROVIDER_META: readonly ProviderMeta[] = [
   {
     kind: 'custom',
     label: 'Custom',
-    subtitle: 'OpenAI-compatible bearer',
+    subtitle: 'OpenAI- or Anthropic-compatible endpoint',
     tone: 'amber',
     defaultName: 'Custom upstream',
     icon: 'i-lucide-server',
