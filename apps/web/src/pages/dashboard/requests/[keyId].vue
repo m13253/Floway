@@ -2,7 +2,7 @@
 import { useEventListener } from '@vueuse/core';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../../api/client.ts';
 import type { ApiKey } from '../../../api/types.ts';
@@ -25,36 +25,34 @@ export const useRequestsPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-const props = defineProps<{ keyId: string }>();
 const api = useApi();
+const route = useRoute('/dashboard/requests/[keyId]');
 const router = useRouter();
 const initialData = useRequestsPageData();
 
 const keys = ref<ApiKey[] | null>(initialData.data.value.keys);
 const loadError = ref<string | null>(initialData.data.value.error);
 
-// `keys.value === null` means the API call failed — distinct from "loaded an
-// empty list". Preserve the null so the picker UI stays gated and the load
-// error surfaces via `loadError` above; only filter once we actually have a
-// list to filter.
 const dumpKeys = computed(() => keys.value === null ? null : keys.value.filter(k => k.dump_retention_seconds !== null));
 
-// The URL is the single source of truth for the active key. Operator picks
-// flow back through `router.replace` so the address bar always shows the
-// currently-inspected key and the URL is shareable.
-const selectedKeyId = computed(() => props.keyId);
+// The URL is the single source of truth for the active key. unplugin-vue-router
+// hands route params through `useRoute('<path>').params`; using the typed
+// path narrows `params.keyId` to a string. Picker changes flow back through
+// `router.replace` so the address bar always shows the currently-inspected
+// key.
+const selectedKeyId = computed(() => route.params.keyId);
 const selectedRecordId = useHashRef();
 
 const subscription = useDumpSubscription(selectedKeyId);
 
 const selectKey = (id: string) => {
-  if (id === props.keyId) return;
+  if (id === selectedKeyId.value) return;
   // Drop the record-id hash in the same navigation: a record id from key A
   // would 404 against key B and the API endpoint enforces the (keyId,
   // recordId) pair, so carrying the hash across would render as the same
   // "Record not found" the explicit cross-key paste produces.
-  void router.replace({ path: `/dashboard/requests/${id}` });
   selectedRecordId.value = null;
+  void router.replace({ path: `/dashboard/requests/${id}` });
 };
 
 const reloadKeys = async () => {
@@ -74,7 +72,7 @@ useEventListener(window, 'focus', () => { void reloadKeys(); });
 // only flagged once `dumpKeys` is a real array. The page renders a
 // not-found block in that case rather than letting the subscription chase
 // an upstream 404.
-const keyNotFound = computed(() => dumpKeys.value !== null && !dumpKeys.value.some(k => k.id === props.keyId));
+const keyNotFound = computed(() => dumpKeys.value !== null && !dumpKeys.value.some(k => k.id === selectedKeyId.value));
 </script>
 
 <template>
