@@ -167,8 +167,8 @@ const persistQuotaSnapshot = async (upstreamId: string, snapshot: ClaudeCodeQuot
 // response is sent to the client, so a bare fire-and-forget would lose the
 // write on the hot path. The `waitUntil` callback (when supplied by the
 // gateway) extends the worker's lifetime past the response so the persist
-// completes. When `waitUntil` is undefined (Node target / tests / pre-A3
-// gateway), the promise still runs to completion under Node's event loop
+// completes. When `waitUntil` is undefined (Node target / tests), the
+// promise still runs to completion under the host event loop
 // — and tests can observe it by awaiting a microtask flush.
 const persistQuotaFromHeadersFireAndForget = (
   upstreamId: string,
@@ -417,8 +417,6 @@ const performUpstreamCall = async (
     const inbound = opts.call.headers;
     const passthrough: Record<string, string> = {};
     for (const [name, value] of inbound.entries()) {
-      // `Headers` iterator lowercases names per the Fetch spec, so the
-      // allowlist (also lowercase) matches directly without re-lowering.
       if (SHAPED_PASSTHROUGH_HEADER_ALLOWLIST.has(name)) passthrough[name] = value;
     }
     // Sub2api always sets Content-Type when the inbound omits it

@@ -93,7 +93,7 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 // the upstream id (e.g. claude-code exposes `claude-sonnet-4-5` publicly
 // while sending `claude-sonnet-4-5-20250929` on the wire). Falls through
 // to undefined when the blob is absent or lacks the field, in which case
-// the caller's fallback (`model.id`) keeps the legacy behaviour.
+// the caller falls back to `model.id`.
 const providerDataUpstreamModelId = (data: unknown): string | undefined => {
   if (typeof data !== 'object' || data === null) return undefined;
   const candidate = (data as { upstreamModelId?: unknown }).upstreamModelId;
@@ -648,7 +648,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>
     return c.json({ error: 'Codex upstream not found' }, 404);
   }
   // A throw from assertCodexUpstreamState means the row's state column was
-  // hand-edited or written by a buggier branch — the framework-level 500
+  // hand-edited or otherwise corrupted — the framework-level 500
   // handler stack-traces internally without surfacing the parse error to the
   // dashboard.
   assertCodexUpstreamState(existing.state);
@@ -781,7 +781,7 @@ const ingestClaudeCodeSetupTokenCredential = async (
 
 export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBody>) => {
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
   } catch (err) {
@@ -832,7 +832,7 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   }
 
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
   } catch (err) {
@@ -871,7 +871,7 @@ const claudeCodeSetupTokenDefaultName = (config: ClaudeCodeUpstreamConfig): stri
 
 export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCodeSetupTokenImportBody>) => {
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
   } catch (err) {
@@ -916,7 +916,7 @@ export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeC
   }
 
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
   } catch (err) {
@@ -1060,7 +1060,7 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   }
 
   // A throw from readClaudeCodeUpstreamState means the row's state column was
-  // hand-edited or written by a buggier branch — the framework-level 500
+  // hand-edited or otherwise corrupted — the framework-level 500
   // handler stack-traces internally without surfacing the parse error to the
   // dashboard.
   const account = readClaudeCodeUpstreamState(existing.state).accounts[0];
@@ -1077,7 +1077,7 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   }
 
   const body = c.req.valid('json');
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
   } catch (err) {
@@ -1196,7 +1196,7 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
 
   const body = c.req.valid('json');
   const actor = userFromContext(c).id;
-  let fetcher;
+  let fetcher: Fetcher;
   try {
     fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
   } catch (err) {
@@ -1237,9 +1237,9 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
   // Spread the upstream body at the top level so the response shape
   // matches what real CC's `fetchUtilization` parses (five_hour,
   // seven_day, seven_day_sonnet, seven_day_opus, optional overage
-  // fields). `fetched_at`
-  // rides alongside as the gateway-stamped wall-clock. The body is
-  // typed unknown by the helper because Anthropic adds fields without
-  // warning — surface as Record so Hono's c.json accepts it.
+  // fields). `fetched_at` rides alongside as the gateway-stamped
+  // wall-clock. The body is typed unknown by the helper because
+  // Anthropic adds fields without warning — surface as Record so Hono's
+  // c.json accepts it.
   return c.json({ fetched_at: probe.fetched_at, ...(probe.body as Record<string, unknown>) });
 };

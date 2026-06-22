@@ -207,9 +207,6 @@ const modelWithProviderInstances = (model: ResolvedModel, providers: ReadonlySet
 //      priority within an otherwise tied group.
 export const compareModelIds = (a: string, b: string): number => {
   const cmp = <T>(x: T, y: T, dir = 1) => (x < y ? -dir : x > y ? dir : 0);
-  // An id with no leading [a-zA-Z]+ run gets the empty prefix and sorts with
-  // the other prefix-less ids; the full-string compare further down then
-  // disambiguates within that bucket.
   const prefix = (s: string) => /^[a-zA-Z]+/.exec(s)?.[0].toLowerCase() ?? '';
   const digits = (s: string) => [...s.matchAll(/(?<!\d)\d(?!\d)/g)].map(m => +m[0]);
   const [da, db] = [digits(a), digits(b)];

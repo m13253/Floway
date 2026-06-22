@@ -49,7 +49,7 @@ type CredentialLookup =
 
 const credentialLookup = computed<CredentialLookup>(() => {
   const raw = props.record.state;
-  if (!raw || !Array.isArray(raw.accounts) || raw.accounts.length === 0) return { kind: 'missing-state' };
+  if (raw === null) return { kind: 'missing-state' };
   const configured = account.value;
   if (!configured) return { kind: 'no-config-account' };
   const match = raw.accounts.find(a => a.accountUuid === configured.accountUuid);
@@ -153,8 +153,6 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
   if (quota.value?.status === 'rejected') {
     return { tone: 'rose', label: 'Plan window exhausted — wait for reset' };
   }
-  // Heaviest-utilization read prefers whichever snapshot is newer per window
-  // so the chip mirrors what the window cards below show.
   const utilizations = windows.value
     .map(w => w.percent)
     .filter((v): v is number => typeof v === 'number');
@@ -201,7 +199,7 @@ const toPercent = (n: number | null | undefined): number | null => typeof n === 
 const headerFetchedAt = computed<number>(() => credential.value?.quotaSnapshot?.fetchedAt ?? 0);
 const probeFetchedAt = computed<number>(() => credential.value?.usageProbeSnapshot?.fetchedAt ?? 0);
 
-const pickHeaderWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null): WindowRow | null => {
+const pickHeaderWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null | undefined): WindowRow | null => {
   const headerHas = headerWin && typeof headerWin.utilization === 'number';
   const probeHas = probeWin && typeof probeWin.utilization === 'number';
   const preferProbe = probeHas && (!headerHas || probeFetchedAt.value > headerFetchedAt.value);
@@ -216,12 +214,10 @@ const pickHeaderWindow = (label: string, key: string, headerWin: ClaudeCodeQuota
 
 const windows = computed<WindowRow[]>(() => {
   const rows: WindowRow[] = [];
-  const fiveHour = pickHeaderWindow('5-hour window', 'five_hour', quota.value?.fiveHour, probe.value?.fiveHour ?? null);
+  const fiveHour = pickHeaderWindow('5-hour window', 'five_hour', quota.value?.fiveHour, probe.value?.fiveHour);
   if (fiveHour) rows.push(fiveHour);
-  const sevenDay = pickHeaderWindow('7-day window', 'seven_day', quota.value?.sevenDay, probe.value?.sevenDay ?? null);
+  const sevenDay = pickHeaderWindow('7-day window', 'seven_day', quota.value?.sevenDay, probe.value?.sevenDay);
   if (sevenDay) rows.push(sevenDay);
-  // Sonnet-scoped 7-day window is probe-only (no equivalent in the header
-  // schema), so it shows up only when a probe has run.
   const sonnet = probe.value?.sevenDaySonnet;
   if (sonnet && typeof sonnet.utilization === 'number') {
     rows.push({ key: 'seven_day_sonnet', label: '7-day Sonnet', percent: toPercent(sonnet.utilization), resetAt: sonnet.resetAt, status: null, source: 'probe', fetchedAt: probeFetchedAt.value });
@@ -229,8 +225,6 @@ const windows = computed<WindowRow[]>(() => {
   return rows;
 });
 
-// At least one window is rendered when either snapshot has any utilization
-// data we can read. The "no snapshot yet" placeholder is the inverse.
 const hasAnyWindow = computed<boolean>(() => windows.value.length > 0);
 
 const accessTokenExpiry = computed(() => {

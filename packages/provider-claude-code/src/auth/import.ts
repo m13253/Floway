@@ -13,7 +13,6 @@ interface BuildImportResultParams {
   identity: ClaudeCodeIdentity;
   tokenKind: ClaudeCodeTokenKind;
   accessToken: string;
-  // `null` for `setup-token` (no refresh counterpart); non-empty for `oauth`.
   refreshToken: string | null;
   expiresAt: number;
   now: string;
@@ -143,6 +142,14 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
 //
 // `fetcher` is forwarded to the identity call so the control-plane import
 // route can route through an operator-supplied proxy chain. Default direct.
+const pickNonEmptyString = (record: Record<string, unknown>, key: string, prefix: string): string => {
+  const value = record[key];
+  if (typeof value !== 'string' || value === '') {
+    throw new TypeError(`${prefix}.${key} must be a non-empty string`);
+  }
+  return value;
+};
+
 export const importClaudeCodeFromCredentialsJson = async (
   rawJson: string,
   fetcher: Fetcher = directFetcher,
@@ -209,12 +216,4 @@ export const importClaudeCodeFromCredentialsJson = async (
     expiresAt: expiresAtRaw,
     now: new Date().toISOString(),
   });
-};
-
-const pickNonEmptyString = (record: Record<string, unknown>, key: string, prefix: string): string => {
-  const value = record[key];
-  if (typeof value !== 'string' || value === '') {
-    throw new TypeError(`${prefix}.${key} must be a non-empty string`);
-  }
-  return value;
 };

@@ -57,10 +57,9 @@ const currentColo = computed(() => runtimeInfo.value?.colo ?? null);
 type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
 
-// Edit mode always carries a `record` (parent's v-if guards the null case);
+// Edit mode always carries `record` (parent's v-if guards the null case);
 // create mode always carries `initialProvider` (the route param locks the
-// provider to one value for the lifetime of this page — switching providers
-// is now a navigation, handled by the dropdown that opens the create flow).
+// provider for the lifetime of this page).
 const activeProvider = computed<UpstreamProviderKind>(() => {
   if (props.mode === 'edit') {
     if (!props.record) throw new Error('UpstreamEditPage: edit mode requires a non-null record');
@@ -469,8 +468,7 @@ const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   const collect = (list: UpstreamModelConfig[]) => {
     for (const m of list) {
       // `||` (not `??`) is intentional: a whitespace-only override should
-      // not shadow the upstream id. upstreamModelId is required by the
-      // contract, so the fallback always yields a usable id.
+      // not shadow the upstream id.
       // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
       const id = m.publicModelId?.trim() || m.upstreamModelId;
       if (seen.has(id)) continue;

@@ -46,29 +46,17 @@ const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Recor
 };
 
 const serializeAccessToken = (upstream: UpstreamRecord, value: unknown): { expiresAt: unknown; refreshedAt: unknown } | null => {
-  if (value === null || value === undefined) return null;
+  if (value === null) return null;
   if (!isRecord(value)) {
     throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accessToken: expected object or null`);
   }
   return { expiresAt: clone(value.expiresAt), refreshedAt: clone(value.refreshedAt) };
 };
 
-const serializeQuotaSnapshot = (upstream: UpstreamRecord, value: unknown): unknown => {
-  if (value === null || value === undefined) return null;
+const serializeOpaqueRecord = (upstream: UpstreamRecord, field: string, value: unknown): unknown => {
+  if (value === null) return null;
   if (!isRecord(value)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed quotaSnapshot: expected object or null`);
-  }
-  return clone(value);
-};
-
-// Same shape rationale as serializeQuotaSnapshot: surface the operator-
-// driven live probe verbatim to the dashboard. The wire shape is owned by
-// Anthropic's /api/oauth/usage endpoint and evolves on their schedule, so
-// we round-trip the entry without re-shaping any inner fields.
-const serializeUsageProbeSnapshot = (upstream: UpstreamRecord, value: unknown): unknown => {
-  if (value === null || value === undefined) return null;
-  if (!isRecord(value)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed usageProbeSnapshot: expected object or null`);
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed ${field}: expected object or null`);
   }
   return clone(value);
 };
@@ -169,8 +157,11 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
         // genuine shape drift and must throw, not collapse into null
         // silently.
         accessToken: serializeAccessToken(upstream, a.accessToken),
-        quotaSnapshot: serializeQuotaSnapshot(upstream, a.quotaSnapshot),
-        usageProbeSnapshot: serializeUsageProbeSnapshot(upstream, a.usageProbeSnapshot),
+        quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', a.quotaSnapshot),
+        // usageProbeSnapshot's wire shape is owned by Anthropic's
+        // /api/oauth/usage endpoint and evolves on their schedule, so we
+        // round-trip the entry without re-shaping any inner fields.
+        usageProbeSnapshot: serializeOpaqueRecord(upstream, 'usageProbeSnapshot', a.usageProbeSnapshot),
       })),
     };
   case 'copilot': {

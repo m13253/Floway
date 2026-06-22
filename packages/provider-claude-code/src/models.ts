@@ -35,9 +35,7 @@ export const fetchClaudeCodeModelsList = async (
   accessToken: string,
   fetcher: Fetcher,
 ): Promise<ClaudeCodeApiModel[]> => {
-  // The mimicry surface is GET-only here; the catalog call has no per-model
-  // dispatch, so we send the Sonnet/Opus header profile directly rather
-  // than threading a fake model id through `pickClaudeCodeHeaders`.
+  // Catalog fetch is GET-only; send the Sonnet/Opus header profile directly.
   const headers: Record<string, string> = {
     ...CLAUDE_CODE_HEADERS_SONNET_OPUS,
     authorization: `Bearer ${accessToken}`,
@@ -96,13 +94,10 @@ export const buildClaudeCodeCatalog = (
 // Hook for `ModelProviderInstance.resolveRequestedModelId`: a client that
 // addresses a model by its dated upstream id resolves to the catalog alias
 // the dispatcher actually carries. The catalog publishes only aliases, so
-// any id that already lacks a date suffix needs no remap; any non-Claude
-// id is rejected defensively so a stray `gpt-4` request never gets a
-// silent rewrite. We don't validate against the live catalog here — the
-// dispatcher's own model-id lookup is what fails a request that names a
-// model the upstream doesn't expose.
+// any id that already lacks a date suffix needs no remap. We don't validate
+// against the live catalog here — the dispatcher's own model-id lookup is
+// what fails a request that names a model the upstream doesn't expose.
 export const claudeCodeResolveRequestedModelId = (modelId: string): string | undefined => {
-  if (!modelId.startsWith('claude-')) return undefined;
   const alias = aliasFromApiId(modelId);
   return alias === modelId ? undefined : alias;
 };

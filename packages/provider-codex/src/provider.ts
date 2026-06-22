@@ -24,7 +24,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   // Computed once per provider instance: only the upstream layer applies
   // (no per-model override layer). Threaded into every UpstreamModel emitted
   // by getProvidedModels so interceptors can read the effective flag set
-  // without re-resolving — same pattern as the claude-code provider.
+  // without re-resolving.
   const enabledFlags = resolveEffectiveFlags(defaultsForProvider('codex'), [record.flagOverrides]);
 
   // Re-read upstream state on every request rather than capturing the record's

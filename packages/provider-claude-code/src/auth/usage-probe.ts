@@ -13,12 +13,11 @@
 //
 // Wire format: per the upstream binary, the response is a JSON document
 // shaped roughly as `{five_hour: {utilization, resets_at}, seven_day: {...},
-// seven_day_sonnet: {...}, seven_day_opus: {...}}` plus optional overage
-// fields. We do not assert
-// the inner shape here — the control plane returns the upstream's body
-// verbatim. Anthropic has been adding fields (priorIsUsingOverage,
-// hadPriorUtilizationData, ...) without warning; a strict parser would
-// reject a perfectly usable new field as malformed.
+// seven_day_sonnet: {...}, seven_day_opus: {...}}` plus optional overage fields.
+// We do not assert the inner shape here — the control plane returns the
+// upstream's body verbatim. Anthropic has been adding fields
+// (priorIsUsingOverage, hadPriorUtilizationData, ...) without warning;
+// a strict parser would reject a perfectly usable new field as malformed.
 
 import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from '../constants.ts';
 import type { Fetcher } from '@floway-dev/provider';
@@ -29,9 +28,7 @@ import type { Fetcher } from '@floway-dev/provider';
 const ANTHROPIC_OAUTH_BETA = 'oauth-2025-04-20';
 
 export interface ClaudeCodeUsageProbeResult {
-  // ISO 8601 timestamp when this probe round-tripped successfully. The
-  // caller stamps this onto its persisted slot so the dashboard can show
-  // staleness.
+  // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
   fetched_at: string;
   // The upstream's body verbatim. We surface as `unknown` because the
   // shape evolves with the CLI version; the dashboard renders by walking

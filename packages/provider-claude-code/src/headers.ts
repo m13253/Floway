@@ -107,7 +107,5 @@ export const CLAUDE_CODE_HEADERS_HAIKU: Record<string, string> = {
   'anthropic-beta': ANTHROPIC_BETA_HAIKU,
 };
 
-// Haiku detection mirrors what real CC does: a substring match on 'haiku'
-// in the dated model id (e.g. claude-haiku-4-5-20251001).
 export const pickClaudeCodeHeaders = (modelId: string): Record<string, string> =>
   modelId.includes('haiku') ? CLAUDE_CODE_HEADERS_HAIKU : CLAUDE_CODE_HEADERS_SONNET_OPUS;

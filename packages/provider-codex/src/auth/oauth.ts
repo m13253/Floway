@@ -146,10 +146,6 @@ export const exchangeCodexAuthorizationCode = async (opts: { code: string; codeV
     redirect_uri: CODEX_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   });
-  // Only `app_session_terminated` is terminal here — `invalid_grant` on
-  // exchange typically means the operator pasted a stale or wrong callback
-  // URL, which is recoverable by restarting the PKCE flow rather than
-  // re-importing.
   return await codexTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
 };
 

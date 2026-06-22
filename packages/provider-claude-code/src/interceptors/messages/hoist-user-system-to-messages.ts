@@ -5,11 +5,9 @@ import type { MessagesMessage, MessagesTextBlock } from '@floway-dev/protocols/m
 // upstream's role-alternation guard stays satisfied. The text is visible to
 // the upstream and may echo back in completion text, so keep it minimal.
 //
-// Both sub2api (`gateway_service.go:4486`) and claude-relay-service
-// converged on this exact literal. The audit subagent flagged divergence
-// as a likely detector signal — if Anthropic's classifier has any heuristic
-// keyed on the synthetic ack, two independent OAuth-mimicry impls agreeing
-// is the safer landing point.
+// Two independent OAuth-mimicry impls (sub2api `gateway_service.go:4486`
+// and claude-relay-service) converged on this exact literal; divergence is
+// a likely detector signal, so we match.
 const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 
 // On the re-mimicry path the upstream's `system` slot is reserved for the
@@ -44,7 +42,14 @@ export const hoistUserSystemToMessages = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const captured = captureSystemText(ctx.payload.system);
+  const captured = ((system: string | MessagesTextBlock[] | undefined): string => {
+    if (system === undefined) return '';
+    if (typeof system === 'string') return system;
+    return system
+      .map(block => block.text)
+      .filter(text => typeof text === 'string' && text.length > 0)
+      .join('\n\n');
+  })(ctx.payload.system);
   // inject-billing-block et al rebuild `system` from scratch as a three-block
   // array; removing the field here keeps the boundary mutation self-contained.
   const nextPayload = { ...ctx.payload };
@@ -60,13 +65,4 @@ export const hoistUserSystemToMessages = async <TResult>(
 
   ctx.payload = nextPayload;
   return await run();
-};
-
-const captureSystemText = (system: string | MessagesTextBlock[] | undefined): string => {
-  if (system === undefined) return '';
-  if (typeof system === 'string') return system;
-  return system
-    .map(block => block.text)
-    .filter(text => typeof text === 'string' && text.length > 0)
-    .join('\n\n');
 };

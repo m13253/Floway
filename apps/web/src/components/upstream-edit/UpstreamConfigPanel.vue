@@ -25,9 +25,6 @@ const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
 const props = defineProps<{
-  // Provider is owned by the parent — in create mode it comes from the
-  // route segment, in edit mode it comes from the record. Either way the
-  // chooser has moved out of this panel, so the prop is one-way only.
   provider: UpstreamProviderKind;
   mode: 'create' | 'edit';
   record: UpstreamRecord | null;

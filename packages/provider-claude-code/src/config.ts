@@ -44,25 +44,14 @@ export type ClaudeCodeUpstreamRecord = UpstreamRecord & {
   config: ClaudeCodeUpstreamConfig;
 };
 
-const ALLOWED_IDENTITY_KEYS_MAP: Record<keyof ClaudeCodeAccountIdentity, true> = {
-  email: true,
-  accountUuid: true,
-  organizationUuid: true,
-  subscriptionType: true,
-  rateLimitTier: true,
-};
-
-const ALLOWED_CONFIG_KEYS_MAP: Record<keyof ClaudeCodeUpstreamConfig, true> = {
-  accounts: true,
-};
-
 const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void => {
+  const allowed = new Set(['email', 'accountUuid', 'organizationUuid', 'subscriptionType', 'rateLimitTier'] as const);
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError(`${where} must be a plain object`);
   }
   const obj = value as Record<string, unknown>;
   for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_IDENTITY_KEYS_MAP)) {
+    if (!allowed.has(key as never)) {
       throw new TypeError(`${where} has unexpected key '${key}'`);
     }
   }
@@ -84,14 +73,13 @@ const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void =>
 };
 
 function assertClaudeCodeUpstreamConfig(value: unknown): asserts value is ClaudeCodeUpstreamConfig {
+  const allowed = new Set(['accounts'] as const);
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new TypeError('ClaudeCodeUpstreamConfig must be a plain object');
   }
   const obj = value as Record<string, unknown>;
-  // config_json round-trips through canonical serialization, so any surviving
-  // key is persisted. Reject unknown keys to keep the on-disk shape closed.
   for (const key of Object.keys(obj)) {
-    if (!(key in ALLOWED_CONFIG_KEYS_MAP)) {
+    if (!allowed.has(key as never)) {
       throw new TypeError(`ClaudeCodeUpstreamConfig has unexpected key '${key}'`);
     }
   }

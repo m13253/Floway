@@ -72,10 +72,7 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
   // Real CC at v2.1.181 ships `'1h'` to amortize the cache across the user's
   // session; sub2api deliberately picks `'5m'` to keep the cached prefix
   // active across in-flight conversation turns without burning the 1h
-  // quota window — same trade-off we want for a multi-tenant gateway. The
-  // ttl was previously implicit (Anthropic defaults to `'5m'` when the
-  // field is omitted); making it explicit aligns the wire shape with
-  // sub2api's fixtures so Anthropic's detector sees identical bytes.
+  // quota window — same trade-off we want for a multi-tenant gateway.
   cache_control: { type: 'ephemeral', ttl: '5m' },
 };
 
@@ -87,9 +84,7 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
 // engineered from real CC packet captures.
 const FINGERPRINT_SALT_ASCII = '59cf53e54c78';
 
-// Byte indices into the first user-role text used by real CC. Same source
-// as `FINGERPRINT_SALT_ASCII`; treated as a constant tuple so the loop body
-// and the test fixtures all index the same positions.
+// Byte indices into the first user-role text used by real CC, same source as FINGERPRINT_SALT_ASCII.
 const FINGERPRINT_INDICES = [4, 7, 20] as const;
 
 const extractFirstUserText = (body: MessagesPayload): string => {

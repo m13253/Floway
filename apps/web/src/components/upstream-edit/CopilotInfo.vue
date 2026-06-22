@@ -47,22 +47,20 @@ const usedPercent = computed(() => {
 
 <template>
   <div class="space-y-4">
-    <div class="space-y-3">
-      <Card :padded="false" class="space-y-3 p-4">
-        <div class="flex items-center gap-3">
-          <img
-            v-if="config.user.avatar_url"
-            :src="config.user.avatar_url"
-            :alt="config.user.login"
-            class="size-10 rounded-full"
-          >
-          <div>
-            <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
-            <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ accountTypeDisplay }}</p>
-          </div>
+    <Card :padded="false" class="space-y-3 p-4">
+      <div class="flex items-center gap-3">
+        <img
+          v-if="config.user.avatar_url"
+          :src="config.user.avatar_url"
+          :alt="config.user.login"
+          class="size-10 rounded-full"
+        >
+        <div>
+          <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
+          <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ accountTypeDisplay }}</p>
         </div>
-      </Card>
-    </div>
+      </div>
+    </Card>
 
     <Card :padded="false" class="space-y-3 p-4">
       <header class="flex items-center justify-between">

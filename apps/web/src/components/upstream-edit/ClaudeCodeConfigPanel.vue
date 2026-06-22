@@ -148,35 +148,17 @@ const submit = async () => {
   // identity calls route through it) and into persistence (so the new /
   // updated row carries the same chain).
   const proxyExtras = { proxy_fallback_list: props.proxyFallbackList };
-  let result;
-  if (props.mode === 'create') {
-    if (body.value.kind === 'setup-token-callback') {
-      const payload = { callback: body.value.callback, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-setup-token-import'].$post({ json: payload }));
-    } else if (body.value.kind === 'oauth-credentials_json') {
-      const payload = { credentials_json: body.value.credentials_json, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: payload }));
-    } else {
-      const payload = { callback: body.value.callback, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams['claude-code-import'].$post({ json: payload }));
+  const result = await callApi<UpstreamRecord>(() => {
+    if (props.mode === 'create') {
+      if (body.value.kind === 'setup-token-callback') return api.api.upstreams['claude-code-setup-token-import'].$post({ json: { callback: body.value.callback, ...proxyExtras } });
+      if (body.value.kind === 'oauth-credentials_json') return api.api.upstreams['claude-code-import'].$post({ json: { credentials_json: body.value.credentials_json, ...proxyExtras } });
+      return api.api.upstreams['claude-code-import'].$post({ json: { callback: body.value.callback, ...proxyExtras } });
     }
-  } else {
-    // The re-import affordance is rendered only when `record` is bound; if the
-    // ref is somehow empty by the time the click lands, bail rather than fire
-    // a doomed request.
-    if (!props.record) { submitting.value = false; return; }
-    const id = props.record.id;
-    if (body.value.kind === 'setup-token-callback') {
-      const payload = { callback: body.value.callback, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-setup-token-reimport'].$post({ param: { id }, json: payload }));
-    } else if (body.value.kind === 'oauth-credentials_json') {
-      const payload = { credentials_json: body.value.credentials_json, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id }, json: payload }));
-    } else {
-      const payload = { callback: body.value.callback, ...proxyExtras };
-      result = await callApi<UpstreamRecord>(() => api.api.upstreams[':id']['claude-code-reimport'].$post({ param: { id }, json: payload }));
-    }
-  }
+    const param = { id: props.record!.id };
+    if (body.value.kind === 'setup-token-callback') return api.api.upstreams[':id']['claude-code-setup-token-reimport'].$post({ param, json: { callback: body.value.callback, ...proxyExtras } });
+    if (body.value.kind === 'oauth-credentials_json') return api.api.upstreams[':id']['claude-code-reimport'].$post({ param, json: { credentials_json: body.value.credentials_json, ...proxyExtras } });
+    return api.api.upstreams[':id']['claude-code-reimport'].$post({ param, json: { callback: body.value.callback, ...proxyExtras } });
+  });
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
   // Burn the in-flight stash only on success — the OAuth code is single-use
@@ -228,15 +210,9 @@ const refreshTokenNow = async () => {
 // per-record GET endpoint to re-read — and re-running the upstreams list
 // for a single non-mutating snapshot would be wasteful. Mirror the persisted
 // shape locally from the response so the card re-renders against the same
-// data the next list-load would yield.
-interface ProbeResponse {
-  fetched_at: string;
-  // Anthropic adds fields without warning; we round-trip the rest of the
-  // body into the dashboard's `data: unknown` slot exactly as the gateway
-  // persists it.
-  [k: string]: unknown;
-}
-
+// data the next list-load would yield. Anthropic adds fields without
+// warning; we round-trip the rest of the body into the dashboard's
+// `data: unknown` slot exactly as the gateway persists it.
 const refreshQuotaNow = async () => {
   if (probing.value) return;
   if (!props.record) return;
@@ -250,7 +226,7 @@ const refreshQuotaNow = async () => {
     return;
   }
   probing.value = true;
-  const { data, error } = await callApi<ProbeResponse>(
+  const { data, error } = await callApi<{ fetched_at: string; [k: string]: unknown }>(
     () => api.api.upstreams[':id']['probe-quota'].$post({
       param: { id: record.id },
       json: { proxy_fallback_list: props.proxyFallbackList },

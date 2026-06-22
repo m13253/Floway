@@ -76,8 +76,7 @@ export type MessagesTextCitation = MessagesSearchResultLocationCitation | Messag
 // upstream cache TTL is 5 minutes; an explicit `ttl` switches between the
 // two TTL tiers Anthropic supports under the
 // `extended-cache-ttl-2025-04-11` beta. Senders that don't carry that beta
-// should omit the field and accept the default. Sticky to a literal union
-// so a typo (`'1hr'`, `'1d'`) fails at compile time.
+// should omit the field and accept the default.
 export interface MessagesCacheControl {
   type: 'ephemeral';
   ttl?: '5m' | '1h';

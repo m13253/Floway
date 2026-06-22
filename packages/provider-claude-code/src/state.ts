@@ -10,17 +10,15 @@
 //
 // Two credential kinds share this shape, discriminated by `tokenKind`:
 //
-// - `oauth` (default): a short-lived access token plus a rotating refresh
-//   token. Every refresh call mints a new access token AND rotates the
-//   refresh token; the access-token cache CASes both together.
+// - `oauth`: a short-lived access token plus a rotating refresh token.
+//   Every refresh call mints a new access token AND rotates the refresh
+//   token; the access-token cache CASes both together.
 // - `setup-token`: a long-lived (~1 year) inference-only bearer with NO
 //   refresh token. The `accessToken` entry IS the credential — when it
 //   expires the operator must re-import. `refreshToken` is null. The
 //   cache short-circuits the refresh path for this kind.
 
 import { assertClaudeCodeQuotaSnapshot, type ClaudeCodeQuotaSnapshot } from './quota.ts';
-
-export type ClaudeCodeCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
 export type ClaudeCodeTokenKind = 'oauth' | 'setup-token';
 
@@ -43,17 +41,9 @@ export interface ClaudeCodeQuotaSnapshotEntry {
   data: ClaudeCodeQuotaSnapshot;
 }
 
-// Most recent live probe against Anthropic's `GET /api/oauth/usage`
-// endpoint. Distinct from `quotaSnapshot` because the wire shape is
-// totally different: header-derived snapshots carry the
-// `anthropic-ratelimit-unified-*` family parsed into a fixed schema, while
-// the live probe returns a free-form JSON document Anthropic ships from
-// the /api/oauth/usage endpoint (`five_hour`, `seven_day`,
-// `seven_day_sonnet`, `seven_day_opus`, optional overage fields, ...). We
-// store the
-// upstream's body verbatim — the dashboard renders by walking known
-// fields and ignores anything new, so a strict shape gate here would
-// reject a still-usable response the moment Anthropic adds a field.
+// Most recent /api/oauth/usage probe. Stored verbatim because Anthropic
+// adds fields (overage, prior-utilization, ...) on its own schedule; the
+// dashboard walks known keys and ignores the rest.
 export interface ClaudeCodeUsageProbeSnapshotEntry {
   fetchedAt: number;
   data: unknown;

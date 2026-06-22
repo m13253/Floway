@@ -155,13 +155,6 @@ const ensureClaudeCodeAccessTokenInner = async (
     throw error;
   }
 
-  // The refresh round-trip always carries a refresh_token; guard for shape
-  // drift so a malformed upstream response can't write `null` into a state
-  // that expects a non-empty rotating token.
-  if (typeof refreshed.refresh_token !== 'string' || refreshed.refresh_token === '') {
-    throw new Error('Claude Code OAuth /token response missing refresh_token on refresh');
-  }
-
   const now = new Date().toISOString();
   const newAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
     token: refreshed.access_token,
@@ -174,13 +167,10 @@ const ensureClaudeCodeAccessTokenInner = async (
   // `stateUpdatedAt` stay untouched on a successful refresh — 'active' is
   // already what we want, and bumping the timestamp on every refresh would
   // muddy the dashboard's "credential health changed" signal.
-  //
-  // The `tokenKind === 'setup-token'` early-return above means every
-  // account reaching this branch has `tokenKind: 'oauth'`. Re-read the
-  // slot and pin the narrow once outside the patch callback so the
-  // discriminated-union assignment yields an `oauth` credential without
-  // an inline re-check.
   const rotatedRefreshToken = refreshed.refresh_token;
+  if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
+    throw new Error('Claude Code refresh response missing refresh_token');
+  }
   const oauthAccount = state.accounts[accountIndex];
   if (oauthAccount.tokenKind !== 'oauth') {
     throw new Error('Claude Code refresh path reached on non-oauth credential (structural invariant violation)');
@@ -266,10 +256,7 @@ const recoverFromRefreshRace = async (
   const rereadState = readClaudeCodeUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts[0];
   if (rereadAccount.state !== 'active') return null;
-  // Recovery only ever fires from the oauth refresh path (the
-  // `tokenKind === 'setup-token'` early return above runs first), so the
-  // re-read row is always an oauth credential. Pin the narrow structurally
-  // so the discriminated-union refreshToken is `string`, not `string | null`.
+  // Invariant: recovery only fires for oauth credentials (setup-token short-circuits earlier).
   if (rereadAccount.tokenKind !== 'oauth') {
     throw new Error('Claude Code refresh-race recovery reached on non-oauth credential (structural invariant violation)');
   }

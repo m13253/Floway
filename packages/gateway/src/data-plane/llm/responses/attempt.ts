@@ -154,8 +154,7 @@ const rewriteOrRenderFailure = async (
     // layer and treats the `endpoint` distinction (`generate` vs
     // `compact`); from inside an attempt, only `item-not-found` is
     // reachable from rewrite — anything else is a bug. Re-throw the
-    // original error so the upstream stack/cause survives, matching
-    // `messages/attempt.ts:148`.
+    // original error so the upstream stack/cause survives.
     if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {

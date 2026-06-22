@@ -47,14 +47,8 @@ export const synthesizeMetadataUserId = async <TResult>(
 
 // 64 hex chars (32 bytes) matches the format real CC emits, captured in
 // sub2api test fixtures (`gateway_prompt_test.go:17`,
-// `claude_code_validator_test.go:14`) and asserted by sub2api's
-// `metadata_userid.go:15` comment "64-char hex (or arbitrary client id)".
-// An earlier version of this code emitted 32 hex chars (16 bytes) on a
-// mistaken capture reading; an off-length device_id is one of several
-// CC-shape failures the detector keys on.
-//
-// sha256Hex returns exactly 64 hex chars by construction, so no truncation
-// is necessary here.
+// `claude_code_validator_test.go:14`). An off-length device_id is one of
+// several CC-shape failures the detector keys on.
 const deviceIdForUpstream = (upstreamId: string): string =>
   sha256Hex(`claude-code-device:${upstreamId}`);
 
@@ -70,7 +64,9 @@ const sessionIdForPayload = (upstreamId: string, payload: { messages?: unknown }
 };
 
 const firstUserMessageText = (messages: unknown): string => {
-  if (!Array.isArray(messages)) return '';
+  if (!Array.isArray(messages)) {
+    throw new TypeError(`Claude Code synthesize-metadata-user-id: messages must be an array, got ${messages === null ? 'null' : typeof messages}`);
+  }
   for (const msg of messages) {
     if (typeof msg !== 'object' || msg === null) {
       throw new TypeError(`Claude Code synthesize-metadata-user-id: message must be an object, got ${msg === null ? 'null' : typeof msg}`);

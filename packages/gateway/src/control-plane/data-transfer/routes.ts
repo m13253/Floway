@@ -564,9 +564,7 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {
-    // Intentionally discarded — see comment above.
-  }
+  } catch {}
 };
 
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {

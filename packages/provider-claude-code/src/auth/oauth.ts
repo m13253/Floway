@@ -29,10 +29,8 @@ export interface ClaudeOAuthTokenResponse {
   // refresh-token round-trip.
   refresh_token?: string;
   scope: string;
-  // Optional convenience fields the upstream sometimes returns alongside
-  // the token; we re-derive identity from /api/oauth/profile rather than
-  // trusting these, but they are part of the wire shape and surface to
-  // tests / debug logs.
+  // Optional convenience fields the upstream sometimes returns; we re-derive
+  // identity from /api/oauth/profile rather than trusting these.
   organization?: { uuid: string };
   account?: { uuid: string; email_address: string };
 }
@@ -145,9 +143,8 @@ const claudeCodeTokenRequest = async (
     throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
   }
   // Build the typed view explicitly after the runtime guards. `token_type`,
-  // `scope`, `organization`, and `account` ride through verbatim — they
-  // surface in tests and debug logs but the data plane never reads them,
-  // so we don't validate them here.
+  // `scope`, `organization`, and `account` ride through verbatim — the data
+  // plane never reads them, so we don't validate them here.
   return {
     access_token: root.access_token,
     token_type: root.token_type as 'Bearer',
@@ -160,7 +157,7 @@ const claudeCodeTokenRequest = async (
 };
 
 // PKCE exchange runs before the upstream record exists, so direct egress is
-// the historical default. The fetcher is exposed as an optional parameter so
+// the default. The fetcher is exposed as an optional parameter so
 // the control-plane import route can route the exchange through an
 // operator-supplied proxy fallback chain — the same chain that will be
 // persisted on the new upstream.

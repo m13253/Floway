@@ -31,17 +31,6 @@ export interface ClaudeCodeIdentity {
 // { account: { uuid, email, has_claude_max, has_claude_pro, ... },
 //   organization: { uuid, organization_type: 'claude_max'|'claude_pro'|...,
 //                   rate_limit_tier: 'default_claude_max_20x'|'default_claude_max_5x'|... } }
-//
-// `subscriptionType` is the CLI-canonical plan name derived purely from
-// `organization_type` ('pro' | 'max' | 'enterprise' | 'team' | null).
-// `rateLimitTier` is the raw `rate_limit_tier` string passed through
-// verbatim (e.g. 'default_claude_max_5x', 'default_claude_max_20x'). The
-// dashboard combines the two for display ("Max 5×", "Max 20×"). This
-// two-field split matches the official CLI's persistence shape in
-// `~/.claude/.credentials.json` (the binary keeps `subscriptionType`
-// and `rateLimitTier` as separate fields rather than merging them).
-// When we ingest credentials.json directly, the caller may pass both
-// fields through verbatim instead of re-deriving.
 export const fetchClaudeCodeIdentity = async (
   accessToken: string,
   fetcher: Fetcher = directFetcher,
@@ -62,14 +51,10 @@ export const fetchClaudeCodeIdentity = async (
     throw new Error(`Claude Code /api/oauth/profile returned non-JSON body (${response.status})`, { cause: cause as Error });
   }
 
-  // 403 with a `permission_error` body means the token was minted without the
-  // `user:profile` scope — the import path must not refuse credential
-  // ingestion just because the operator picked an inference-only scope set.
-  // Fall back to a degraded identity: a deterministic UUID-shaped account id
-  // derived from the access token (so the same token always presents the
-  // same account-uuid for dedup), and nulls for the personal fields. The
-  // hot-path data plane never reads these nulls — it consumes
-  // `state.accounts[0]` which is keyed by accountUuid.
+  // 403 with a `permission_error` body means the token was minted without
+  // the `user:profile` scope. Fall back to a degraded identity (deterministic
+  // UUID-shaped id derived from the token, nulls for personal fields) so
+  // credential ingestion succeeds for inference-only tokens.
   if (response.status === 403 && isPermissionError(parsed)) {
     const accountUuid = deriveDegradedAccountUuid(accessToken);
     logWarn('claude_code_identity_degraded_fallback', {
@@ -105,9 +90,6 @@ export const fetchClaudeCodeIdentity = async (
     throw new Error('Claude Code /api/oauth/profile response missing `account.email`');
   }
 
-  // `organization` is absent for personal accounts; only when present do we
-  // capture its uuid + tier. The on-disk schema permits `organizationUuid:
-  // null` exactly to model this.
   let organizationUuid: string | null = null;
   let organizationType: string | null = null;
   let rateLimitTier: string | null = null;

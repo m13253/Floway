@@ -19,10 +19,6 @@
 // id. 4.6+ and `claude-fable-5` return without one, so the alias is also
 // the key.
 //
-// Opus 4.5 was re-priced down to the same tier as 4.6+ on 2026-06-19
-// (previously $15 / $1.50 / $18.75 / $75); ship the current rate so the
-// notional-cost surface reflects today's bill.
-//
 // Fast mode: Anthropic offers a premium-priced inference tier on Opus 4.6,
 // 4.7, and 4.8 only. The wire surfaces it as `usage.speed: 'fast'`, which
 // the gateway folds into `TokenUsage.tier` and looks up under
@@ -39,9 +35,6 @@ const HAIKU_TIER: ModelPricing = { input: 1, input_cache_read: 0.1, input_cache_
 const FABLE_TIER: ModelPricing = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
 const OPUS_LEGACY_TIER: ModelPricing = { input: 15, input_cache_read: 1.5, input_cache_write: 18.75, input_cache_write_1h: 30, output: 75 };
 
-// Fast-mode pricing. Opus 4.6 and 4.7 share the same 6× input / 6× output
-// premium; Opus 4.8 ships fast mode at 2× base. Cache rates derive from
-// each variant's input rate per the documented multipliers.
 const OPUS_46_47_FAST: Partial<ModelPricing> = { input: 30, input_cache_read: 3, input_cache_write: 37.5, input_cache_write_1h: 60, output: 150 };
 const OPUS_48_FAST: Partial<ModelPricing> = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
 

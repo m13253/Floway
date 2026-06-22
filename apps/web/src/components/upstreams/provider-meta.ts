@@ -1,14 +1,5 @@
-// Single source of truth for everything per-provider the SPA renders:
-// label, dropdown subtitle, accent tone, default name suggestion, and the
-// iconify class used for the icon. Anywhere the dashboard renders a
-// provider chip, tile, or default name suggestion, it consumes this table
-// — drift between sites is what motivated consolidating these duplicated
-// literal maps in the first place.
-//
-// Iconify classes resolve through UnoCSS's preset-icons (see uno.config.ts).
-// Brand marks come from `simple-icons`; the only non-branded entry
-// (`custom`, the generic OpenAI- or Anthropic-compatible endpoint) falls
-// back to lucide.
+// Single source of truth for per-provider SPA rendering: label, dropdown subtitle, accent tone, default name suggestion, and iconify class.
+// Iconify classes resolve via UnoCSS preset-icons (see uno.config.ts); brand marks from simple-icons, generic `custom` from lucide.
 
 import type { UpstreamProviderKind } from '../../api/types.ts';
 
@@ -61,9 +52,9 @@ export const PROVIDER_META: readonly ProviderMeta[] = [
   {
     kind: 'claude-code',
     label: 'Claude Code',
+    subtitle: 'Claude Pro / Max / Team subscription',
     // Anthropic's brand coral keeps the Claude Code chip distinct from
     // the rose-toned Ollama chip stacked next to it in the dropdown.
-    subtitle: 'Claude Pro / Max / Team subscription',
     tone: 'orange',
     defaultName: 'Claude Code',
     icon: 'i-simple-icons-claudecode',
