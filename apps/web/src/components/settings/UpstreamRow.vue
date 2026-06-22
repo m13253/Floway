@@ -3,6 +3,7 @@ import { computed } from 'vue';
 
 import type { UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { assertNever } from '../../utils/assert-never.ts';
+import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
 
 const props = defineProps<{
   upstream: UpstreamRecord;
@@ -40,7 +41,9 @@ const subtitle = computed(() => {
   case 'custom': return u.config.baseUrl;
   case 'copilot': {
     const user = u.config.user;
-    return user.login ? `@${user.login} · ${u.config.accountType}` : 'GitHub Copilot account';
+    return user.login
+      ? `@${user.login} · ${copilotAccountTypeDisplay(u.state)}`
+      : 'GitHub Copilot account';
   }
   case 'codex': {
     const account = u.config.accounts[0];

@@ -147,7 +147,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
@@ -225,7 +225,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
         const url = new URL(request.url);
         if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
         if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
         }
         if (url.pathname === '/models') {
           return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
@@ -377,7 +377,7 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') return jsonResponse(copilotModels([]));
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -422,7 +422,7 @@ test('Responses WebSocket store:false writes no items/snapshot and follow-ups ca
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
@@ -504,7 +504,7 @@ test('Responses WebSocket store:true durable snapshots can chain through local s
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
@@ -568,7 +568,7 @@ test('Responses WebSocket session-level store: second message resolves prior ite
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
@@ -680,7 +680,7 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       const url = new URL(request.url);
       if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
       if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));

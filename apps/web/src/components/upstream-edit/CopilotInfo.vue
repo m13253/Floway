@@ -2,15 +2,19 @@
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CopilotUpstreamConfig } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, CopilotUpstreamState } from '../../api/types.ts';
+import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
 import { Card } from '@floway-dev/ui';
 
 const props = defineProps<{
   upstreamId: string;
   config: CopilotUpstreamConfig;
+  state: CopilotUpstreamState | null;
   initialQuota?: CopilotQuotaSnapshot | null;
   initialQuotaError?: string | null;
 }>();
+
+const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.state));
 
 const api = useApi();
 const quota = ref<CopilotQuotaSnapshot | null>(props.initialQuota ?? null);
@@ -53,7 +57,7 @@ const usedPercent = computed(() => {
         >
         <div>
           <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
-          <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ config.accountType }}</p>
+          <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ accountTypeDisplay }}</p>
         </div>
       </div>
     </Card>

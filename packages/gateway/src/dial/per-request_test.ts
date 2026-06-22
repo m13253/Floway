@@ -14,7 +14,6 @@ const stubSocketDial: SocketDial = {
 
 const COPILOT_CONFIG = {
   githubToken: 'tok',
-  accountType: 'individual' as const,
   user: { login: 'u', avatar_url: '', name: null, id: 1 },
 };
 

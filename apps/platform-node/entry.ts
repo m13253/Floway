@@ -2,21 +2,24 @@ import { serve, upgradeWebSocket } from '@hono/node-server';
 import { Agent, Pool, setGlobalDispatcher } from 'undici';
 import { WebSocketServer } from 'ws';
 
-// api.{individual,business,enterprise}.githubcopilot.com closes its keep-alive
-// socket right after each response; reusing it surfaces as UND_ERR_SOCKET or
+// Copilot data-plane hosts close their keep-alive socket right after each
+// response; reusing it surfaces as UND_ERR_SOCKET or
 // RequestContentLengthMismatchError. `pipelining: 0` disables keep-alive.
+//
+// The host list is decided by GitHub (returned in /copilot_internal/v2/token
+// `endpoints.api`, never enumerated locally), so we match the
+// `*.githubcopilot.com` family rather than enumerate today's three
+// (individual, business, enterprise) and silently miss any new tier GitHub
+// adds.
 //
 // Refs: https://github.com/nodejs/undici/blob/v6.21.0/docs/docs/api/Client.md#parameter-clientoptions
 //       https://github.com/Menci/Floway/pull/78#issuecomment-4765475966
-const COPILOT_HOSTS = new Set([
-  'api.individual.githubcopilot.com',
-  'api.business.githubcopilot.com',
-  'api.enterprise.githubcopilot.com',
-]);
+const isCopilotDataPlaneHost = (hostname: string): boolean =>
+  hostname === 'githubcopilot.com' || hostname.endsWith('.githubcopilot.com');
 setGlobalDispatcher(new Agent({
   factory: (origin, opts) => {
     const hostname = typeof origin === 'string' ? new URL(origin).hostname : origin.hostname;
-    return new Pool(origin, COPILOT_HOSTS.has(hostname) ? { ...opts, pipelining: 0 } : opts);
+    return new Pool(origin, isCopilotDataPlaneHost(hostname) ? { ...opts, pipelining: 0 } : opts);
   },
 }));
 

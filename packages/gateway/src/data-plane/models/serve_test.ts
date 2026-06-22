@@ -6,7 +6,6 @@ import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-ut
 
 const SECOND_ACCOUNT = {
   token: 'ghu_second',
-  accountType: 'individual',
   user: {
     id: 2002,
     login: 'second',
@@ -41,6 +40,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
@@ -205,6 +205,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
           token: 'copilot-access-token',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
       if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
@@ -477,6 +478,7 @@ test('/v1/models returns the id-sorted union of every connected GitHub account',
           token: tokenForGithubToken.get(githubToken),
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
 
@@ -542,6 +544,7 @@ test('/v1/models returns the last real error when every account model load fails
           token: 'copilot-invalid-models',
           expires_at: 4102444800,
           refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
         });
       }
 

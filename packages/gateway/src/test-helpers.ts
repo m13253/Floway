@@ -28,7 +28,6 @@ interface AppTestContext {
 
 interface CopilotAccountFixture {
   token: string;
-  accountType: string;
   user: {
     login: string;
     avatar_url: string;
@@ -47,7 +46,6 @@ const TEST_UPSTREAM_TIMESTAMP = '2026-03-15T00:00:00.000Z';
 export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture, overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     githubToken: githubAccount.token,
-    accountType: githubAccount.accountType,
     user: githubAccount.user,
   };
   const { config: overrideConfig, ...rest } = overrides;
@@ -136,7 +134,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
 
   const githubAccount = options.githubAccount ?? {
     token: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,
-    accountType: 'individual',
     user: {
       id: Math.floor(Math.random() * 1000000) + 1,
       login: 'tester',
