@@ -29,6 +29,11 @@ export interface CloudflareEnv {
   [key: string]: unknown;
 }
 
+// Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
+// config and telemetry, R2 holds spilled payloads, Images compresses inline
+// images, KV memoises compressed image results. A missing binding means
+// wrangler.jsonc drifted from the code, so we refuse to initialise rather
+// than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'BLOBS', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {

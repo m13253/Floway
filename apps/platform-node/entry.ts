@@ -13,8 +13,10 @@ import {
 } from '@floway-dev/gateway';
 import { getEnvOptional } from '@floway-dev/platform';
 
-// Node has no executionCtx.waitUntil; fire-and-forget with a logged
-// rejection so background failures aren't silent.
+// In Node we don't have Workers' executionCtx.waitUntil — there's no request
+// lifecycle to attach background work to — so the resolver fire-and-forgets
+// the promise. Logging the rejection here is the only signal we get; without
+// it a swallowed background failure would be silent.
 initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
@@ -30,10 +32,12 @@ const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
 
-// Startup run covers processes that restart faster than the interval
-// (crash loop, frequent deploys) so the sweep doesn't silently lag.
-// unref() lets SIGINT exit cleanly; the 30s delay keeps the very first
-// request after boot from racing the sweep.
+// Run the scheduled maintenance job once after a short startup delay and
+// then every hour. Without the startup run, a process that restarts more
+// often than the interval (crash loop, frequent deploys) would never run
+// maintenance and the responses-items expiry sweep would silently lag. The
+// 30s delay keeps the very first request after boot from racing the sweep.
+// unref() on both timers lets the process exit cleanly on SIGINT.
 const STARTUP_DELAY_MS = 30 * 1000;
 const sweep = (): void => {
   runScheduledMaintenance().catch(err => {

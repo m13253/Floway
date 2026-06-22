@@ -30,6 +30,11 @@ const GATEWAY_PRIVATE_INBOUND_HEADERS = [
   'x-goog-api-key',
 ];
 
+// Build the unified inbound-headers bag the data plane threads to the
+// provider boundary. Copies the source request's headers and removes the
+// gateway's own auth + per-hop signals before the provider can observe
+// them, regardless of whether the provider passes the bag through (Azure,
+// custom) or clones it into a boundary ctx (Copilot, Codex).
 export const inboundHeadersForUpstream = (c: Context): Headers => {
   const headers = new Headers(c.req.raw.headers);
   for (const name of GATEWAY_PRIVATE_INBOUND_HEADERS) headers.delete(name);

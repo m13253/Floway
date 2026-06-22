@@ -13,6 +13,12 @@ import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/proto
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type UpstreamErrorResult, type InternalDebugError, toInternalDebugError, decodeUpstreamErrorBody } from '@floway-dev/provider';
 
+// Renders an upstream Gemini result into the client HTTP/SSE response, in the
+// Google-RPC error envelope. An error-typed result is a pre-stream failure and
+// always answers as HTTP; an events result drains to one JSON body
+// (non-streaming) or is proxied frame by frame (streaming). `success` reports
+// whether a non-streaming body was produced, so the orchestrator knows whether
+// to flush stored items.
 export const respondGemini = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult,
@@ -85,6 +91,11 @@ export const respondGemini = async (
   return { success: true, response };
 };
 
+// --- token usage ---
+
+// Gemini reports promptTokenCount inclusive of cachedContentTokenCount
+// (verified against the Google GenAI SDK docs); subtract it for disjoint input.
+// Reasoning (thoughts) tokens are billed as output.
 const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
   const cacheRead = m.cachedContentTokenCount ?? 0;
   return tokenUsage({
@@ -96,14 +107,18 @@ const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
 
+// --- error rendering: Google-RPC envelope ---
+
 type GeminiErrorDebugFields = Partial<Pick<InternalDebugError, 'type' | 'name' | 'stack' | 'cause'>> & { source_api?: string; target_api?: string };
 
 type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
 };
 
-// `googleRpcHttpStatusCode`: passthrough/native errors — anything insane becomes 500.
-// `synthesizedGeminiHttpStatusCode`: errors we mint — a non-500 that maps to INTERNAL becomes 500.
+// HTTP status -> Google RPC status string mapping plus the two ways we coerce
+// an out-of-range code: `googleRpcHttpStatusCode` for passthrough/native
+// errors (anything insane becomes 500), `synthesizedGeminiHttpStatusCode` for
+// errors we mint (a non-500 that maps to INTERNAL becomes 500).
 const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status);
 
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
@@ -129,6 +144,8 @@ const geminiInternalRpcErrorPayload = (status: number, error: unknown): GeminiEr
   return geminiRpcErrorPayload(status, debug.message, internalDebugFields(debug));
 };
 
+// Response builders. The count_tokens path under `http.ts` reuses them
+// alongside the error renderer for its synthesized JSON envelope.
 export const geminiRpcErrorResponse = (status: number, message: string): Response => {
   const payload = geminiRpcErrorPayload(status, message);
   return Response.json(payload, { status: payload.error.code });
@@ -151,6 +168,9 @@ const geminiCollectErrorResponse = (error: unknown): Response => {
   return geminiError ? Response.json(geminiError, { status: googleRpcHttpStatusCode(geminiError.error.code) }) : geminiInternalRpcErrorResponse(502, error);
 };
 
+// Recognizing / extracting an upstream-shaped Gemini error from a raw body or a
+// thrown cause, so a native Google error is forwarded verbatim rather than
+// re-wrapped.
 const parseJson = (value: string): unknown => {
   try {
     return JSON.parse(value);
@@ -188,6 +208,8 @@ const caughtGeminiErrorEvent = (error: unknown): GeminiErrorResponse | null => {
 };
 
 const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caughtGeminiErrorEvent(error) ?? geminiInternalRpcErrorPayload(500, error)));
+
+// --- frame observation ---
 
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
