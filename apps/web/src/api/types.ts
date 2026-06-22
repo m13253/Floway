@@ -1,31 +1,21 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'ollama';
+import type {
+  BillingDimension,
+  ModelEndpointKey,
+  ModelEndpoints,
+  ModelKind,
+  ModelPricing,
+} from '@floway-dev/protocols/common';
 
-export type ModelKind = 'chat' | 'embedding' | 'image';
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'ollama';
 
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
 }
-
-// A present key means the model is served by that endpoint.
-export interface ModelEndpoints {
-  chatCompletions?: {};
-  responses?: {};
-  messages?: {};
-  embeddings?: {};
-  imagesGenerations?: {};
-  imagesEdits?: {};
-}
-
-export type ModelEndpointKey = keyof ModelEndpoints;
-
-// USD per million tokens, keyed by billing dimension. Imported from the
-// gateway so the dashboard's pricing form stays locked to the same definition
-// the backend writes against — same pattern as `ProxyRecord` below.
-import type { BillingDimension, ModelPricing } from '@floway-dev/gateway/control-plane/pricing/types';
-export type { BillingDimension, ModelPricing };
 
 export interface UpstreamModelConfig {
   upstreamModelId: string;
