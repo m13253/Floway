@@ -7,7 +7,7 @@ const goodAccount = {
   email: 'a@b.com',
   accountUuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   organizationUuid: null,
-  subscriptionType: 'max_20x',
+  subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
 };
 const good = { accounts: [goodAccount] };
 

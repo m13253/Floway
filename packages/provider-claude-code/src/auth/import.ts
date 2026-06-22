@@ -52,6 +52,7 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
         accountUuid: params.identity.accountUuid,
         organizationUuid: params.identity.organizationUuid,
         subscriptionType: params.identity.subscriptionType,
+        rateLimitTier: params.identity.rateLimitTier,
       }],
     },
     state: { accounts: [credential] },
@@ -128,12 +129,17 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
 };
 
 // Verbatim ~/.claude/.credentials.json paste. The CLI's on-disk format wraps
-// tokens under `.claudeAiOauth`. The JSON does not carry email / account uuid,
-// so we still call /api/oauth/profile to derive identity, but we honor the
-// JSON's `subscriptionType` verbatim because that is what the CLI itself
-// persists. The JSON's `accessToken` is reused for the cached entry so the
-// first request in does not need a refresh round-trip — the file is
-// effectively a fresh-enough snapshot of the live credential.
+// tokens under `.claudeAiOauth` and stores `subscriptionType` ('pro' / 'max'
+// / 'team' / 'enterprise') and `rateLimitTier`
+// ('default_claude_max_5x' etc.) as separate sibling fields. The JSON does
+// not carry email / account uuid, so we still call /api/oauth/profile to
+// derive identity, but we honor the JSON's two persisted plan fields
+// verbatim when present (the snapshot was the CLI's own; preferring it
+// avoids a derivation drift if Anthropic's profile shape changes between
+// CLI sign-in and dashboard import). The JSON's `accessToken` is reused
+// for the cached entry so the first request in does not need a refresh
+// round-trip — the file is effectively a fresh-enough snapshot of the
+// live credential.
 //
 // `fetcher` is forwarded to the identity call so the control-plane import
 // route can route through an operator-supplied proxy chain. Default direct.
@@ -174,18 +180,26 @@ export const importClaudeCodeFromCredentialsJson = async (
     throw new TypeError('credentials.json.claudeAiOauth.expiresAt looks like seconds, expected milliseconds');
   }
 
-  // CLI's persisted subscriptionType is canonical (`pro` / `max_5x` /
-  // `max_20x` / `team` / `enterprise`); take it verbatim. When absent we
-  // still need the value, so fall back to whatever the profile endpoint
-  // derives.
-  const persistedSubscriptionType = typeof w.subscriptionType === 'string' && w.subscriptionType !== ''
-    ? w.subscriptionType
+  // CLI persists subscriptionType ('pro' | 'max' | 'team' | 'enterprise')
+  // and rateLimitTier (raw 'default_claude_max_5x' etc.) as separate
+  // sibling fields. Take both verbatim when present; unknown
+  // subscriptionType values fall back to the derived one rather than
+  // breaking ingest.
+  const persistedSubscriptionType = (() => {
+    const v = w.subscriptionType;
+    if (v === 'pro' || v === 'max' || v === 'team' || v === 'enterprise') return v;
+    return null;
+  })();
+  const persistedRateLimitTier = typeof w.rateLimitTier === 'string' && w.rateLimitTier !== ''
+    ? w.rateLimitTier
     : null;
 
   const identity = await fetchClaudeCodeIdentity(accessToken, fetcher);
-  const finalIdentity: ClaudeCodeIdentity = persistedSubscriptionType !== null
-    ? { ...identity, subscriptionType: persistedSubscriptionType }
-    : identity;
+  const finalIdentity: ClaudeCodeIdentity = {
+    ...identity,
+    ...(persistedSubscriptionType !== null ? { subscriptionType: persistedSubscriptionType } : {}),
+    ...(persistedRateLimitTier !== null ? { rateLimitTier: persistedRateLimitTier } : {}),
+  };
 
   return buildClaudeCodeImportResult({
     identity: finalIdentity,

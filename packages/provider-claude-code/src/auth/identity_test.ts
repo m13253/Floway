@@ -20,7 +20,7 @@ describe('fetchClaudeCodeIdentity', () => {
       email: 'user@example.com',
       accountUuid: 'acc-uuid-1',
       organizationUuid: 'org-uuid-1',
-      subscriptionType: 'max_20x',
+      subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
     });
   });
 

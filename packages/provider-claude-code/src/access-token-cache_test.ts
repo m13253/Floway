@@ -18,7 +18,8 @@ const baseConfig: ClaudeCodeUpstreamConfig = {
     email: 'user@example.com',
     accountUuid,
     organizationUuid: 'org-uuid-1',
-    subscriptionType: 'max_20x',
+    subscriptionType: 'max',
+    rateLimitTier: 'default_claude_max_20x',
   }],
 };
 

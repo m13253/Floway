@@ -880,7 +880,8 @@ const claudeCodeCredentialsJson = (overrides: { accessToken?: string; refreshTok
     accessToken: overrides.accessToken ?? 'cli_at',
     refreshToken: overrides.refreshToken ?? 'cli_rt',
     expiresAt: overrides.expiresAt ?? Date.now() + 3_600_000,
-    subscriptionType: 'max_20x',
+    subscriptionType: 'max',
+    rateLimitTier: 'default_claude_max_20x',
   },
 });
 
@@ -940,9 +941,12 @@ test('POST /api/upstreams/claude-code-import (credentials_json) creates a row wi
       assertEquals(created.provider, 'claude-code');
       assertEquals(created.config.accounts[0].email, 'alice@example.com');
       assertEquals(created.config.accounts[0].accountUuid, 'acc-uuid-1');
-      // CLI subscriptionType verbatim wins over what the profile endpoint
-      // would derive.
-      assertEquals(created.config.accounts[0].subscriptionType, 'max_20x');
+      // CLI subscriptionType + rateLimitTier verbatim from the persisted
+      // credentials.json win over what the live profile endpoint would
+      // derive (which would also be 'max' in this fixture, but the
+      // assertion proves the persisted-wins path).
+      assertEquals(created.config.accounts[0].subscriptionType, 'max');
+      assertEquals((created.config.accounts[0] as { rateLimitTier: string | null }).rateLimitTier, 'default_claude_max_20x');
       assertEquals(created.state.accounts[0].state, 'active');
       assertEquals(created.state.accounts[0].refreshTokenSet, true);
     },

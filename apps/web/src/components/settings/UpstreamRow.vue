@@ -41,7 +41,7 @@ const subtitle = computed(() => {
     // email is null for tokens that lack `user:profile`; fall back to the
     // short accountUuid prefix so the row still has a stable identifier.
     const label = account.email ?? `${account.accountUuid.slice(0, 8)}…`;
-    const subscription = formatClaudeCodeSubscriptionType(account.subscriptionType);
+    const subscription = formatClaudeCodeSubscriptionType(account.subscriptionType, account.rateLimitTier);
     return subscription ? `${label} · ${subscription}` : label;
   }
   case 'ollama': return u.config.baseUrl ?? 'Ollama endpoint';

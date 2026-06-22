@@ -1,19 +1,30 @@
-// `subscriptionType` arrives from the provider in its CLI-canonical form
-// (`pro`, `max_5x`, `max_20x`, `enterprise`, `team`) — see
-// packages/provider-claude-code/src/auth/identity.ts. The CLI-canonical
-// form is the source of truth at the storage and protocol level, but
-// reads poorly in the dashboard; map known values to Anthropic's
-// marketing-style label and pass unknown values through verbatim so a
-// future tier still surfaces while a derivation gap is being plumbed.
-const FRIENDLY_LABEL: Record<string, string> = {
+// `subscriptionType` + `rateLimitTier` arrive from the provider as separate
+// fields matching the official CLI's persistence shape in
+// ~/.claude/.credentials.json. The CLI keeps them split because the plan
+// name ('max') and the usage-multiplier tier ('default_claude_max_5x') are
+// independent concepts. The dashboard combines them for display: "Max"
+// alone for an unknown rate-limit tier, "Max 5×" / "Max 20×" for the known
+// Anthropic Max tiers.
+
+const PLAN_LABEL: Record<'pro' | 'max' | 'team' | 'enterprise', string> = {
   pro: 'Pro',
-  max_5x: 'Max 5×',
-  max_20x: 'Max 20×',
+  max: 'Max',
   team: 'Team',
   enterprise: 'Enterprise',
 };
 
-export const formatClaudeCodeSubscriptionType = (raw: string | null | undefined): string | null => {
-  if (!raw) return null;
-  return FRIENDLY_LABEL[raw] ?? raw;
+const MAX_RATE_LIMIT_SUFFIX: Record<string, string> = {
+  default_claude_max_5x: '5×',
+  default_claude_max_20x: '20×',
+};
+
+export const formatClaudeCodeSubscriptionType = (
+  subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null | undefined,
+  rateLimitTier: string | null | undefined,
+): string | null => {
+  if (!subscriptionType) return null;
+  const base = PLAN_LABEL[subscriptionType];
+  if (subscriptionType !== 'max') return base;
+  const suffix = rateLimitTier ? MAX_RATE_LIMIT_SUFFIX[rateLimitTier] : undefined;
+  return suffix ? `${base} ${suffix}` : base;
 };

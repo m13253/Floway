@@ -19,7 +19,8 @@ export interface ClaudeCodeIdentity {
   email: string | null;
   accountUuid: string;
   organizationUuid: string | null;
-  subscriptionType: string | null;
+  subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null;
+  rateLimitTier: string | null;
 }
 
 // Cross-checked third-party gateways:
@@ -31,13 +32,16 @@ export interface ClaudeCodeIdentity {
 //   organization: { uuid, organization_type: 'claude_max'|'claude_pro'|...,
 //                   rate_limit_tier: 'default_claude_max_20x'|'default_claude_max_5x'|... } }
 //
-// `subscriptionType` is the canonical CLI representation: `pro`, `max_5x`,
-// `max_20x`, `enterprise`, `team`. We derive it from the profile by combining
-// `organization_type` with `rate_limit_tier`. This matches the value the
-// CLI persists in `~/.claude/.credentials.json`'s `subscriptionType` field,
-// so both ingestion paths produce a consistent string. When we ingest
-// credentials.json directly (path with optional override), the caller may
-// pass through that field verbatim instead of re-deriving.
+// `subscriptionType` is the CLI-canonical plan name derived purely from
+// `organization_type` ('pro' | 'max' | 'enterprise' | 'team' | null).
+// `rateLimitTier` is the raw `rate_limit_tier` string passed through
+// verbatim (e.g. 'default_claude_max_5x', 'default_claude_max_20x'). The
+// dashboard combines the two for display ("Max 5×", "Max 20×"). This
+// two-field split matches the official CLI's persistence shape in
+// `~/.claude/.credentials.json` (the binary keeps `subscriptionType`
+// and `rateLimitTier` as separate fields rather than merging them).
+// When we ingest credentials.json directly, the caller may pass both
+// fields through verbatim instead of re-deriving.
 export const fetchClaudeCodeIdentity = async (
   accessToken: string,
   fetcher: Fetcher = directFetcher,
@@ -72,7 +76,7 @@ export const fetchClaudeCodeIdentity = async (
       account_uuid: accountUuid,
       reason: 'profile_403_missing_user_profile_scope',
     });
-    return { email: null, accountUuid, organizationUuid: null, subscriptionType: null };
+    return { email: null, accountUuid, organizationUuid: null, subscriptionType: null, rateLimitTier: null };
   }
 
   if (!response.ok) {
@@ -125,7 +129,8 @@ export const fetchClaudeCodeIdentity = async (
     email,
     accountUuid,
     organizationUuid,
-    subscriptionType: deriveSubscriptionType(organizationType, rateLimitTier),
+    subscriptionType: deriveSubscriptionType(organizationType),
+    rateLimitTier,
   };
 };
 
@@ -151,32 +156,29 @@ const deriveDegradedAccountUuid = (accessToken: string): string => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 };
 
-// Maps the (organization_type, rate_limit_tier) pair to the same string the
-// CLI persists in credentials.json. `claude_max` requires the rate-limit tier
-// to disambiguate 5x vs 20x; the other recognized tiers are 1:1. Personal
-// accounts arrive with no `organization` block (Anthropic's profile endpoint
-// omits it) — we return null to mirror the official CLI (cli.js v2.1.10
-// deriver A10 returns null on missing/unknown organization_type). Unrecognized
-// `organization_type` strings also return null so a new Anthropic tier does
-// not break ingest; we log the unknown value for operator visibility. The one
-// throw is for `claude_max` with an unrecognized `rate_limit_tier`, which
-// signals genuine Anthropic shape drift on a tier we recognize.
+// Maps `organization_type` to the CLI-canonical plan name the official CC
+// binary persists in `~/.claude/.credentials.json`'s `subscriptionType`
+// field. The deriver in @anthropic-ai/claude-code-darwin-arm64 2.x's
+// bundled binary follows the same switch (`icn` function):
+//   claude_max → 'max'    claude_pro → 'pro'
+//   claude_team → 'team'  claude_enterprise → 'enterprise'
+// Personal accounts arrive with no `organization` block (Anthropic's
+// profile endpoint omits it) — null. Unrecognized organization_type
+// strings also return null so a new Anthropic tier does not break ingest;
+// we log the unknown value for operator visibility. Rate-limit / usage
+// tier disambiguation (5x vs 20x Max) is preserved in a separate
+// `rateLimitTier` field on the identity object, mirroring the CLI's
+// two-field shape.
 const deriveSubscriptionType = (
   organizationType: string | null,
-  rateLimitTier: string | null,
-): string | null => {
+): 'pro' | 'max' | 'team' | 'enterprise' | null => {
   if (organizationType === null) return null;
-  if (organizationType === 'claude_max') {
-    if (rateLimitTier === 'default_claude_max_20x') return 'max_20x';
-    if (rateLimitTier === 'default_claude_max_5x') return 'max_5x';
-    throw new Error(`Claude Code /api/oauth/profile carries organization_type='claude_max' with unknown rate_limit_tier='${String(rateLimitTier)}'`);
-  }
+  if (organizationType === 'claude_max') return 'max';
   if (organizationType === 'claude_pro') return 'pro';
   if (organizationType === 'claude_enterprise') return 'enterprise';
   if (organizationType === 'claude_team') return 'team';
   logWarn('claude_code_unknown_organization_type', {
     organization_type: organizationType,
-    rate_limit_tier: rateLimitTier,
   });
   return null;
 };

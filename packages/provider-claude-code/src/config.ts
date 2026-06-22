@@ -13,15 +13,22 @@ export interface ClaudeCodeAccountIdentity {
   // members. Modeled as nullable so the on-disk shape distinguishes "we asked
   // and the upstream said null" from "absent".
   organizationUuid: string | null;
-  // Free-form value passed through from the upstream — 'pro', 'max_5x',
-  // 'max_20x', 'team', and possibly future tiers. Captured for dashboard
-  // display; not enum-cast so a new value from Anthropic doesn't fail import.
-  // null for personal accounts (the profile endpoint omits the organization
-  // block) and for organization_type values we do not yet recognize, so a new
-  // Anthropic tier does not break ingest. Mirrors the official CLI's on-disk
-  // shape (subscriptionType in ~/.claude/.credentials.json is nullable;
-  // deriver A10 in cli.js returns null on unknown organization_type).
-  subscriptionType: string | null;
+  // The CLI-canonical plan name derived from `organization.organization_type`:
+  // 'pro', 'max', 'team', 'enterprise', or null for personal accounts /
+  // organization_type values we do not yet recognize. Matches the official
+  // CLI's persisted `subscriptionType` field in ~/.claude/.credentials.json
+  // (deriver in @anthropic-ai/claude-code-darwin-arm64 2.x's bundled binary
+  // returns this same set; the older 1.0.x JS bundle's `JB0` also returns
+  // it). Captured for dashboard display; the dashboard combines it with
+  // rateLimitTier below to render "Max 5×" / "Max 20×" etc.
+  subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null;
+  // Raw `organization.rate_limit_tier` string passed through verbatim — e.g.
+  // 'default_claude_max_5x' / 'default_claude_max_20x' / 'default_claude_pro'.
+  // Null for personal accounts (no organization block) and for tokens that
+  // hit the 403-fallback path. Not enum-cast so a new Anthropic tier does
+  // not break ingest; the dashboard's friendly-label map handles known
+  // values and passes unknown values through verbatim.
+  rateLimitTier: string | null;
 }
 
 // Account pool. v1 always carries exactly one entry; the wire shape stays
@@ -42,6 +49,7 @@ const ALLOWED_IDENTITY_KEYS_MAP: Record<keyof ClaudeCodeAccountIdentity, true> =
   accountUuid: true,
   organizationUuid: true,
   subscriptionType: true,
+  rateLimitTier: true,
 };
 
 const ALLOWED_CONFIG_KEYS_MAP: Record<keyof ClaudeCodeUpstreamConfig, true> = {
@@ -67,8 +75,11 @@ const assertClaudeCodeAccountIdentity = (value: unknown, where: string): void =>
   if (obj.organizationUuid !== null && (typeof obj.organizationUuid !== 'string' || obj.organizationUuid === '')) {
     throw new TypeError(`${where}.organizationUuid must be null or a non-empty string`);
   }
-  if (obj.subscriptionType !== null && (typeof obj.subscriptionType !== 'string' || obj.subscriptionType === '')) {
-    throw new TypeError(`${where}.subscriptionType must be null or a non-empty string`);
+  if (obj.subscriptionType !== null && obj.subscriptionType !== 'pro' && obj.subscriptionType !== 'max' && obj.subscriptionType !== 'team' && obj.subscriptionType !== 'enterprise') {
+    throw new TypeError(`${where}.subscriptionType must be null or one of 'pro' | 'max' | 'team' | 'enterprise', got ${String(obj.subscriptionType)}`);
+  }
+  if (obj.rateLimitTier !== null && (typeof obj.rateLimitTier !== 'string' || obj.rateLimitTier === '')) {
+    throw new TypeError(`${where}.rateLimitTier must be null or a non-empty string`);
   }
 };
 

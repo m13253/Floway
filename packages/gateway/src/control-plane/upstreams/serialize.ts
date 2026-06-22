@@ -120,6 +120,7 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
         ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
         ...(a.organizationUuid !== undefined ? { organizationUuid: clone(a.organizationUuid) } : {}),
         ...(a.subscriptionType !== undefined ? { subscriptionType: clone(a.subscriptionType) } : {}),
+        ...(a.rateLimitTier !== undefined ? { rateLimitTier: clone(a.rateLimitTier) } : {}),
       })),
     };
   case 'ollama':

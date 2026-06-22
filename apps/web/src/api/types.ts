@@ -139,9 +139,14 @@ export interface ClaudeCodeAccountIdentity {
   email: string | null;
   accountUuid: string;
   organizationUuid: string | null;
+  // CLI-canonical plan name derived from `organization.organization_type`.
   // null for personal accounts (no organization block) and for unrecognized
-  // organization_type values. Dashboard renders an em-dash placeholder.
-  subscriptionType: string | null;
+  // organization_type values. Dashboard combines this with rateLimitTier
+  // below for display ("Max 5×", "Max 20×").
+  subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null;
+  // Raw `organization.rate_limit_tier` from Anthropic — e.g.
+  // 'default_claude_max_5x'. Free-form so a new tier does not break ingest.
+  rateLimitTier: string | null;
 }
 
 export interface ClaudeCodeUpstreamConfig {

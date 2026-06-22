@@ -54,7 +54,7 @@ describe('importClaudeCodeFromCallback', () => {
       email: 'user@example.com',
       accountUuid: 'acc-uuid-1',
       organizationUuid: 'org-uuid-1',
-      subscriptionType: 'max_20x',
+      subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
     }]);
     expect(result.state.accounts[0].accountUuid).toBe('acc-uuid-1');
     expect(result.state.accounts[0].tokenKind).toBe('oauth');
@@ -81,12 +81,14 @@ describe('importClaudeCodeFromCallback', () => {
       accountUuid: 'acc-uuid-personal',
       organizationUuid: null,
       subscriptionType: null,
+      rateLimitTier: null,
     }]);
   });
 
-  test('unknown organization_type yields null subscriptionType', async () => {
+  test('unknown organization_type yields null subscriptionType (rateLimitTier still captured)', async () => {
     // Forward-compat: a new Anthropic tier (e.g. "personal", "individual") must
-    // not break ingest. Mirrors CLI deriver A10's default-null arm.
+    // not break ingest. organization_type maps to null; rate_limit_tier flows
+    // through verbatim since it is not enum-cast.
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(tokenResponse))
       .mockResolvedValueOnce(jsonResponse({
@@ -96,10 +98,15 @@ describe('importClaudeCodeFromCallback', () => {
 
     const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
     expect(result.config.accounts[0].subscriptionType).toBeNull();
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_personal');
     expect(result.config.accounts[0].organizationUuid).toBe('org-uuid-future');
   });
 
-  test('claude_max with unknown rate_limit_tier throws (Anthropic shape drift)', async () => {
+  test('claude_max with unknown rate_limit_tier passes through verbatim (no longer throws)', async () => {
+    // Previously we threw on unknown rate_limit_tier under claude_max, but
+    // now that subscriptionType ('max') and rateLimitTier (raw string) live
+    // in separate fields, a new Anthropic tier (e.g. "default_claude_max_99x"
+    // for a hypothetical future plan) flows through without breaking ingest.
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse(tokenResponse))
       .mockResolvedValueOnce(jsonResponse({
@@ -107,8 +114,9 @@ describe('importClaudeCodeFromCallback', () => {
         organization: { uuid: 'org-uuid-2', organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_99x' },
       }));
 
-    await expect(importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' }))
-      .rejects.toThrow(/rate_limit_tier/);
+    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE' });
+    expect(result.config.accounts[0].subscriptionType).toBe('max');
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_99x');
   });
 });
 
@@ -123,7 +131,7 @@ describe('importClaudeCodeFromCredentialsJson', () => {
         refreshToken: 'sk-ant-ort01-y',
         expiresAt: farFutureMs,
         scopes: ['org:create_api_key', 'user:profile'],
-        subscriptionType: 'max_20x',
+        subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
       },
     });
 
@@ -131,14 +139,15 @@ describe('importClaudeCodeFromCredentialsJson', () => {
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toBe('https://api.anthropic.com/api/oauth/profile');
-    expect(result.config.accounts[0].subscriptionType).toBe('max_20x');
+    expect(result.config.accounts[0].subscriptionType).toBe('max');
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_20x');
     expect(result.config.accounts[0].email).toBe('user@example.com');
     expect(result.state.accounts[0].refreshToken).toBe('sk-ant-ort01-y');
     expect(result.state.accounts[0].accessToken?.token).toBe('sk-ant-oat01-x');
     expect(result.state.accounts[0].accessToken?.expiresAt).toBe(farFutureMs);
   });
 
-  test('falls back to derived subscriptionType when CLI field is absent', async () => {
+  test('falls back to derived subscriptionType when CLI fields are absent', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
       ...profileResponse,
       organization: { ...profileResponse.organization, rate_limit_tier: 'default_claude_max_5x' },
@@ -149,7 +158,8 @@ describe('importClaudeCodeFromCredentialsJson', () => {
       },
     });
     const result = await importClaudeCodeFromCredentialsJson(raw);
-    expect(result.config.accounts[0].subscriptionType).toBe('max_5x');
+    expect(result.config.accounts[0].subscriptionType).toBe('max');
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_5x');
   });
 
   test('personal account with neither persisted nor derived subscriptionType yields null', async () => {
@@ -164,21 +174,23 @@ describe('importClaudeCodeFromCredentialsJson', () => {
     expect(result.config.accounts[0].organizationUuid).toBeNull();
   });
 
-  test('persisted subscriptionType wins even when derived is null', async () => {
-    // Operator's credentials.json carried `subscriptionType: 'max_20x'` from the
-    // CLI, but the live /api/oauth/profile shows no organization block.
-    // Persisted non-null should win — the JSON is the authoritative snapshot.
+  test('persisted subscriptionType + rateLimitTier win even when derived is null', async () => {
+    // Operator's credentials.json carried `subscriptionType: 'max'` plus
+    // `rateLimitTier: 'default_claude_max_20x'` from the CLI, but the live
+    // /api/oauth/profile shows no organization block. Persisted non-null
+    // should win — the JSON is the authoritative snapshot.
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
       account: { uuid: 'acc-uuid-personal', email: 'me@example.com' },
     }));
     const raw = JSON.stringify({
       claudeAiOauth: {
         accessToken: 'a', refreshToken: 'r', expiresAt: farFutureMs,
-        subscriptionType: 'max_20x',
+        subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
       },
     });
     const result = await importClaudeCodeFromCredentialsJson(raw);
-    expect(result.config.accounts[0].subscriptionType).toBe('max_20x');
+    expect(result.config.accounts[0].subscriptionType).toBe('max');
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_20x');
   });
 
   test('credentials.json import with a 403-permission_error token yields a degraded identity', async () => {
@@ -194,13 +206,14 @@ describe('importClaudeCodeFromCredentialsJson', () => {
     const raw = JSON.stringify({
       claudeAiOauth: {
         accessToken: 'at_no_scope', refreshToken: 'r', expiresAt: farFutureMs,
-        subscriptionType: 'max_5x',
+        subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x',
       },
     });
     const result = await importClaudeCodeFromCredentialsJson(raw);
     expect(result.config.accounts[0].email).toBeNull();
     expect(result.config.accounts[0].organizationUuid).toBeNull();
-    expect(result.config.accounts[0].subscriptionType).toBe('max_5x');
+    expect(result.config.accounts[0].subscriptionType).toBe('max');
+    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_5x');
     expect(result.config.accounts[0].accountUuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(result.state.accounts[0].accessToken?.token).toBe('at_no_scope');
   });

@@ -171,7 +171,7 @@ const accountIdShort = computed(() => {
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 });
 
-const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(account.value?.subscriptionType));
+const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(account.value?.subscriptionType, account.value?.rateLimitTier));
 
 // Email is null when the access token lacks `user:profile`. Substitute the
 // short account-uuid badge as a stable identifier so the header still names

@@ -1,8 +1,12 @@
 // All Claude Code OAuth + data-plane upstream constants. Pinned to the same
 // public OAuth client the official `claude` CLI ships with. Independent
-// reimplementations cross-checked:
-// https://github.com/Wei-Shaw/claude-relay-service/blob/7dc21cf2820a6784831f289442a38d58fe827f34/src/services/account/claudeAccountService.js
-// https://github.com/ghboke/claude-code-reverse/blob/570324dac73ef43bdcd36660188f3cb66524e572/THIRD_PARTY_CLIENT_GUIDE.md
+// cross-references (different authors, not the same person reshipping under
+// two names):
+// https://github.com/synacktraa/ccauth/blob/master/ccauth/runner.py (Python; full OAuth flow)
+// https://github.com/ghboke/claude-code-reverse/blob/main/THIRD_PARTY_CLIENT_GUIDE.md (decompile guide)
+// Wei-Shaw maintains both `sub2api` and `claude-relay-service` — those
+// repos count as ONE source for cross-reference purposes; cite them when
+// useful but never as two independent confirmations.
 export const CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 
 export const CLAUDE_CODE_AUTHORIZE_URL = 'https://claude.ai/oauth/authorize';
@@ -12,10 +16,22 @@ export const CLAUDE_CODE_OAUTH_TOKEN_URL = 'https://platform.claude.com/v1/oauth
 // Cannot be changed without re-registering the OAuth client.
 export const CLAUDE_CODE_REDIRECT_URI = 'https://platform.claude.com/oauth/code/callback';
 
-// OAuth scope verbatim from the real CLI. `org:create_api_key` is included
-// because real Claude Code requests it during interactive sign-in; keeping
-// it makes the issued token indistinguishable from a CLI token at the
-// OAuth introspection layer.
+// OAuth scope set for the operator-driven dashboard import flow. NOT the
+// scope set the official CLI requests when you run `claude` locally — the
+// CLI bundle (verified via grep of @anthropic-ai/claude-code@1.0.128
+// cli.js) requests only three scopes: `org:create_api_key user:profile
+// user:inference`. The broader six-scope set we ship is the convention
+// for operator-driven dashboard imports, so the issued token can later
+// be used for sessions / MCP servers / file uploads on behalf of the
+// operator without re-consenting. Independent cross-references:
+//   https://github.com/synacktraa/ccauth/blob/master/ccauth/runner.py (SCOPE — exact 6-string match)
+//   https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeOAuth — "Browser URL")
+//   https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES)
+// The narrower 5-scope subset (dropping `org:create_api_key`) is what
+// ghboke/claude-code-reverse uses for token-only API-call style flows
+// where the token will never be used to mint API keys — not applicable
+// to us because our import path stores a credential whose scope set
+// must remain stable across re-imports.
 export const CLAUDE_CODE_OAUTH_SCOPE =
   'org:create_api_key user:profile user:inference user:sessions:claude_code '
   + 'user:mcp_servers user:file_upload';
@@ -25,9 +41,12 @@ export const CLAUDE_CODE_OAUTH_SCOPE =
 // because the token cannot mint API keys, hit `/api/oauth/profile`, or touch
 // any account surface beyond inference. The trade-off: the token has no
 // refresh_token and lasts ~1 year, so when it expires the operator must
-// re-import. Cross-checked third-party gateways:
-// https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeInference)
-// https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES_SETUP)
+// re-import. Single-sourced to Wei-Shaw (sub2api's `ScopeInference` and
+// claude-relay-service's `SCOPES_SETUP` both ship this value); the
+// `user:inference`-alone scope set is also the logical minimum for the
+// inference-only credential class so the single-source risk is low.
+//   https://github.com/Wei-Shaw/sub2api/blob/main/backend/internal/pkg/oauth/oauth.go (ScopeInference)
+//   https://github.com/Wei-Shaw/claude-relay-service/blob/main/src/utils/oauthHelper.js (SCOPES_SETUP)
 export const CLAUDE_CODE_OAUTH_SETUP_TOKEN_SCOPE = 'user:inference';
 
 // 1 year in seconds. Sent in the setup-token `authorization_code` exchange
