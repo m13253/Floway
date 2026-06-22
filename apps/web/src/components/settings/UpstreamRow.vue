@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import type { UpstreamRecord } from '../../api/types.ts';
+import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.ts';
 import { assertNever } from '../../utils/assert-never.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 
@@ -40,7 +41,8 @@ const subtitle = computed(() => {
     // email is null for tokens that lack `user:profile`; fall back to the
     // short accountUuid prefix so the row still has a stable identifier.
     const label = account.email ?? `${account.accountUuid.slice(0, 8)}…`;
-    return account.subscriptionType ? `${label} · ${account.subscriptionType}` : label;
+    const subscription = formatClaudeCodeSubscriptionType(account.subscriptionType);
+    return subscription ? `${label} · ${subscription}` : label;
   }
   case 'ollama': return u.config.baseUrl ?? 'Ollama endpoint';
   }

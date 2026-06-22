@@ -16,6 +16,7 @@
 import { computed } from 'vue';
 
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, ClaudeCodeQuotaWindow, UpstreamRecord } from '../../api/types.ts';
+import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.ts';
 import { Badge, Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
@@ -169,6 +170,8 @@ const accountIdShort = computed(() => {
   return `${id.slice(0, 8)}…${id.slice(-6)}`;
 });
 
+const subscriptionLabel = computed(() => formatClaudeCodeSubscriptionType(account.value?.subscriptionType));
+
 // Email is null when the access token lacks `user:profile`. Substitute the
 // short account-uuid badge as a stable identifier so the header still names
 // the account.
@@ -285,7 +288,7 @@ const probeFetchedAtIso = computed<string | null>(() => {
         <p class="truncate text-sm font-medium text-white">{{ headerLabel }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
           <Badge v-if="isSetupToken" tone="violet" size="sm" class="!uppercase tracking-wide" title="Long-lived inference-only credential; cannot self-mint API keys and cannot be refreshed.">Setup Token</Badge>
-          <Badge v-if="account?.subscriptionType" tone="rose" size="sm" class="!uppercase tracking-wide">{{ account.subscriptionType }}</Badge>
+          <Badge v-if="subscriptionLabel" tone="rose" size="sm" class="tracking-wide">{{ subscriptionLabel }}</Badge>
           <span v-if="account" class="font-mono text-[11px] text-gray-500" :title="account.accountUuid">{{ accountIdShort }}</span>
           <span v-if="account && account.email === null" class="text-[11px] text-gray-500" title="The OAuth token does not carry user:profile scope">no email scope</span>
         </div>
