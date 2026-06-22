@@ -17,6 +17,7 @@ import { computed } from 'vue';
 
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, ClaudeCodeQuotaWindow, UpstreamRecord } from '../../api/types.ts';
 import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.ts';
+import { providerSwatchClass } from '../upstreams/provider-meta.ts';
 import { Badge, Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
@@ -281,8 +282,8 @@ const probeFetchedAtIso = computed<string | null>(() => {
 <template>
   <div class="space-y-4">
     <div class="flex items-start gap-3">
-      <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-700 text-gray-400">
-        <i class="i-lucide-bot size-6" />
+      <div class="flex size-10 shrink-0 items-center justify-center rounded-full" :class="providerSwatchClass('claude-code')">
+        <i class="i-simple-icons-claudecode size-5" />
       </div>
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ headerLabel }}</p>

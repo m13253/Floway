@@ -5,6 +5,7 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, UpstreamRecord } from '../../api/types.ts';
+import { providerSwatchClass } from '../upstreams/provider-meta.ts';
 import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -83,8 +84,8 @@ const windows = computed(() => {
 <template>
   <Card :padded="false" class="space-y-4 p-4">
     <div class="flex items-start gap-3">
-      <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-700 text-gray-400">
-        <i class="i-lucide-circle-user-round size-6" />
+      <div class="flex size-10 shrink-0 items-center justify-center rounded-full" :class="providerSwatchClass('codex')">
+        <i class="i-simple-icons-openai size-5" />
       </div>
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ account?.email ?? 'Codex account' }}</p>
