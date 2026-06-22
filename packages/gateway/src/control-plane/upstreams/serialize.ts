@@ -33,8 +33,23 @@ const clone = <T>(value: T): T => structuredClone(value);
 
 const hasSecret = (value: unknown): boolean => typeof value === 'string' && value.length > 0;
 
+const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Record<string, unknown>[] => {
+  if (!Array.isArray(accounts)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accounts: expected array`);
+  }
+  return accounts.map((account, index) => {
+    if (!isRecord(account)) {
+      throw new Error(`Upstream ${upstream.id} (${upstream.provider}) account[${index}] is malformed: expected object`);
+    }
+    return account;
+  });
+};
+
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
-  const config = isRecord(upstream.config) ? upstream.config : {};
+  if (!isRecord(upstream.config)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
+  }
+  const config = upstream.config;
 
   switch (upstream.provider) {
   case 'custom':
@@ -62,15 +77,12 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
   case 'codex':
     // refresh_token lives in state and is redacted by redactedState.
     return {
-      accounts: Array.isArray(config.accounts) ? config.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.email !== undefined ? { email: clone(a.email) } : {}),
-          ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-          ...(a.chatgptUserId !== undefined ? { chatgptUserId: clone(a.chatgptUserId) } : {}),
-          ...(a.planType !== undefined ? { planType: clone(a.planType) } : {}),
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
+        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
+        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
+        ...(a.chatgptUserId !== undefined ? { chatgptUserId: clone(a.chatgptUserId) } : {}),
+        ...(a.planType !== undefined ? { planType: clone(a.planType) } : {}),
+      })),
     };
   case 'ollama':
     return {
@@ -87,21 +99,21 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
 
 const redactedState = (upstream: UpstreamRecord): unknown => {
   if (upstream.state === null || upstream.state === undefined) return null;
-  const state = isRecord(upstream.state) ? upstream.state : {};
+  if (!isRecord(upstream.state)) {
+    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed state: expected object`);
+  }
+  const state = upstream.state;
 
   switch (upstream.provider) {
   case 'codex':
     return {
-      accounts: Array.isArray(state.accounts) ? state.accounts.map(account => {
-        const a = isRecord(account) ? account : {};
-        return {
-          ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
-          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-          ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
-          state_updated_at: clone(a.state_updated_at),
-          refresh_token_set: hasSecret(a.refresh_token),
-        };
-      }) : [],
+      accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
+        ...(a.chatgptAccountId !== undefined ? { chatgptAccountId: clone(a.chatgptAccountId) } : {}),
+        ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+        ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
+        state_updated_at: clone(a.state_updated_at),
+        refresh_token_set: hasSecret(a.refresh_token),
+      })),
     };
   case 'copilot':
   case 'custom':
