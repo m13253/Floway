@@ -56,8 +56,9 @@ export const authMiddleware = async (c: Context, next: Next) => {
   setUserContext(c, user);
   c.set('apiKeyId', apiKey.id);
   c.set('apiKeyUpstreamIds', apiKey.upstreamIds);
-  // Capture middleware reads dumpRetentionSeconds off this row; stashing the
-  // full ApiKey here avoids a second findByRawKey on every captured request.
+  // GatewayCtx reads dumpRetentionSeconds off this row when installing
+  // respond observers; stashing the full ApiKey here avoids a second
+  // findByRawKey on every authenticated request.
   c.set('apiKey', apiKey);
   await next();
 };

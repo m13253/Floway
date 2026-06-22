@@ -58,6 +58,9 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   currentColo: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  requestStartedWallMs: 0,
+  respondObservers: [],
+  requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
 });
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');

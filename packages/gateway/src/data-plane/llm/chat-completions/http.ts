@@ -3,8 +3,9 @@ import type { Context } from 'hono';
 import { respondChatCompletions } from './respond.ts';
 import { chatCompletionsServe } from './serve.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBodyForCapture, type GatewayCtxRequestBody } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -14,19 +15,20 @@ import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider'
 // envelope the in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic.
-const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+const respondWithInternalError = async (c: Context, error: unknown, requestBody: GatewayCtxRequestBody): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, false, requestBody);
   const result = internalErrorResult(502, toInternalDebugError(error, 'chat-completions'));
   const { response } = await respondChatCompletions(c, result, false, false, ctx);
-  return response;
+  return captureResponseAndFinalize(ctx, response);
 };
 
 export const chatCompletionsHttp = {
   generate: async (c: Context): Promise<Response> => {
+    const requestBody = await readRequestBodyForCapture(c);
     try {
-      const payload = await c.req.json<ChatCompletionsPayload>();
+      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ChatCompletionsPayload;
       const wantsStream = payload.stream === true;
       // Read the caller's intent BEFORE any interceptor mutates
       // `payload.stream_options.include_usage`. Capturing it here means the
@@ -34,13 +36,13 @@ export const chatCompletionsHttp = {
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const ctx = createGatewayCtxFromHono(c, wantsStream, requestBody);
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await chatCompletionsServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
-      return response;
+      return captureResponseAndFinalize(ctx, response);
     } catch (error) {
-      return await respondWithInternalError(c, error);
+      return await respondWithInternalError(c, error, requestBody);
     }
   },
 };

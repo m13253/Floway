@@ -3,7 +3,9 @@
 
 import type { Context } from 'hono';
 
+import { createGatewayCtxFromHono, readRequestBodyForCapture } from '../llm/shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
+import { captureResponseAndFinalize } from '../shared/respond-observer.ts';
 import { tokenUsageFromPromptTokenResponse } from '../shared/telemetry/usage.ts';
 
 interface EmbeddingsRequestBody {
@@ -12,11 +14,11 @@ interface EmbeddingsRequestBody {
   [key: string]: unknown;
 }
 
-const prepareEmbeddingsRequest = (body: string): { type: 'ok'; body: Record<string, unknown>; model: string } | { type: 'invalid'; message: string } => {
+const prepareEmbeddingsRequest = (bytes: Uint8Array): { type: 'ok'; body: Record<string, unknown>; model: string } | { type: 'invalid'; message: string } => {
   let request: EmbeddingsRequestBody;
 
   try {
-    const parsed = JSON.parse(body) as unknown;
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return {
         type: 'invalid',
@@ -42,11 +44,14 @@ const prepareEmbeddingsRequest = (body: string): { type: 'ok'; body: Record<stri
 };
 
 export const embeddings = async (c: Context): Promise<Response> => {
-  const request = prepareEmbeddingsRequest(await c.req.text());
+  const requestBody = await readRequestBodyForCapture(c);
+  const request = prepareEmbeddingsRequest(requestBody.bytes);
   if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
 
-  return await passthroughServe({
+  const ctx = createGatewayCtxFromHono(c, false, requestBody);
+  const response = await passthroughServe({
     c,
+    ctx,
     sourceApi: 'embeddings',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.embeddings !== undefined,
@@ -57,4 +62,5 @@ export const embeddings = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromPromptTokenResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
   });
+  return captureResponseAndFinalize(ctx, response);
 };

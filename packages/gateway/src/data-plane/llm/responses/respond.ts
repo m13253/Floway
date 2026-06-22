@@ -26,24 +26,24 @@ export const respondResponses = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result);
+    notifyUpstreamError(ctx, result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(c, result);
+    notifyInternalError(ctx, result);
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(c, result);
+    notifyPlain(ctx, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
   // Tee frames to the dump buffer before the stream/non-stream split so the dashboard sees the same event view either way.
-  const tapped = tapFrames(result.events, c, responsesProtocolFrameToSSEFrame);
+  const tapped = tapFrames(result.events, ctx, responsesProtocolFrameToSSEFrame);
   const frames = observeResponsesFrames(tapped, state, wantsStream);
 
   if (!wantsStream) {
@@ -51,13 +51,13 @@ export const respondResponses = async (
       const response = await collectResponsesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromResponsesResult(response);
-      notifySuccess(c, metadata.modelIdentity, usage);
+      notifySuccess(ctx, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed');
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(c, error);
+      notifyError(ctx, error);
       return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error, 'responses')) };
     }
   }
@@ -74,9 +74,9 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, `responses stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(ctx, `responses stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(c, metadata.modelIdentity, state.usage);
+        notifySuccess(ctx, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

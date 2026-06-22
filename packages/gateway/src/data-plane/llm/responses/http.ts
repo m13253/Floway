@@ -6,7 +6,8 @@ import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
+import { createGatewayCtxFromHono, readRequestBodyForCapture, type GatewayCtxRequestBody } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -47,43 +48,48 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic.
-const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+const respondWithInternalError = async (c: Context, error: unknown, requestBody: GatewayCtxRequestBody): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, false, requestBody);
   const result = internalErrorResult(502, toInternalDebugError(error, 'responses'));
   const { response } = await respondResponses(c, result, false, ctx);
-  return response;
+  return captureResponseAndFinalize(ctx, response);
 };
+
+const parsePayload = (requestBody: GatewayCtxRequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
+  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
 
 export const responsesHttp = {
   generate: async (c: Context): Promise<Response> => {
+    const requestBody = await readRequestBodyForCapture(c);
     try {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), true);
+      const payload = parsePayload(requestBody, true);
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, wantsStream);
+      const ctx = createGatewayCtxFromHono(c, wantsStream, requestBody);
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
-      return response;
+      return captureResponseAndFinalize(ctx, response);
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      return await respondWithInternalError(c, error);
+      return await respondWithInternalError(c, error, requestBody);
     }
   },
 
   compact: async (c: Context): Promise<Response> => {
+    const requestBody = await readRequestBodyForCapture(c);
     try {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), false);
-      const ctx = createGatewayCtxFromHono(c, false);
+      const payload = parsePayload(requestBody, false);
+      const ctx = createGatewayCtxFromHono(c, false, requestBody);
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
-      if (result.type === 'result') return Response.json(result.result);
+      if (result.type === 'result') return captureResponseAndFinalize(ctx, Response.json(result.result));
       const { response } = await respondResponses(c, result, false, ctx);
-      return response;
+      return captureResponseAndFinalize(ctx, response);
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      return await respondWithInternalError(c, error);
+      return await respondWithInternalError(c, error, requestBody);
     }
   },
 };

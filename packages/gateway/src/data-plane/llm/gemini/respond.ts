@@ -27,23 +27,23 @@ export const respondGemini = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result);
+    notifyUpstreamError(ctx, result);
     return { success: false, response: geminiUpstreamErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(c, result);
+    notifyInternalError(ctx, result);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(c, result);
+    notifyPlain(ctx, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
-  const tapped = tapFrames(result.events, c, geminiProtocolFrameToSSEFrame);
+  const tapped = tapFrames(result.events, ctx, geminiProtocolFrameToSSEFrame);
   const frames = observeGeminiFrames(tapped, state, wantsStream);
 
   if (!wantsStream) {
@@ -51,13 +51,13 @@ export const respondGemini = async (
       const response = await collectGeminiProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromGeminiResponse(response);
-      notifySuccess(c, metadata.modelIdentity, usage);
+      notifySuccess(ctx, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(c, error);
+      notifyError(ctx, error);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
@@ -74,9 +74,9 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, `gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(ctx, `gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(c, metadata.modelIdentity, state.usage);
+        notifySuccess(ctx, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

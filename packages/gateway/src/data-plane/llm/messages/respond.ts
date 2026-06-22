@@ -28,25 +28,25 @@ export const respondMessages = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result);
+    notifyUpstreamError(ctx, result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(c, result);
+    notifyInternalError(ctx, result);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(c, result);
+    notifyPlain(ctx, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
   // Tap before the wantsStream branch so the dump captures the protocol event view in both folded-JSON and SSE modes.
-  const tapped = tapFrames(result.events, c, messagesProtocolFrameToSSEFrame);
+  const tapped = tapFrames(result.events, ctx, messagesProtocolFrameToSSEFrame);
   const frames = observeMessagesFrames(tapped, state, usageState, wantsStream);
 
   if (!wantsStream) {
@@ -54,13 +54,13 @@ export const respondMessages = async (
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
-      notifySuccess(c, metadata.modelIdentity, usage);
+      notifySuccess(ctx, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(c, error);
+      notifyError(ctx, error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
@@ -77,9 +77,9 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, `messages stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(ctx, `messages stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(c, metadata.modelIdentity, state.usage);
+        notifySuccess(ctx, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

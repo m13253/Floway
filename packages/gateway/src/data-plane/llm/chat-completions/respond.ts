@@ -23,18 +23,18 @@ export const respondChatCompletions = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(c, result);
+    notifyUpstreamError(ctx, result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(c, result);
+    notifyInternalError(ctx, result);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(c, result);
+    notifyPlain(ctx, result);
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -42,7 +42,7 @@ export const respondChatCompletions = async (
   // Force `includeUsageChunk: true` on the observer tap so the dashboard
   // always sees the trailing usage frame, independent of the wire-level
   // option the client requested.
-  const tapped = tapFrames(result.events, c, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
+  const tapped = tapFrames(result.events, ctx, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
   const frames = observeChatCompletionsFrames(tapped, state, wantsStream);
 
   if (!wantsStream) {
@@ -50,13 +50,13 @@ export const respondChatCompletions = async (
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage) : null;
-      notifySuccess(c, metadata.modelIdentity, usage);
+      notifySuccess(ctx, metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(c, error);
+      notifyError(ctx, error);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error, 'chat-completions')) };
     }
   }
@@ -73,9 +73,9 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(c, `chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
+        notifyError(ctx, `chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(c, metadata.modelIdentity, state.usage);
+        notifySuccess(ctx, metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);

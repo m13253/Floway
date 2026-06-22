@@ -3,8 +3,9 @@ import type { Context } from 'hono';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini } from './respond.ts';
 import { geminiServe } from './serve.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBodyForCapture, type GatewayCtxRequestBody, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
@@ -34,9 +35,9 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
   return shape.generateContentRequest ?? { contents: shape.contents };
 };
 
-const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Promise<T | Response> => {
+const parseGeminiBodyBytes = <T>(requestBody: GatewayCtxRequestBody, project: (body: unknown) => T): T | Response => {
   try {
-    const raw = await c.req.json<unknown>();
+    const raw = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
     return project(raw);
   } catch (error) {
     return geminiInternalRpcErrorResponse(500, error);
@@ -51,7 +52,7 @@ const parseGeminiBody = async <T>(c: Context, project: (body: unknown) => T): Pr
 const respondWithGeminiError = async (
   c: Context,
   error: unknown,
-  ctx: ReturnType<typeof createGatewayCtxFromHono>,
+  ctx: GatewayCtx,
   wantsStream: boolean,
 ): Promise<Response> => {
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
@@ -63,7 +64,7 @@ const respondWithGeminiError = async (
       body: new TextEncoder().encode(body),
     };
     const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
-    return response;
+    return captureResponseAndFinalize(ctx, response);
   }
   return geminiInternalRpcErrorResponse(500, error);
 };
@@ -83,30 +84,32 @@ export const geminiHttp = async (c: Context): Promise<Response> => {
 };
 
 const runGeminiGenerate = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {
-  const payload = await parseGeminiBody(c, payload => payload as GeminiPayload);
+  const requestBody = await readRequestBodyForCapture(c);
+  const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, wantsStream);
+  const ctx = createGatewayCtxFromHono(c, wantsStream, requestBody);
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.generate({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, wantsStream, ctx);
-    return response;
+    return captureResponseAndFinalize(ctx, response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, wantsStream);
   }
 };
 
 const runGeminiCountTokens = async (c: Context, model: string): Promise<Response> => {
-  const payload = await parseGeminiBody(c, parseGeminiCountTokensPayload);
+  const requestBody = await readRequestBodyForCapture(c);
+  const payload = parseGeminiBodyBytes(requestBody, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createGatewayCtxFromHono(c, false);
+  const ctx = createGatewayCtxFromHono(c, false, requestBody);
   const store = createNonResponsesSourceStore(ctx.apiKeyId);
   try {
     const result = await geminiServe.countTokens({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, false, ctx);
-    return response;
+    return captureResponseAndFinalize(ctx, response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, false);
   }
