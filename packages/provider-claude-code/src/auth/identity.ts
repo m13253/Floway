@@ -54,8 +54,18 @@ export const fetchClaudeCodeIdentity = async (
   // 403 with a `permission_error` body means the token was minted without
   // the `user:profile` scope. Fall back to a degraded identity (deterministic
   // UUID-shaped id derived from the token, nulls for personal fields) so
-  // credential ingestion succeeds for inference-only tokens.
-  if (response.status === 403 && isPermissionError(parsed)) {
+  // credential ingestion succeeds for inference-only tokens. Anthropic's
+  // `permission_error` shape is `{ "error": { "type": "permission_error",
+  // ... } }`; we don't strict-match the message because it drifts over time,
+  // only the type discriminator.
+  let parsedError: Record<string, unknown> | null = null;
+  if (typeof parsed === 'object' && parsed !== null) {
+    const errorField = (parsed as Record<string, unknown>).error;
+    if (typeof errorField === 'object' && errorField !== null) {
+      parsedError = errorField as Record<string, unknown>;
+    }
+  }
+  if (response.status === 403 && parsedError?.type === 'permission_error') {
     const accountUuid = deriveDegradedAccountUuid(accessToken);
     logWarn('claude_code_identity_degraded_fallback', {
       account_uuid: accountUuid,
@@ -68,8 +78,18 @@ export const fetchClaudeCodeIdentity = async (
     // Last-resort fallback: when the upstream sent neither a structured
     // error envelope nor any other recognizable shape, surface the raw
     // body prefix so the operator has something readable to act on.
-    const message = readErrorMessage(parsed) ?? rawText.slice(0, 256);
-    throw new Error(`Claude Code /api/oauth/profile returned ${response.status}: ${message}`);
+    const root = (typeof parsed === 'object' && parsed !== null) ? parsed as Record<string, unknown> : null;
+    let message: string | null = null;
+    if (root !== null) {
+      if (typeof root.error === 'string') {
+        message = root.error;
+      } else if (parsedError !== null && typeof parsedError.message === 'string') {
+        message = parsedError.message;
+      } else if (typeof root.message === 'string') {
+        message = root.message;
+      }
+    }
+    throw new Error(`Claude Code /api/oauth/profile returned ${response.status}: ${message ?? rawText.slice(0, 256)}`);
   }
 
   if (typeof parsed !== 'object' || parsed === null) {
@@ -116,18 +136,6 @@ export const fetchClaudeCodeIdentity = async (
   };
 };
 
-// Anthropic's `permission_error` shape: `{ "error": { "type":
-// "permission_error", ... } }`. We don't strict-match the message because it
-// drifts over time, only the type discriminator.
-const isPermissionError = (parsed: unknown): boolean => {
-  if (typeof parsed !== 'object' || parsed === null) return false;
-  const root = parsed as Record<string, unknown>;
-  const error = root.error;
-  if (typeof error !== 'object' || error === null) return false;
-  const err = error as Record<string, unknown>;
-  return err.type === 'permission_error';
-};
-
 // Format the first 32 hex chars of sha256(accessToken) into the canonical
 // 8-4-4-4-12 UUID layout so the degraded id sorts and displays consistently
 // with real Anthropic account UUIDs. Not a real UUID v4 — we don't set the
@@ -162,17 +170,5 @@ const deriveSubscriptionType = (
   logWarn('claude_code_unknown_organization_type', {
     organization_type: organizationType,
   });
-  return null;
-};
-
-const readErrorMessage = (parsed: unknown): string | null => {
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  const root = parsed as Record<string, unknown>;
-  if (typeof root.error === 'string') return root.error;
-  if (typeof root.error === 'object' && root.error !== null) {
-    const err = root.error as Record<string, unknown>;
-    if (typeof err.message === 'string') return err.message;
-  }
-  if (typeof root.message === 'string') return root.message;
   return null;
 };

@@ -45,15 +45,7 @@ const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Recor
   });
 };
 
-const serializeAccessToken = (upstream: UpstreamRecord, value: unknown): { expiresAt: unknown; refreshedAt: unknown } | null => {
-  if (value === null) return null;
-  if (!isRecord(value)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accessToken: expected object or null`);
-  }
-  return { expiresAt: clone(value.expiresAt), refreshedAt: clone(value.refreshedAt) };
-};
-
-const serializeOpaqueRecord = (upstream: UpstreamRecord, field: string, value: unknown): unknown => {
+const serializeOpaqueRecord = (upstream: UpstreamRecord, field: string, value: unknown): Record<string, unknown> | null => {
   if (value === null) return null;
   if (!isRecord(value)) {
     throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed ${field}: expected object or null`);
@@ -143,26 +135,29 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
     };
   case 'claude-code':
     return {
-      accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
-        ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
-        ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
-        ...(a.state !== undefined ? { state: clone(a.state) } : {}),
-        ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
-        stateUpdatedAt: clone(a.stateUpdatedAt),
-        refreshTokenSet: hasSecret(a.refreshToken),
+      accounts: assertAccountsArray(upstream, state.accounts).map(a => {
         // accessToken.expiresAt + quotaSnapshot + usageProbeSnapshot are
         // non-secret summaries the dashboard surfaces directly.
         // accessToken.token is dropped. Each field is contractually
         // `<entry> | null` per state.ts; a string / array / number here is
         // genuine shape drift and must throw, not collapse into null
         // silently.
-        accessToken: serializeAccessToken(upstream, a.accessToken),
-        quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', a.quotaSnapshot),
-        // usageProbeSnapshot's wire shape is owned by Anthropic's
-        // /api/oauth/usage endpoint and evolves on their schedule, so we
-        // round-trip the entry without re-shaping any inner fields.
-        usageProbeSnapshot: serializeOpaqueRecord(upstream, 'usageProbeSnapshot', a.usageProbeSnapshot),
-      })),
+        const accessTokenRecord = serializeOpaqueRecord(upstream, 'accessToken', a.accessToken);
+        return {
+          ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
+          ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
+          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+          ...(a.stateMessage !== undefined ? { stateMessage: clone(a.stateMessage) } : {}),
+          stateUpdatedAt: clone(a.stateUpdatedAt),
+          refreshTokenSet: hasSecret(a.refreshToken),
+          accessToken: accessTokenRecord === null ? null : { expiresAt: accessTokenRecord.expiresAt, refreshedAt: accessTokenRecord.refreshedAt },
+          quotaSnapshot: serializeOpaqueRecord(upstream, 'quotaSnapshot', a.quotaSnapshot),
+          // usageProbeSnapshot's wire shape is owned by Anthropic's
+          // /api/oauth/usage endpoint and evolves on their schedule, so we
+          // round-trip the entry without re-shaping any inner fields.
+          usageProbeSnapshot: serializeOpaqueRecord(upstream, 'usageProbeSnapshot', a.usageProbeSnapshot),
+        };
+      }),
     };
   case 'copilot': {
     // Expose only the per-tier baseUrl the dashboard renders an account-type

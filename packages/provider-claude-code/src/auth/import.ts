@@ -1,5 +1,5 @@
 import type { ClaudeCodeUpstreamConfig } from '../config.ts';
-import type { ClaudeCodeAccountCredential, ClaudeCodeTokenKind, ClaudeCodeUpstreamState } from '../state.ts';
+import type { ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../state.ts';
 import { fetchClaudeCodeIdentity, type ClaudeCodeIdentity } from './identity.ts';
 import { exchangeClaudeCodeAuthorizationCode } from './oauth.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
@@ -9,14 +9,12 @@ export interface ClaudeCodeImportResult {
   state: ClaudeCodeUpstreamState;
 }
 
-interface BuildImportResultParams {
+type BuildImportResultParams = {
   identity: ClaudeCodeIdentity;
-  tokenKind: ClaudeCodeTokenKind;
   accessToken: string;
-  refreshToken: string | null;
   expiresAt: number;
   now: string;
-}
+} & ({ tokenKind: 'setup-token' } | { tokenKind: 'oauth'; refreshToken: string });
 
 const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCodeImportResult => {
   const accessTokenEntry = {
@@ -32,18 +30,9 @@ const buildClaudeCodeImportResult = (params: BuildImportResultParams): ClaudeCod
     quotaSnapshot: null,
     usageProbeSnapshot: null,
   };
-  let credential: ClaudeCodeAccountCredential;
-  if (params.tokenKind === 'setup-token') {
-    if (params.refreshToken !== null) {
-      throw new Error('setup-token credentials must not carry a refresh token');
-    }
-    credential = { ...credentialBase, tokenKind: 'setup-token', refreshToken: null };
-  } else {
-    if (params.refreshToken === null || params.refreshToken === '') {
-      throw new Error('oauth credentials must carry a non-empty refresh token');
-    }
-    credential = { ...credentialBase, tokenKind: 'oauth', refreshToken: params.refreshToken };
-  }
+  const credential: ClaudeCodeAccountCredential = params.tokenKind === 'setup-token'
+    ? { ...credentialBase, tokenKind: 'setup-token', refreshToken: null }
+    : { ...credentialBase, tokenKind: 'oauth', refreshToken: params.refreshToken };
   return {
     config: {
       accounts: [{
@@ -77,10 +66,8 @@ export const importClaudeCodeFromCallback = async (opts: {
     kind: 'oauth',
     fetcher,
   });
-  // The OAuth flow always carries a refresh_token; the shared assertion in
-  // claudeCodeTokenRequest only enforces presence-when-present, so guard
-  // explicitly here so a malformed upstream response surfaces a precise
-  // error instead of corrupting the persisted state.
+  // OAuth /token always returns refresh_token; guard so a malformed response
+  // surfaces precisely instead of corrupting the persisted state.
   if (typeof tokens.refresh_token !== 'string' || tokens.refresh_token === '') {
     throw new Error('Claude Code OAuth /token response missing refresh_token on full-scope exchange');
   }
@@ -121,7 +108,6 @@ export const importClaudeCodeFromSetupTokenCallback = async (opts: {
     identity,
     tokenKind: 'setup-token',
     accessToken: tokens.access_token,
-    refreshToken: null,
     expiresAt: Date.now() + tokens.expires_in * 1000,
     now: new Date().toISOString(),
   });

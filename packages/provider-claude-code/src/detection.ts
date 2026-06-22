@@ -139,7 +139,7 @@ const extractSystemTexts = (body: MessagesPayload): string[] => {
 
 export interface ClaudeCodeShapedRequestInput {
   headers: Headers;
-  body: MessagesPayload | null;
+  body: MessagesPayload;
   isMaxTokensOneHaikuProbe: boolean;
 }
 
@@ -150,8 +150,6 @@ export const isClaudeCodeShapedRequest = (input: ClaudeCodeShapedRequestInput): 
   // Real CC's periodic Haiku connectivity probe sends max_tokens=1 with no
   // system; surface it as CC-shaped without further checks.
   if (input.isMaxTokensOneHaikuProbe) return true;
-
-  if (!input.body) return false;
 
   if (!input.headers.get('x-app')) return false;
   if (!input.headers.get('anthropic-beta')) return false;

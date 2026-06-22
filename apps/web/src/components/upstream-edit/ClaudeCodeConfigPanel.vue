@@ -149,24 +149,24 @@ const submit = async () => {
   // updated row carries the same chain).
   const proxyExtras = { proxy_fallback_list: props.proxyFallbackList };
   const result = await callApi<UpstreamRecord>(() => {
+    const payload = body.value;
     if (props.mode === 'create') {
-      if (body.value.kind === 'setup-token-callback') return api.api.upstreams['claude-code-setup-token-import'].$post({ json: { callback: body.value.callback, ...proxyExtras } });
-      if (body.value.kind === 'oauth-credentials_json') return api.api.upstreams['claude-code-import'].$post({ json: { credentials_json: body.value.credentials_json, ...proxyExtras } });
-      return api.api.upstreams['claude-code-import'].$post({ json: { callback: body.value.callback, ...proxyExtras } });
+      const create = api.api.upstreams;
+      if (payload.kind === 'setup-token-callback') return create['claude-code-setup-token-import'].$post({ json: { callback: payload.callback, ...proxyExtras } });
+      if (payload.kind === 'oauth-credentials_json') return create['claude-code-import'].$post({ json: { credentials_json: payload.credentials_json, ...proxyExtras } });
+      return create['claude-code-import'].$post({ json: { callback: payload.callback, ...proxyExtras } });
     }
     const param = { id: props.record!.id };
-    if (body.value.kind === 'setup-token-callback') return api.api.upstreams[':id']['claude-code-setup-token-reimport'].$post({ param, json: { callback: body.value.callback, ...proxyExtras } });
-    if (body.value.kind === 'oauth-credentials_json') return api.api.upstreams[':id']['claude-code-reimport'].$post({ param, json: { credentials_json: body.value.credentials_json, ...proxyExtras } });
-    return api.api.upstreams[':id']['claude-code-reimport'].$post({ param, json: { callback: body.value.callback, ...proxyExtras } });
+    const edit = api.api.upstreams[':id'];
+    if (payload.kind === 'setup-token-callback') return edit['claude-code-setup-token-reimport'].$post({ param, json: { callback: payload.callback, ...proxyExtras } });
+    if (payload.kind === 'oauth-credentials_json') return edit['claude-code-reimport'].$post({ param, json: { credentials_json: payload.credentials_json, ...proxyExtras } });
+    return edit['claude-code-reimport'].$post({ param, json: { callback: payload.callback, ...proxyExtras } });
   });
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
-  // Burn the in-flight stash only on success — the OAuth code is single-use
-  // upstream, so a successful exchange invalidates it anyway. On failure the
-  // stash survives so the operator can re-paste / retry without losing the
-  // verifier+state pair their authorize URL was built against. Only the
-  // stash for the kind we just exchanged is cleared; the other kind (if any)
-  // is left intact.
+  // Single-use OAuth code: clear only on success and only the kind we just
+  // exchanged, so a failed attempt can re-paste against the same verifier
+  // and a parallel kind's stash stays intact.
   if (body.value.kind === 'oauth-callback') clearPkce(pkceStorageKey('claude-code', 'oauth'));
   else if (body.value.kind === 'setup-token-callback') clearPkce(pkceStorageKey('claude-code', 'setup-token'));
   emit('imported', result.data);

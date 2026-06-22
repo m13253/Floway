@@ -102,23 +102,13 @@ const probe = computed<ProbeSnapshot | null>(() => {
   };
 });
 
-const formatTimestamp = (iso: string | null | undefined): string => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString();
-};
+const formatTimestamp = (iso: string): string => new Date(iso).toLocaleString();
 
-const clampPercent = (n: number | null | undefined): number => {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-};
+const clampPercent = (n: number): number => Math.max(0, Math.min(100, Math.round(n)));
 
-const formatPercent = (n: number | null | undefined): string => {
-  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';
-  return `${clampPercent(n)}%`;
-};
+const formatPercent = (n: number): string => `${clampPercent(n)}%`;
 
-const formatRelative = (epochMs: number | null | undefined): string => {
-  if (typeof epochMs !== 'number' || !Number.isFinite(epochMs)) return '—';
+const formatRelative = (epochMs: number): string => {
   const delta = epochMs - Date.now();
   const abs = Math.abs(delta);
   const minutes = Math.round(abs / 60_000);
@@ -153,9 +143,7 @@ const badge = computed<{ tone: 'rose' | 'amber' | 'emerald'; label: string; deta
   if (quota.value?.status === 'rejected') {
     return { tone: 'rose', label: 'Plan window exhausted — wait for reset' };
   }
-  const utilizations = windows.value
-    .map(w => w.percent)
-    .filter((v): v is number => typeof v === 'number');
+  const utilizations = windows.value.map(w => w.percent);
   const heaviest = utilizations.length ? Math.max(...utilizations) : null;
   if (heaviest !== null && heaviest >= HEAVY_USAGE_THRESHOLD_PCT) {
     return { tone: 'amber', label: `Heavy usage (${Math.round(heaviest)}%)` };
@@ -187,27 +175,27 @@ type WindowSource = 'header' | 'probe';
 interface WindowRow {
   key: string;
   label: string;
-  percent: number | null;
+  percent: number;
   resetAt: string | null;
   status: string | null;
   source: WindowSource;
   fetchedAt: number;
 }
 
-const toPercent = (n: number | null | undefined): number | null => typeof n === 'number' ? n * 100 : null;
+const toPercent = (n: number): number => n * 100;
 
 const headerFetchedAt = computed<number>(() => credential.value?.quotaSnapshot?.fetchedAt ?? 0);
 const probeFetchedAt = computed<number>(() => credential.value?.usageProbeSnapshot?.fetchedAt ?? 0);
 
 const pickHeaderWindow = (label: string, key: string, headerWin: ClaudeCodeQuotaWindow | null | undefined, probeWin: ProbeWindow | null | undefined): WindowRow | null => {
-  const headerHas = headerWin && typeof headerWin.utilization === 'number';
-  const probeHas = probeWin && typeof probeWin.utilization === 'number';
-  const preferProbe = probeHas && (!headerHas || probeFetchedAt.value > headerFetchedAt.value);
-  if (preferProbe && probeWin) {
-    return { key, label, percent: toPercent(probeWin.utilization), resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeFetchedAt.value };
+  const headerUtil = headerWin && typeof headerWin.utilization === 'number' ? headerWin.utilization : null;
+  const probeUtil = probeWin && typeof probeWin.utilization === 'number' ? probeWin.utilization : null;
+  const preferProbe = probeUtil !== null && (headerUtil === null || probeFetchedAt.value > headerFetchedAt.value);
+  if (preferProbe && probeWin && probeUtil !== null) {
+    return { key, label, percent: toPercent(probeUtil), resetAt: probeWin.resetAt, status: null, source: 'probe', fetchedAt: probeFetchedAt.value };
   }
-  if (headerHas && headerWin) {
-    return { key, label, percent: toPercent(headerWin.utilization), resetAt: headerWin.reset, status: headerWin.status, source: 'header', fetchedAt: headerFetchedAt.value };
+  if (headerUtil !== null && headerWin) {
+    return { key, label, percent: toPercent(headerUtil), resetAt: headerWin.reset, status: headerWin.status, source: 'header', fetchedAt: headerFetchedAt.value };
   }
   return null;
 };

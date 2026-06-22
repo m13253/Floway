@@ -325,6 +325,46 @@ const maybePersistTerminalFromBodyFireAndForget = (
   waitUntil?.(task);
 };
 
+// recordUpstreamLatency contract: every code path that returns must wrap
+// exactly one fetch (real or synthetic). Synthetic gates ride a resolved
+// promise so the gateway's recorder sees the contract met without
+// measuring anything meaningful. Both the pre-flight gates and the 401-retry
+// terminal-state branch use this helper so the two paths read identically;
+// the recorder's "at least once + last wrap kept" contract is satisfied
+// even when the streaming call already wrapped its own fetch upstream of
+// the retry.
+const syntheticReturn = async (
+  opts: CallClaudeCodeMessagesOptions,
+  upstreamModelId: string,
+  response: Response,
+): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+  ok: false,
+  modelKey: upstreamModelId,
+  response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
+});
+
+// Either ensures a usable access token or returns a 503 wrap for terminal
+// refresh failures; other errors propagate. Used at both the cold-start
+// call site and the 401-retry branch so the catch shape lives in one place.
+const ensureOrSession503 = async (
+  opts: CallClaudeCodeMessagesOptions,
+  upstreamModelId: string,
+): Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>> => {
+  try {
+    return await ensureClaudeCodeAccessToken({
+      upstreamId: opts.upstreamId,
+      repo: getProviderRepo().upstreams,
+      fetcher: opts.call.fetcher,
+    });
+  } catch (err) {
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      // ensureClaudeCodeAccessToken already persisted the terminal state.
+      return await syntheticReturn(opts, upstreamModelId, synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
+    }
+    throw err;
+  }
+};
+
 export const callClaudeCodeMessages = async (
   opts: CallClaudeCodeMessagesOptions,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
@@ -333,44 +373,7 @@ export const callClaudeCodeMessages = async (
   // lives under `providerData.upstreamModelId`. Resolve once so synthetic
   // gates, the wire body, and the streaming-call modelKey all surface the
   // same dated id.
-  const providerData = opts.model.providerData as ClaudeCodeProviderData | undefined;
-  if (typeof providerData?.upstreamModelId !== 'string') {
-    throw new Error(`Claude Code model ${opts.model.id} is missing providerData.upstreamModelId`);
-  }
-  const upstreamModelId = providerData.upstreamModelId;
-
-  // recordUpstreamLatency contract: every code path that returns must wrap
-  // exactly one fetch (real or synthetic). Synthetic gates ride a resolved
-  // promise so the gateway's recorder sees the contract met without
-  // measuring anything meaningful. Both the pre-flight gates and the 401-retry
-  // terminal-state branch use this helper so the two paths read identically;
-  // the recorder's "at least once + last wrap kept" contract is satisfied
-  // even when the streaming call already wrapped its own fetch upstream of
-  // the retry.
-  const syntheticReturn = async (response: Response): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
-    ok: false,
-    modelKey: upstreamModelId,
-    response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
-  });
-
-  // Either ensures a usable access token or returns a 503 wrap for terminal
-  // refresh failures; other errors propagate. Used at both the cold-start
-  // call site and the 401-retry branch so the catch shape lives in one place.
-  const ensureOrSession503 = async (): Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>> => {
-    try {
-      return await ensureClaudeCodeAccessToken({
-        upstreamId: opts.upstreamId,
-        repo: getProviderRepo().upstreams,
-        fetcher: opts.call.fetcher,
-      });
-    } catch (err) {
-      if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
-        // ensureClaudeCodeAccessToken already persisted the terminal state.
-        return await syntheticReturn(synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
-      }
-      throw err;
-    }
-  };
+  const upstreamModelId = (opts.model.providerData as ClaudeCodeProviderData).upstreamModelId;
 
   const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
@@ -378,7 +381,7 @@ export const callClaudeCodeMessages = async (
   const account = state.accounts[0];
 
   if (account.state !== 'active') {
-    return await syntheticReturn(synthetic503(
+    return await syntheticReturn(opts, upstreamModelId, synthetic503(
       `Claude Code account is ${account.state}: ${account.stateMessage}`,
     ));
   }
@@ -387,17 +390,17 @@ export const callClaudeCodeMessages = async (
   const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
   if (isRateLimitedNow(quotaData, now)) {
     const resetIso = quotaData.reset;
-    return await syntheticReturn(synthetic429(
+    return await syntheticReturn(opts, upstreamModelId, synthetic429(
       resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
       resetIso,
       now,
     ));
   }
 
-  const ensured = await ensureOrSession503();
+  const ensured = await ensureOrSession503(opts, upstreamModelId);
   if ('modelKey' in ensured) return ensured;
 
-  return await performUpstreamCall(opts, upstreamModelId, ensured, false, syntheticReturn, ensureOrSession503);
+  return await performUpstreamCall(opts, upstreamModelId, ensured, false);
 };
 
 const performUpstreamCall = async (
@@ -405,8 +408,6 @@ const performUpstreamCall = async (
   upstreamModelId: string,
   accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
-  syntheticReturn: (response: Response) => Promise<ProviderStreamResult<MessagesStreamEvent>>,
-  ensureOrSession503: () => Promise<EnsuredAccessToken | ProviderStreamResult<MessagesStreamEvent>>,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
   let headers: Record<string, string>;
   if (opts.shaped) {
@@ -472,14 +473,14 @@ const performUpstreamCall = async (
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
     });
-    const ensured = await ensureOrSession503();
+    const ensured = await ensureOrSession503(opts, upstreamModelId);
     // If the refresh terminated, ensureOrSession503 returns a syntheticReturn
     // wrap. That wrap intentionally shadows the failed first fetch's recorded
     // latency under the "last wrap wins" semantics — the telemetry surface
     // reflects the synthetic 503 because that is what the caller sees, not the
     // 401 we discarded.
     if ('modelKey' in ensured) return ensured;
-    return await performUpstreamCall(opts, upstreamModelId, ensured, true, syntheticReturn, ensureOrSession503);
+    return await performUpstreamCall(opts, upstreamModelId, ensured, true);
   }
 
   return result;

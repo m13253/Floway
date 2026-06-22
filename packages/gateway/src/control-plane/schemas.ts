@@ -314,6 +314,16 @@ export const codexAuthorizeUrlBody = z.object({
 // unknown_parameter (live-probed); the SPA still validates state before
 // sending the callback so CSRF protection is intact, but the gateway has
 // no reason to receive it.
+// Shared OAuth callback shape: claude-code OAuth + Setup-Token callbacks carry
+// `state`; codex's token exchange drops it because auth.openai.com rejects
+// state with 400 unknown_parameter (live-probed). The SPA still validates
+// state before posting, so CSRF protection is intact.
+const oauthCallbackSchema = z.object({
+  code: z.string().min(1),
+  verifier: z.string().min(1),
+  state: z.string().min(1),
+});
+
 const codexCredentialFields = {
   auth_json: z.string().min(1).optional(),
   callback: z.object({
@@ -326,18 +336,6 @@ const codexCredentialFields = {
   // override path is available.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 };
-
-// Factory for the "exactly one credential field" refine used by both codex
-// and claude-code import/re-import bodies. Returns the predicate together
-// with the matching zod refine message so both shapes stay in lock-step.
-const requireExactlyOneCredential = (
-  fieldName: 'auth_json' | 'credentials_json',
-): { predicate: (b: Record<string, unknown>) => boolean; message: { message: string } } => ({
-  predicate: b => (b[fieldName] !== undefined) !== (b.callback !== undefined),
-  message: { message: `Provide exactly one of ${fieldName} or callback` },
-});
-
-const codexCredentialRefine = requireExactlyOneCredential('auth_json');
 
 // Both `codexImportBody.name` and `codexReimportBody.name` are optional. On
 // import, the server synthesizes a default name from the id_token-derived
@@ -355,7 +353,10 @@ export const codexImportBody = z.object({
   // the bootstrap routes through that chain AND so the same chain is
   // persisted on the new row for subsequent data-plane calls.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
+}).refine(
+  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of auth_json or callback' },
+);
 
 // `sort_order` is omitted because re-import must not re-rank the row.
 export const codexReimportBody = z.object({
@@ -366,7 +367,10 @@ export const codexReimportBody = z.object({
   // credential. When present, route the bootstrap through the override and
   // overwrite the persisted list with it.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(codexCredentialRefine.predicate, codexCredentialRefine.message);
+}).refine(
+  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of auth_json or callback' },
+);
 
 export const codexRefreshNowBody = z.object({
   // Edit-form override; absent falls back to the persisted row's list. See
@@ -397,14 +401,8 @@ export const claudeCodeAuthorizeUrlBody = z.object({
 // the both-or-neither case before the handler runs.
 const claudeCodeCredentialFields = {
   credentials_json: z.string().min(1).optional(),
-  callback: z.object({
-    code: z.string().min(1),
-    verifier: z.string().min(1),
-    state: z.string().min(1),
-  }).optional(),
+  callback: oauthCallbackSchema.optional(),
 };
-
-const claudeCodeCredentialRefine = requireExactlyOneCredential('credentials_json');
 
 export const claudeCodeImportBody = z.object({
   name: z.string().min(1).optional(),
@@ -413,7 +411,10 @@ export const claudeCodeImportBody = z.object({
   // Edit-form override; persisted onto the freshly-created row so subsequent
   // data-plane calls honor the same chain. See proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
+}).refine(
+  b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of credentials_json or callback' },
+);
 
 export const claudeCodeReimportBody = z.object({
   name: z.string().min(1).optional(),
@@ -421,7 +422,10 @@ export const claudeCodeReimportBody = z.object({
   // Edit-form override; overwrites the persisted list when present. See
   // proxy-resolution.ts.
   proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(claudeCodeCredentialRefine.predicate, claudeCodeCredentialRefine.message);
+}).refine(
+  b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of credentials_json or callback' },
+);
 
 export const claudeCodeRefreshNowBody = z.object({
   // Edit-form override; absent falls back to the persisted row's list. See
@@ -445,11 +449,7 @@ export const claudeCodeProbeQuotaBody = z.object({
 // refresh_token, so the import body has no credentials_json path
 // (Anthropic's CLI never persists a setup token).
 const claudeCodeSetupTokenCallbackFields = {
-  callback: z.object({
-    code: z.string().min(1),
-    verifier: z.string().min(1),
-    state: z.string().min(1),
-  }),
+  callback: oauthCallbackSchema,
 };
 
 export const claudeCodeSetupTokenImportBody = z.object({

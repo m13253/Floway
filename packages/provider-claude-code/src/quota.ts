@@ -31,17 +31,11 @@ export interface ClaudeCodeQuotaWindow {
   utilization: number | null;
 }
 
-export interface ClaudeCodeQuotaSevenDay {
-  status: string | null;
-  reset: string | null;
-  utilization: number | null;
+export interface ClaudeCodeQuotaSevenDay extends ClaudeCodeQuotaWindow {
   surpassedThreshold: boolean | null;
 }
 
-export interface ClaudeCodeQuotaOverage {
-  status: string | null;
-  reset: string | null;
-  utilization: number | null;
+export interface ClaudeCodeQuotaOverage extends ClaudeCodeQuotaWindow {
   disabledReason: string | null;
 }
 

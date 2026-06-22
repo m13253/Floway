@@ -16,10 +16,8 @@ export interface ClaudeCodeAccountIdentity {
   // The CLI-canonical plan name derived from `organization.organization_type`:
   // 'pro', 'max', 'team', 'enterprise', or null for personal accounts /
   // organization_type values we do not yet recognize. Matches the official
-  // CLI's persisted `subscriptionType` field in ~/.claude/.credentials.json
-  // (deriver in @anthropic-ai/claude-code-darwin-arm64 2.x's bundled binary
-  // returns this same set; the older 1.0.x JS bundle's `JB0` also returns
-  // it). Captured for dashboard display; the dashboard combines it with
+  // CLI's persisted `subscriptionType` field in ~/.claude/.credentials.json.
+  // Captured for dashboard display; the dashboard combines it with
   // rateLimitTier below to render "Max 5×" / "Max 20×" etc.
   subscriptionType: 'pro' | 'max' | 'team' | 'enterprise' | null;
   // Raw `organization.rate_limit_tier` string passed through verbatim — e.g.

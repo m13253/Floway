@@ -14,20 +14,12 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 // three CC-mimicry blocks (billing / identity / default template). Any
 // caller-supplied system content must therefore move OUT of `system` before
 // those three blocks are injected, otherwise the operator's instructions
-// would be lost.
-//
-// The convention sub2api and Parrot both ship — and the one real CC clients
-// fall back to when their own system text exceeds the bare identity block —
-// is to fold the original system text into the head of `messages` as a
-// synthetic user/assistant turn (user announces the system prompt, assistant
-// acknowledges it). The acknowledgement keeps the conversation alternation
-// valid: every following user message still sees an assistant turn behind it,
-// so the upstream's role-alternation guard doesn't fire.
-//
-// Wrapper format `[System Instructions]\n${text}` and the ack literal both
-// match sub2api `gateway_service.go:4480` byte-for-byte; the synthetic user
-// content is emitted as a structured `[{type:"text",text:...}]` block (the
-// shape both reference impls and real CC use) rather than a raw string.
+// would be lost. The convention sub2api and Parrot both ship — and the one
+// real CC clients fall back to when their own system text exceeds the bare
+// identity block — is to fold the original system text into the head of
+// `messages` as a synthetic user/assistant turn. The acknowledgement keeps
+// the conversation alternation valid so the upstream's role-alternation
+// guard doesn't fire.
 //
 // Non-text fields on blocks (citations, cache_control) are intentionally
 // dropped — the wrapped turn is best-effort recovery of the operator's
@@ -56,6 +48,10 @@ export const hoistUserSystemToMessages = async <TResult>(
   delete nextPayload.system;
 
   if (captured !== '') {
+    // Wrapper format `[System Instructions]\n${text}` matches sub2api
+    // `gateway_service.go:4480` byte-for-byte; the synthetic user content is
+    // emitted as a structured `[{type:"text",text:...}]` block (the shape
+    // both reference impls and real CC use) rather than a raw string.
     const synthetic: MessagesMessage[] = [
       { role: 'user', content: [{ type: 'text', text: `[System Instructions]\n${captured}` }] },
       { role: 'assistant', content: [{ type: 'text', text: SYNTHETIC_ACK }] },

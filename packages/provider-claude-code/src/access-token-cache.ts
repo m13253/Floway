@@ -133,6 +133,7 @@ const ensureClaudeCodeAccessTokenInner = async (
     throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
   }
 
+  // Setup-token returned above; `account` is narrowed to the oauth variant.
   if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
     return { entry: account.accessToken, freshlyMinted: false };
   }
@@ -171,12 +172,8 @@ const ensureClaudeCodeAccessTokenInner = async (
   if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
     throw new Error('Claude Code refresh response missing refresh_token');
   }
-  const oauthAccount = state.accounts[accountIndex];
-  if (oauthAccount.tokenKind !== 'oauth') {
-    throw new Error('Claude Code refresh path reached on non-oauth credential (structural invariant violation)');
-  }
   const rotated = replaceAccountAt(state, accountIndex, () => ({
-    ...oauthAccount,
+    ...account,
     refreshToken: rotatedRefreshToken,
     accessToken: newAccessTokenEntry,
   }));
@@ -195,16 +192,6 @@ const ensureClaudeCodeAccessTokenInner = async (
   return { entry: newAccessTokenEntry, freshlyMinted: true };
 };
 
-interface TerminalFlipFields {
-  reason: string;
-  message: string;
-  // The raw OAuth `error` code (e.g. `invalid_grant`,
-  // `app_session_terminated`) when the flip was triggered by an upstream
-  // OAuth response; `null` for code-internal flips (e.g. setup-token
-  // expiry) that have no upstream code to attribute.
-  oauthCode: string | null;
-}
-
 // Terminal flip from the oauth-error path. Distinct from fetch.ts's
 // `persistTerminalAccountState`: caller already holds a fresh state read
 // (so we take it as a param rather than re-reading), the trigger is an
@@ -217,7 +204,15 @@ const persistTerminalState = async (
   expectedState: unknown,
   current: ClaudeCodeUpstreamState,
   accountIndex: number,
-  fields: TerminalFlipFields,
+  fields: {
+    reason: string;
+    message: string;
+    // The raw OAuth `error` code (e.g. `invalid_grant`,
+    // `app_session_terminated`) when the flip was triggered by an upstream
+    // OAuth response; `null` for code-internal flips (e.g. setup-token
+    // expiry) that have no upstream code to attribute.
+    oauthCode: string | null;
+  },
 ): Promise<void> => {
   const previousAccount = current.accounts[accountIndex];
   const flipped = replaceAccountAt(current, accountIndex, account => ({
@@ -256,10 +251,12 @@ const recoverFromRefreshRace = async (
   const rereadState = readClaudeCodeUpstreamState(reread.state);
   const rereadAccount = rereadState.accounts[0];
   if (rereadAccount.state !== 'active') return null;
-  // Invariant: recovery only fires for oauth credentials (setup-token short-circuits earlier).
-  if (rereadAccount.tokenKind !== 'oauth') {
-    throw new Error('Claude Code refresh-race recovery reached on non-oauth credential (structural invariant violation)');
-  }
+  // Setup-token credentials don't reach this recovery path under normal
+  // flow (they short-circuit in the main function); if a concurrent
+  // re-import flipped the credential class between our refresh attempt
+  // and the re-read, give up on recovery and let the original error
+  // surface.
+  if (rereadAccount.tokenKind === 'setup-token') return null;
   if (rereadAccount.refreshToken === usedRefreshToken) return null;
   logInfo('claude_code_refresh_race_recovered', {
     upstream_id: args.upstreamId,

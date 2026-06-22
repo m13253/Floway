@@ -49,11 +49,11 @@ export const OPTIONAL_FLAGS = [
     defaultFor: ['copilot'],
   },
   // The three shim flags default on for every upstream kind that runs
-  // operator-shaped traffic through translation — copilot, azure, custom,
-  // ollama. They are off by default on `codex` (no hosted tools at all) and
-  // on `claude-code` (the shaped-passthrough path forwards caller bytes
-  // verbatim, so a gateway-side shim would silently rewrite a request the
-  // operator deliberately let through unchanged).
+  // operator-shaped traffic through translation. They are off by default on
+  // `codex` (no hosted tools at all) and on `claude-code` (the shaped-
+  // passthrough path forwards caller bytes verbatim, so a gateway-side shim
+  // would silently rewrite a request the operator deliberately let through
+  // unchanged).
   {
     id: 'messages-web-search-shim',
     label: 'Messages web search shim',
@@ -78,15 +78,10 @@ export const OPTIONAL_FLAGS = [
     description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
     defaultFor: [],
   },
-  // Anthropic's Claude Code CLI injects an `x-anthropic-billing-header: …`
-  // line (a literal `cch=00000;` placeholder, not a per-request hash) into
-  // the system prompt. The Claude Code subscription endpoint reads this
-  // block to attribute requests to the user's plan tier, so it must reach
-  // Anthropic intact when the upstream is `claude-code`. Every other
-  // upstream (copilot, azure, custom) treats the block as ordinary prompt
-  // text — it costs nothing for billing there and only pollutes prompt-
-  // cache hygiene. Stripping the block on those providers keeps the cache
-  // key stable across requests without changing model behavior.
+  // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
+  // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
+  // subscription endpoint reads the placeholder block itself to attribute
+  // billing.
   {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',

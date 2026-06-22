@@ -50,11 +50,9 @@ export const fetchClaudeCodeModelsList = async (
   return parsed.data.map(assertApiModel);
 };
 
-const isPlainRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
-
 const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
-  if (!isPlainRecord(value)) throw new TypeError('Claude Code /v1/models entry is not an object');
-  const { id, display_name, max_input_tokens } = value;
+  if (typeof value !== 'object' || value === null) throw new TypeError('Claude Code /v1/models entry is not an object');
+  const { id, display_name, max_input_tokens } = value as Record<string, unknown>;
   if (typeof id !== 'string') throw new TypeError(`Claude Code /v1/models entry missing id: ${JSON.stringify(value).slice(0, 200)}`);
   if (typeof display_name !== 'string') throw new TypeError(`Claude Code /v1/models entry ${id} missing display_name`);
   if (typeof max_input_tokens !== 'number') throw new TypeError(`Claude Code /v1/models entry ${id} missing max_input_tokens`);
@@ -67,9 +65,7 @@ const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
 // pattern is intentionally generic over the family slug — anchoring to
 // `claude-(haiku|opus|sonnet)` would silently drop a future family the
 // upstream exposes before we hard-code its name.
-const DATE_SUFFIX_RE = /-\d{8}$/;
-
-export const aliasFromApiId = (apiId: string): string => apiId.replace(DATE_SUFFIX_RE, '');
+export const aliasFromApiId = (apiId: string): string => apiId.replace(/-\d{8}$/, '');
 
 export const buildClaudeCodeCatalog = (
   apiModels: readonly ClaudeCodeApiModel[],

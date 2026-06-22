@@ -212,6 +212,10 @@ const dispatchResponses = async (
         payload: translated, ctx, store, candidate, headers,
       }),
     );
+  default: {
+    const exhaustive: never = candidate.targetApi;
+    throw new Error(`unexpected targetApi '${exhaustive as string}'`);
+  }
   }
 };
 

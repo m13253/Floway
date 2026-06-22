@@ -860,15 +860,6 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   return c.json(await serializeForResponse(next));
 };
 
-// The default name for setup-token imports falls back to the short account
-// id because the bearer lacks `user:profile` and the email is null. The
-// dashboard surfaces the same id as a header for setup-token cards.
-const claudeCodeSetupTokenDefaultName = (config: ClaudeCodeUpstreamConfig): string => {
-  const account = config.accounts[0];
-  const short = account.accountUuid.slice(0, 8);
-  return `Claude Code Setup Token (${account.email ?? short})`;
-};
-
 export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCodeSetupTokenImportBody>) => {
   const body = c.req.valid('json');
   let fetcher: Fetcher;
@@ -882,10 +873,15 @@ export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCod
 
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
+  // The default name for setup-token imports falls back to the short account
+  // id because the bearer lacks `user:profile` and the email is null. The
+  // dashboard surfaces the same id as a header for setup-token cards.
+  const account = ingestion.config.accounts[0];
+  const defaultName = `Claude Code Setup Token (${account.email ?? account.accountUuid.slice(0, 8)})`;
   const upstream: UpstreamRecord = {
     id: newId(),
     provider: 'claude-code',
-    name: body.name ?? claudeCodeSetupTokenDefaultName(ingestion.config),
+    name: body.name ?? defaultName,
     enabled: true,
     sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,

@@ -2,9 +2,7 @@
 // fields matching the official CLI's persistence shape in
 // ~/.claude/.credentials.json. The CLI keeps them split because the plan
 // name ('max') and the usage-multiplier tier ('default_claude_max_5x') are
-// independent concepts. The dashboard combines them for display: "Max"
-// alone for an unknown rate-limit tier, "Max 5×" / "Max 20×" for the known
-// Anthropic Max tiers.
+// independent concepts.
 
 const PLAN_LABEL: Record<'pro' | 'max' | 'team' | 'enterprise', string> = {
   pro: 'Pro',

@@ -107,8 +107,8 @@ const claudeCodeTokenRequest = async (
     let nestedMessage: string | null = null;
     if (typeof root?.error === 'string') {
       code = root.error;
-    } else if (isRecord(root?.error)) {
-      const err = root.error;
+    } else if (typeof root?.error === 'object' && root.error !== null && !Array.isArray(root.error)) {
+      const err = root.error as Record<string, unknown>;
       if (typeof err.code === 'string') code = err.code;
       if (typeof err.message === 'string') nestedMessage = err.message;
     }
@@ -142,15 +142,18 @@ const claudeCodeTokenRequest = async (
   if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
     throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
   }
+  if (typeof root.scope !== 'string') {
+    throw new Error('Claude Code OAuth /token response missing scope');
+  }
   // Build the typed view explicitly after the runtime guards. `token_type`,
-  // `scope`, `organization`, and `account` ride through verbatim — the data
-  // plane never reads them, so we don't validate them here.
+  // `organization`, and `account` ride through verbatim — the data plane
+  // never reads them, so we don't validate them here.
   return {
     access_token: root.access_token,
     token_type: root.token_type as 'Bearer',
     expires_in: root.expires_in,
     refresh_token: typeof root.refresh_token === 'string' ? root.refresh_token : undefined,
-    scope: root.scope as string,
+    scope: root.scope,
     organization: root.organization as { uuid: string } | undefined,
     account: root.account as { uuid: string; email_address: string } | undefined,
   };
@@ -236,6 +239,3 @@ export const buildClaudeCodeAuthorizeUrl = (args: {
   });
   return `${CLAUDE_CODE_AUTHORIZE_URL}?${params.toString()}`;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
