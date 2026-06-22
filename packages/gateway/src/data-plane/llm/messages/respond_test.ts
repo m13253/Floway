@@ -531,10 +531,8 @@ const makeRespondCtx = (): GatewayCtx => ({
   runtimeLocation: 'test',
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  requestStartedWallMs: 0,
-  respondObservers: [],
-  requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
   currentColo: null,
+  dump: null,
 });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [

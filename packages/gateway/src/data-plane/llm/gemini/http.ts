@@ -2,9 +2,8 @@ import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini }
 import { geminiServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono, readRequestBodyForCapture, type GatewayCtxRequestBody, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBody, type RequestBody, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
@@ -34,7 +33,7 @@ const parseGeminiCountTokensPayload = (body: unknown): GeminiPayload => {
   return shape.generateContentRequest ?? { contents: shape.contents };
 };
 
-const parseGeminiBodyBytes = <T>(requestBody: GatewayCtxRequestBody, project: (body: unknown) => T): T | Response => {
+const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unknown) => T): T | Response => {
   try {
     const raw = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
     return project(raw);
@@ -63,7 +62,7 @@ const respondWithGeminiError = async (
       body: new TextEncoder().encode(body),
     };
     const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
-    return captureResponseAndFinalize(ctx, response);
+    return (ctx.dump?.close(response) ?? response);
   }
   return geminiInternalRpcErrorResponse(500, error);
 };
@@ -83,7 +82,7 @@ export const geminiHttp = async (c: AuthedContext): Promise<Response> => {
 };
 
 const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: boolean): Promise<Response> => {
-  const requestBody = await readRequestBodyForCapture(c);
+  const requestBody = await readRequestBody(c);
   const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
   if (payload instanceof Response) return payload;
 
@@ -92,14 +91,14 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   try {
     const result = await geminiServe.generate({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, wantsStream, ctx);
-    return captureResponseAndFinalize(ctx, response);
+    return (ctx.dump?.close(response) ?? response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, wantsStream);
   }
 };
 
 const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Response> => {
-  const requestBody = await readRequestBodyForCapture(c);
+  const requestBody = await readRequestBody(c);
   const payload = parseGeminiBodyBytes(requestBody, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
@@ -108,7 +107,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
   try {
     const result = await geminiServe.countTokens({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, false, ctx);
-    return captureResponseAndFinalize(ctx, response);
+    return (ctx.dump?.close(response) ?? response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, false);
   }

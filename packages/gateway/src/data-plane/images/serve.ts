@@ -10,9 +10,8 @@
 
 import type { Context } from 'hono';
 
-import { createGatewayCtxFromHono, readRequestBodyForCapture } from '../llm/shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBody } from '../llm/shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { captureResponseAndFinalize } from '../shared/respond-observer.ts';
 import { tokenUsageFromImagesResponse } from '../shared/telemetry/usage.ts';
 
 interface ImagesGenerationsRequestBody {
@@ -43,7 +42,7 @@ const prepareImagesGenerationsRequest = (bytes: Uint8Array): PreparedRequest => 
 };
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBodyForCapture(c);
+  const requestBody = await readRequestBody(c);
   const request = prepareImagesGenerationsRequest(requestBody.bytes);
   if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
 
@@ -61,14 +60,14 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
-  return captureResponseAndFinalize(ctx, response);
+  return (ctx.dump?.close(response) ?? response);
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
   // Buffer the multipart body once. Hono's formData() helper would consume
   // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
   // Response keeps the dump capture honest without a second read on the wire.
-  const requestBody = await readRequestBodyForCapture(c);
+  const requestBody = await readRequestBody(c);
   let form: FormData;
   try {
     form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
@@ -107,5 +106,5 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
-  return captureResponseAndFinalize(ctx, response);
+  return (ctx.dump?.close(response) ?? response);
 };

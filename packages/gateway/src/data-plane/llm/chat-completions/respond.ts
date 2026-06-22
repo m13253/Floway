@@ -4,7 +4,6 @@ import { streamSSE } from 'hono/streaming';
 import { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './events/to-result.ts';
 import { chatCompletionsProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
-import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../../shared/respond-observer.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
@@ -23,40 +22,39 @@ export const respondChatCompletions = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(ctx, result);
+    ctx.dump?.upstreamError(result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(ctx, result);
+    ctx.dump?.internalError(result);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(ctx, result);
+    ctx.dump?.plain();
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
-  // Force `includeUsageChunk: true` on the observer tap so the dashboard
+  // Force `includeUsageChunk: true` on the dump frame so the dashboard
   // always sees the trailing usage frame, independent of the wire-level
   // option the client requested.
-  const tapped = tapFrames(result.events, ctx, frame => chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }));
-  const frames = observeChatCompletionsFrames(tapped, state, wantsStream);
+  const frames = observeChatCompletionsFrames(result.events, state, wantsStream, ctx);
 
   if (!wantsStream) {
     try {
       const response = await collectChatCompletionsProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
-      notifySuccess(ctx, metadata.modelIdentity, usage);
+      ctx.dump?.success(metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(ctx, error);
+      ctx.dump?.error(error);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error, 'chat-completions')) };
     }
   }
@@ -73,9 +71,9 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(ctx, `chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
+        ctx.dump?.error(`chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(ctx, metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
@@ -112,8 +110,9 @@ const isChatCompletionsFailureFrame = (frame: ProtocolFrame<ChatCompletionsStrea
 
 const isChatCompletionsTerminalFrame = (frame: ProtocolFrame<ChatCompletionsStreamEvent>) => frame.type === 'done' || isChatCompletionsFailureFrame(frame);
 
-const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
+const observeChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
   for await (const frame of frames) {
+    ctx.dump?.frame(frame, f => chatCompletionsProtocolFrameToSSEFrame(f, { includeUsageChunk: true }));
     const failed = isChatCompletionsFailureFrame(frame);
     if (failed) state.failed = true;
     if (observeUsage) {

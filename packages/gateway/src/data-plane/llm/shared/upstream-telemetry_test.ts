@@ -25,14 +25,12 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     upstreamIds: null,
     wantsStream: true,
     requestStartedAt: 0,
-    requestStartedWallMs: 0,
     runtimeLocation: 'test',
     currentColo: null,
+    dump: null,
     abortSignal: downstream.signal,
     downstreamAbortController: downstream,
     backgroundScheduler: promise => { void promise; },
-    respondObservers: [],
-    requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
     ...overrides,
   };
 };

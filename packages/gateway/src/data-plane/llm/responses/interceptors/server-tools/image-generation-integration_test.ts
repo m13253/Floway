@@ -139,11 +139,9 @@ const gatewayCtx = (): GatewayCtx => ({
   wantsStream: true,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  requestStartedWallMs: 0,
-  respondObservers: [],
-  requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
 });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {

@@ -345,11 +345,9 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   wantsStream: true,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  requestStartedWallMs: 0,
-  respondObservers: [],
-  requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
 });
 
 const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
@@ -4488,11 +4486,9 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     wantsStream: true,
     runtimeLocation: 'test',
     currentColo: null,
+    dump: null,
     backgroundScheduler: () => {},
     requestStartedAt: 0,
-    requestStartedWallMs: 0,
-    respondObservers: [],
-    requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
     abortSignal: controller.signal,
   };
   const script = scriptedRun([

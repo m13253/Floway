@@ -3,7 +3,6 @@ import { streamSSE } from 'hono/streaming';
 
 import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
 import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
-import { notifyError, notifyInternalError, notifyPlain, notifySuccess, notifyUpstreamError, tapFrames } from '../../shared/respond-observer.ts';
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -28,39 +27,37 @@ export const respondMessages = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyUpstreamError(ctx, result);
+    ctx.dump?.upstreamError(result);
     return { success: false, response: upstreamErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    notifyInternalError(ctx, result);
+    ctx.dump?.internalError(result);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    notifyPlain(ctx, result);
+    ctx.dump?.plain();
     return { success: true, response: plainResultToResponse(result) };
   }
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  // Tap before the wantsStream branch so the dump captures the protocol event view in both folded-JSON and SSE modes.
-  const tapped = tapFrames(result.events, ctx, messagesProtocolFrameToSSEFrame);
-  const frames = observeMessagesFrames(tapped, state, usageState, wantsStream);
+  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream, ctx);
 
   if (!wantsStream) {
     try {
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
-      notifySuccess(ctx, metadata.modelIdentity, usage);
+      ctx.dump?.success(metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      notifyError(ctx, error);
+      ctx.dump?.error(error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error, 'messages')) };
     }
   }
@@ -77,9 +74,9 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        notifyError(ctx, `messages stream failed (completion=${completion}, source-failed=${state.failed})`);
+        ctx.dump?.error(`messages stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
-        notifySuccess(ctx, metadata.modelIdentity, state.usage);
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
@@ -196,8 +193,10 @@ const observeMessagesFrames = async function* (
   state: SourceStreamState,
   usageState: MessagesStreamUsageState,
   observeUsage: boolean,
+  ctx: GatewayCtx,
 ) {
   for await (const frame of frames) {
+    ctx.dump?.frame(frame, messagesProtocolFrameToSSEFrame);
     const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
     if (observeUsage) {

@@ -17,7 +17,6 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
-import { notifyError, notifyPlain, notifySuccess, notifyUpstreamError } from './respond-observer.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
@@ -148,7 +147,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        notifyUpstreamError(ctx, { type: 'upstream-error', status: response.status, headers: new Headers(), body: new Uint8Array() });
+        ctx.dump?.upstreamError({ type: 'upstream-error', status: response.status, headers: new Headers(), body: new Uint8Array() });
         return forwardUpstreamResponse(response);
       }
 
@@ -156,7 +155,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
-      notifySuccess(ctx, { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
+      ctx.dump?.success({ model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
       if (usage) {
         scheduleUsageRecord(
           ctx.backgroundScheduler,
@@ -181,12 +180,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) {
-        notifyPlain(ctx, { type: 'plain', status: 0, headers: new Headers(), body: new Uint8Array() });
+        ctx.dump?.plain();
         return forwarded;
       }
     }
     recordRequestPerformance(ctx.backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
-    notifyError(ctx, e);
+    ctx.dump?.error(e);
     return c.json({ error: toInternalDebugError(e, sourceApi) }, 502);
   }
 };

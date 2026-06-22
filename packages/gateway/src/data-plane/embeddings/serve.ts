@@ -3,9 +3,8 @@
 
 import type { Context } from 'hono';
 
-import { createGatewayCtxFromHono, readRequestBodyForCapture } from '../llm/shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBody } from '../llm/shared/gateway-ctx.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { captureResponseAndFinalize } from '../shared/respond-observer.ts';
 import { tokenUsageFromPromptTokenResponse } from '../shared/telemetry/usage.ts';
 
 interface EmbeddingsRequestBody {
@@ -44,7 +43,7 @@ const prepareEmbeddingsRequest = (bytes: Uint8Array): { type: 'ok'; body: Record
 };
 
 export const embeddings = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBodyForCapture(c);
+  const requestBody = await readRequestBody(c);
   const request = prepareEmbeddingsRequest(requestBody.bytes);
   if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
 
@@ -62,5 +61,5 @@ export const embeddings = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromPromptTokenResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
   });
-  return captureResponseAndFinalize(ctx, response);
+  return (ctx.dump?.close(response) ?? response);
 };

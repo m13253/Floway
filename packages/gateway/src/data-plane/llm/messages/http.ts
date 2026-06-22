@@ -2,9 +2,8 @@ import { respondMessages } from './respond.ts';
 import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { captureResponseAndFinalize } from '../../shared/respond-observer.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono, readRequestBodyForCapture, type GatewayCtxRequestBody } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, readRequestBody, type RequestBody } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -36,21 +35,21 @@ const rejectBodyBetaResponse = (payload: MessagesPayload): Response | null => {
 // in-flow `internal-error` ExecuteResult produces. Anything that escapes
 // the data plane through Hono's onError is a programmer error, not a user-
 // visible failure mode.
-const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: GatewayCtxRequestBody): Promise<Response> => {
+const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error, 'messages'));
   const { response } = await respondMessages(c, result, false, ctx);
-  return captureResponseAndFinalize(ctx, response);
+  return (ctx.dump?.close(response) ?? response);
 };
 
-const parsePayload = (requestBody: GatewayCtxRequestBody): MessagesPayload =>
+const parsePayload = (requestBody: RequestBody): MessagesPayload =>
   JSON.parse(new TextDecoder().decode(requestBody.bytes)) as MessagesPayload;
 
 export const messagesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBodyForCapture(c);
+    const requestBody = await readRequestBody(c);
     try {
       const payload = parsePayload(requestBody);
       const rejected = rejectBodyBetaResponse(payload);
@@ -61,14 +60,14 @@ export const messagesHttp = {
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
-      return captureResponseAndFinalize(ctx, response);
+      return (ctx.dump?.close(response) ?? response);
     } catch (error) {
       return await respondWithInternalError(c, error, requestBody);
     }
   },
 
   countTokens: async (c: AuthedContext): Promise<Response> => {
-    const requestBody = await readRequestBodyForCapture(c);
+    const requestBody = await readRequestBody(c);
     try {
       const payload = parsePayload(requestBody);
       const rejected = rejectBodyBetaResponse(payload);
@@ -78,7 +77,7 @@ export const messagesHttp = {
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.countTokens({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);
-      return captureResponseAndFinalize(ctx, response);
+      return (ctx.dump?.close(response) ?? response);
     } catch (error) {
       return await respondWithInternalError(c, error, requestBody);
     }

@@ -15,11 +15,9 @@ const stubCtx: GatewayCtx = {
   wantsStream: false,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  requestStartedWallMs: 0,
-  respondObservers: [],
-  requestSnapshot: { method: 'POST', path: '/test', headers: [], contentType: '', body: new Uint8Array(), streamError: null },
 };
 
 const okEvents = () =>
