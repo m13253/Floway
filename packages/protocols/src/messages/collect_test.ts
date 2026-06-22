@@ -146,7 +146,83 @@ test('collectMessagesStream returns a catastrophic outcome when message_start is
 
   assertEquals(outcome.result, null);
   assertEquals(outcome.truncated, true);
+  assertEquals(outcome.warnings, []);
   if (!outcome.error?.includes('message_start')) {
     throw new Error(`expected error to mention message_start, got ${outcome.error}`);
   }
+});
+
+test('collectMessagesStream surfaces an unparseable tool_use input_json buffer as a warning and leaves input empty', () => {
+  // Truncated partial_json — the upstream cut the stream mid-token, so the
+  // buffer accumulated `{"q":"hi` without ever receiving the closing
+  // brace. The collector must NOT invent a synthetic `_partial_json` key on
+  // the typed `input` shape; it should leave `input` empty and surface the
+  // raw fragment via `warnings` instead.
+  const events: DumpStreamEvent[] = [
+    dumpEvent({
+      type: 'message_start',
+      message: {
+        id: 'msg_partial',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 2, output_tokens: 0 },
+      },
+    }),
+    dumpEvent({
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'toolu_partial', name: 'search', input: {} },
+    }),
+    dumpEvent({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"hi' } }),
+  ];
+
+  const outcome = collectMessagesStream(events);
+
+  assertEquals(outcome.error, null);
+  assertEquals(outcome.truncated, true);
+  assertEquals(outcome.result!.content.length, 1);
+  assertEquals(outcome.result!.content[0], { type: 'tool_use', id: 'toolu_partial', name: 'search', input: {} });
+  assertEquals(outcome.warnings.length, 1);
+  const warning = outcome.warnings[0]!;
+  if (!warning.includes('toolu_partial') || !warning.includes('{"q":"hi')) {
+    throw new Error(`warning should name the block and quote the raw fragment, got: ${warning}`);
+  }
+});
+
+test('collectMessagesStream returns an empty warnings array on a clean tool_use round-trip', () => {
+  // Sanity: a tool_use block whose input_json_delta buffer parses cleanly
+  // must not push any warning. The shape stays { warnings: [] } on the
+  // happy path.
+  const events: DumpStreamEvent[] = [
+    dumpEvent({
+      type: 'message_start',
+      message: {
+        id: 'msg_clean',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 0 },
+      },
+    }),
+    dumpEvent({
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'toolu_clean', name: 'lookup', input: {} },
+    }),
+    dumpEvent({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"q":"ok"}' } }),
+    dumpEvent({ type: 'content_block_stop', index: 0 }),
+    dumpEvent({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 3 } }),
+    dumpEvent({ type: 'message_stop' }),
+  ];
+
+  const outcome = collectMessagesStream(events);
+  assertEquals(outcome.warnings, []);
+  assertEquals(outcome.result!.content[0], { type: 'tool_use', id: 'toolu_clean', name: 'lookup', input: { q: 'ok' } });
 });

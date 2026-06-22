@@ -54,16 +54,27 @@ const applyDelta = (block: MessagesAssistantContentBlock, event: MessagesContent
   return block;
 };
 
-const finalizeJsonBuffer = (block: MessagesAssistantContentBlock, buffered: string | undefined): MessagesAssistantContentBlock => {
-  if (block.type !== 'tool_use' || buffered === undefined) return block;
-  if (buffered.length === 0) return { ...block, input: {} };
+interface JsonBufferOutcome {
+  block: MessagesAssistantContentBlock;
+  warning: string | null;
+}
+
+const finalizeJsonBuffer = (block: MessagesAssistantContentBlock, buffered: string | undefined, index: number): JsonBufferOutcome => {
+  if (block.type !== 'tool_use' || buffered === undefined) return { block, warning: null };
+  if (buffered.length === 0) return { block: { ...block, input: {} }, warning: null };
   try {
-    return { ...block, input: JSON.parse(buffered) as Record<string, unknown> };
-  } catch {
-    // A truncated stream can leave the partial_json buffer mid-token. Surface
-    // the raw fragment under `_partial_json` so the dashboard can show what
-    // arrived.
-    return { ...block, input: { _partial_json: buffered } };
+    return { block: { ...block, input: JSON.parse(buffered) as Record<string, unknown> }, warning: null };
+  } catch (err) {
+    // A truncated stream can leave the partial_json buffer mid-token. Hand
+    // the typed `input` back as `{}` rather than synthesising a key the
+    // shape does not declare, and surface the unparseable fragment as a
+    // warning so the dashboard can show what actually arrived.
+    const reason = err instanceof Error ? err.message : String(err);
+    const preview = buffered.length > 80 ? `${buffered.slice(0, 80)}…` : buffered;
+    return {
+      block: { ...block, input: {} },
+      warning: `content[${index}] tool_use ${block.name} (id=${block.id}): partial_json buffer did not parse (${reason}); raw fragment: ${preview}`,
+    };
   }
 };
 
@@ -88,6 +99,7 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Colle
   let result: MessagesResult | null = null;
   const content: MessagesAssistantContentBlock[] = [];
   const jsonBuffers = new Map<number, string>();
+  const warnings: string[] = [];
   let error: string | null = null;
   let sawMessageStop = false;
 
@@ -127,7 +139,9 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Colle
     case 'content_block_stop': {
       const block = content[event.index];
       if (block !== undefined) {
-        content[event.index] = finalizeJsonBuffer(block, jsonBuffers.get(event.index));
+        const finalized = finalizeJsonBuffer(block, jsonBuffers.get(event.index), event.index);
+        content[event.index] = finalized.block;
+        if (finalized.warning) warnings.push(finalized.warning);
       }
       jsonBuffers.delete(event.index);
       break;
@@ -144,16 +158,20 @@ export const collectMessagesStream = (events: readonly DumpStreamEvent[]): Colle
   }
 
   if (result === null) {
-    return { result: null, error: error ?? 'no message_start event in stream', truncated: true };
+    return { result: null, error: error ?? 'no message_start event in stream', truncated: true, warnings };
   }
 
   // Any tool_use block whose `input_json_delta` buffer was never closed by a
   // `content_block_stop` is still folded so the partial buffer is visible.
   for (const [index, buffered] of jsonBuffers) {
     const block = content[index];
-    if (block !== undefined) content[index] = finalizeJsonBuffer(block, buffered);
+    if (block !== undefined) {
+      const finalized = finalizeJsonBuffer(block, buffered, index);
+      content[index] = finalized.block;
+      if (finalized.warning) warnings.push(finalized.warning);
+    }
   }
 
   const truncated = !sawMessageStop || error !== null;
-  return { result: { ...result, content }, error, truncated };
+  return { result: { ...result, content }, error, truncated, warnings };
 };

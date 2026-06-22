@@ -190,6 +190,7 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       result: { ...terminal, output: terminal.output.map(cloneOutputItem) },
       error: null,
       truncated: terminal.status === 'incomplete' || terminal.status === 'failed',
+      warnings: [],
     };
   }
 
@@ -199,6 +200,7 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
       result: null,
       error: error ?? 'no response.created or terminal event in stream',
       truncated: true,
+      warnings: [],
     };
   }
 
@@ -206,5 +208,6 @@ export const collectResponsesStream = (events: readonly DumpStreamEvent[]): Coll
     result: { ...envelope, output },
     error,
     truncated: true,
+    warnings: [],
   };
 };

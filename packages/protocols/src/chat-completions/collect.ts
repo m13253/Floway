@@ -126,6 +126,7 @@ export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[])
       result: null,
       error: error ?? 'no chunks in stream',
       truncated: true,
+      warnings: [],
     };
   }
 
@@ -158,5 +159,6 @@ export const collectChatCompletionsStream = (events: readonly DumpStreamEvent[])
     },
     error,
     truncated,
+    warnings: [],
   };
 };

@@ -93,6 +93,7 @@ export const collectGeminiStream = (events: readonly DumpStreamEvent[]): Collect
       result: null,
       error: error ?? 'no chunks in stream',
       truncated: true,
+      warnings: [],
     };
   }
 
@@ -110,5 +111,6 @@ export const collectGeminiStream = (events: readonly DumpStreamEvent[]): Collect
     },
     error,
     truncated,
+    warnings: [],
   };
 };
