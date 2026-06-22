@@ -11,16 +11,23 @@ import { Button, Spinner } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
 
-const props = defineProps<{
-  mode: 'create' | 'edit';
-  record: ClaudeCodeUpstreamRecord | null;
-  // Operator's current edit-form proxy_fallback_list. Forwarded into
-  // import / re-import (so the OAuth bootstrap routes through the chain
-  // the operator is editing AND the chain is persisted on the new row)
-  // and into refresh-now (so a refresh fired before saving uses the
-  // in-progress chain rather than the persisted one).
-  proxyFallbackList: ProxyFallbackEntry[];
-}>();
+const props = defineProps<
+  | {
+    mode: 'create';
+    record: null;
+    // Operator's current edit-form proxy_fallback_list. Forwarded into
+    // import / re-import (so the OAuth bootstrap routes through the chain
+    // the operator is editing AND the chain is persisted on the new row)
+    // and into refresh-now (so a refresh fired before saving uses the
+    // in-progress chain rather than the persisted one).
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+  | {
+    mode: 'edit';
+    record: ClaudeCodeUpstreamRecord;
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+>();
 
 const emit = defineEmits<{
   imported: [record: UpstreamRecord];
@@ -153,7 +160,7 @@ const submit = async () => {
       if (payload.kind === 'oauth-credentials_json') return create['claude-code-import'].$post({ json: { credentials_json: payload.credentials_json, ...proxyExtras } });
       return create['claude-code-import'].$post({ json: { callback: payload.callback, ...proxyExtras } });
     }
-    const param = { id: props.record!.id };
+    const param = { id: props.record.id };
     const edit = api.api.upstreams[':id'];
     if (payload.kind === 'setup-token-callback') return edit['claude-code-setup-token-reimport'].$post({ param, json: { callback: payload.callback, ...proxyExtras } });
     if (payload.kind === 'oauth-credentials_json') return edit['claude-code-reimport'].$post({ param, json: { credentials_json: payload.credentials_json, ...proxyExtras } });
@@ -183,7 +190,7 @@ const refreshable = computed(() => {
 
 const refreshTokenNow = async () => {
   if (refreshing.value) return;
-  if (!props.record) throw new Error('refreshTokenNow called without a record');
+  if (props.mode !== 'edit') return;
   const id = props.record.id;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
@@ -201,7 +208,7 @@ const refreshTokenNow = async () => {
   emit('quota-refreshed', data);
 };
 
-// The probe-quota route returns the live `/api/oauth/usage` body spread at
+// The claude-code-probe-quota route returns the live `/api/oauth/usage` body spread at
 // the top level alongside a gateway-stamped `fetched_at`. The gateway also
 // persists into `state.accounts[0].usageProbeSnapshot`, but we don't have a
 // per-record GET endpoint to re-read — and re-running the upstreams list
@@ -212,7 +219,7 @@ const refreshTokenNow = async () => {
 // `data: unknown` slot exactly as the gateway persists it.
 const refreshQuotaNow = async () => {
   if (probing.value) return;
-  if (!props.record) throw new Error('refreshQuotaNow invoked without a record — AccountCard should be hidden in create mode');
+  if (props.mode !== 'edit') return;
   const record = props.record;
   // The gateway route mints an access token via ensureClaudeCodeAccessToken,
   // which throws when state has no account credentials. Refuse here so the
@@ -224,7 +231,7 @@ const refreshQuotaNow = async () => {
   }
   probing.value = true;
   const { data, error } = await callApi<{ fetched_at: string; [k: string]: unknown }>(
-    () => api.api.upstreams[':id']['probe-quota'].$post({
+    () => api.api.upstreams[':id']['claude-code-probe-quota'].$post({
       param: { id: record.id },
       json: { proxy_fallback_list: props.proxyFallbackList },
     }),

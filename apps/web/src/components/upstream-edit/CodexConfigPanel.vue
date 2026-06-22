@@ -11,15 +11,22 @@ import { Button, Spinner } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
 
-const props = defineProps<{
-  mode: 'create' | 'edit';
-  record: CodexUpstreamRecord | null;
-  // Current edit-form chain; forwarded into import / re-import (so the OAuth
-  // bootstrap routes through the chain the operator is editing AND the
-  // chain is persisted on the row) and into refresh-now (so a refresh fired
-  // before saving uses the in-progress chain).
-  proxyFallbackList: ProxyFallbackEntry[];
-}>();
+const props = defineProps<
+  | {
+    mode: 'create';
+    record: null;
+    // Current edit-form chain; forwarded into import / re-import (so the OAuth
+    // bootstrap routes through the chain the operator is editing AND the
+    // chain is persisted on the row) and into refresh-now (so a refresh fired
+    // before saving uses the in-progress chain).
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+  | {
+    mode: 'edit';
+    record: CodexUpstreamRecord;
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+>();
 
 const emit = defineEmits<{
   imported: [record: UpstreamRecord];
@@ -111,7 +118,7 @@ const submit = async () => {
         () => api.api.upstreams['codex-import'].$post({ json: payload }),
       )
     : await callApi<UpstreamRecord>(
-        () => api.api.upstreams[':id']['codex-reimport'].$post({ param: { id: props.record!.id }, json: payload }),
+        () => api.api.upstreams[':id']['codex-reimport'].$post({ param: { id: props.record.id }, json: payload }),
       );
   submitting.value = false;
   if (result.error) { emit('error', result.error.message); return; }
@@ -127,10 +134,11 @@ const submit = async () => {
 };
 
 const refreshTokenNow = async () => {
+  if (props.mode !== 'edit') return;
   refreshing.value = true;
   const { data, error } = await callApi<UpstreamRecord>(
     () => api.api.upstreams[':id']['codex-refresh-now'].$post({
-      param: { id: props.record!.id },
+      param: { id: props.record.id },
       json: { proxy_fallback_list: props.proxyFallbackList },
     }),
   );

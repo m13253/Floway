@@ -44,7 +44,7 @@ export const useSettingsPageData = defineBasicLoader(async () => {
 definePage({ meta: { requiresAdmin: true } });
 
 const router = useRouter();
-const { upstreams, loading: storeLoading, error: storeError, load } = useUpstreamsStore();
+const { upstreams, loading: storeLoading, load } = useUpstreamsStore();
 const modelsStore = useModelsStore();
 const proxiesStore = useProxiesStore();
 const { load: loadProxies } = proxiesStore;
@@ -73,10 +73,6 @@ const openProxyDialog = (record: ProxyRecord | null): void => {
 
 <template>
   <div>
-    <div v-if="storeError" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
-      {{ storeError }}
-    </div>
-
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
         <UpstreamsSettingsCard

@@ -6,14 +6,24 @@ import type { CopilotQuotaSnapshot, ProxyFallbackEntry, UpstreamRecord } from '.
 
 type CopilotUpstreamRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
 
-defineProps<{
-  record: CopilotUpstreamRecord | null;
-  initialQuota?: CopilotQuotaSnapshot | null;
-  initialQuotaError?: string | null;
-  // Current edit-form chain forwarded into the device-flow poll so the
-  // GitHub-side calls honor the in-progress proxy override.
-  proxyFallbackList: ProxyFallbackEntry[];
-}>();
+defineProps<
+  | {
+    mode: 'create';
+    record: null;
+    initialQuota?: CopilotQuotaSnapshot | null;
+    initialQuotaError?: string | null;
+    // Current edit-form chain forwarded into the device-flow poll so the
+    // GitHub-side calls honor the in-progress proxy override.
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+  | {
+    mode: 'edit';
+    record: CopilotUpstreamRecord;
+    initialQuota?: CopilotQuotaSnapshot | null;
+    initialQuotaError?: string | null;
+    proxyFallbackList: ProxyFallbackEntry[];
+  }
+>();
 
 defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
 </script>

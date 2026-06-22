@@ -24,10 +24,8 @@ const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 
-const props = defineProps<{
+type CommonConfigPanelProps = {
   provider: UpstreamProviderKind;
-  mode: 'create' | 'edit';
-  record: UpstreamRecord | null;
   flags: FlagDef[];
   customBearerTokenSet: boolean;
   azureApiKeySet: boolean;
@@ -45,24 +43,43 @@ const props = defineProps<{
   refreshing: boolean;
   coloAware: boolean;
   currentColo: string | null;
-}>();
+};
+
+const props = defineProps<
+  | (CommonConfigPanelProps & { mode: 'create'; record: null })
+  | (CommonConfigPanelProps & { mode: 'edit'; record: UpstreamRecord })
+>();
 
 defineEmits<{
   'fetch-models': [];
   'refresh-cache': [];
-  'copilot-completed': [upstream: UpstreamRecord | undefined];
-  'codex-imported': [upstream: UpstreamRecord];
-  'codex-error': [message: string];
-  'claude-code-imported': [upstream: UpstreamRecord];
+  imported: [record: UpstreamRecord];
+  error: [message: string];
   'claude-code-quota-refreshed': [upstream: UpstreamRecord];
-  'claude-code-error': [message: string];
 }>();
 
-// Per-provider narrowed views of the record so each child panel receives the
-// matching discriminated variant without inline casts.
-const codexRecord = computed(() => props.record?.provider === 'codex' ? props.record : null);
-const claudeCodeRecord = computed(() => props.record?.provider === 'claude-code' ? props.record : null);
-const copilotRecord = computed(() => props.record?.provider === 'copilot' ? props.record : null);
+// Per-provider narrowed views of (mode, record) so each child panel receives
+// the matching discriminated variant without inline casts. Edit mode and a
+// record-of-the-wrong-provider both yield null — the per-provider section is
+// already gated on `provider === '<kind>'` in the template, so this only
+// happens during the brief window when a sibling section is mounting.
+type CodexRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
+type ClaudeCodeRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
+type CopilotRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
+type PanelMode<R> = { mode: 'create'; record: null } | { mode: 'edit'; record: R };
+
+const codexPanel = computed<PanelMode<CodexRecord> | null>(() => {
+  if (props.mode === 'create') return { mode: 'create', record: null };
+  return props.record.provider === 'codex' ? { mode: 'edit', record: props.record } : null;
+});
+const claudeCodePanel = computed<PanelMode<ClaudeCodeRecord> | null>(() => {
+  if (props.mode === 'create') return { mode: 'create', record: null };
+  return props.record.provider === 'claude-code' ? { mode: 'edit', record: props.record } : null;
+});
+const copilotPanel = computed<PanelMode<CopilotRecord> | null>(() => {
+  if (props.mode === 'create') return { mode: 'create', record: null };
+  return props.record.provider === 'copilot' ? { mode: 'edit', record: props.record } : null;
+});
 
 // Intrinsic floor for the aside: smallest height at which every
 // non-flag-editor section is fully laid out AND the flag editor still has
@@ -176,34 +193,32 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'copilot'" class="shrink-0">
+      <section v-else-if="provider === 'copilot' && copilotPanel" class="shrink-0">
         <CopilotConfigPanel
-          :record="copilotRecord"
+          v-bind="copilotPanel"
           :initial-quota="initialCopilotQuota"
           :initial-quota-error="initialCopilotQuotaError"
           :proxy-fallback-list="proxyFallbackList"
-          @completed="u => $emit('copilot-completed', u)"
+          @completed="u => u && $emit('imported', u)"
         />
       </section>
 
-      <section v-else-if="provider === 'codex'" class="shrink-0">
+      <section v-else-if="provider === 'codex' && codexPanel" class="shrink-0">
         <CodexConfigPanel
-          :mode="mode"
-          :record="codexRecord"
+          v-bind="codexPanel"
           :proxy-fallback-list="proxyFallbackList"
-          @imported="u => $emit('codex-imported', u)"
-          @error="m => $emit('codex-error', m)"
+          @imported="u => $emit('imported', u)"
+          @error="m => $emit('error', m)"
         />
       </section>
 
-      <section v-else-if="provider === 'claude-code'" class="shrink-0">
+      <section v-else-if="provider === 'claude-code' && claudeCodePanel" class="shrink-0">
         <ClaudeCodeConfigPanel
-          :mode="mode"
-          :record="claudeCodeRecord"
+          v-bind="claudeCodePanel"
           :proxy-fallback-list="proxyFallbackList"
-          @imported="u => $emit('claude-code-imported', u)"
+          @imported="u => $emit('imported', u)"
           @quota-refreshed="u => $emit('claude-code-quota-refreshed', u)"
-          @error="m => $emit('claude-code-error', m)"
+          @error="m => $emit('error', m)"
         />
       </section>
 

@@ -7,7 +7,7 @@ import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
-import { userFromContext } from '../../middleware/auth.ts';
+import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
@@ -254,9 +254,8 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   return c.json(await serializeForResponse(record), 201);
 };
 
-export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) => {
+export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
@@ -306,9 +305,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) 
   return c.json(await serializeForResponse(next));
 };
 
-export const deleteUpstream = async (c: Context) => {
+export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
@@ -393,9 +391,8 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
 // read-only view for the dashboard — Copilot's catalog in particular is fixed
 // by the upstream and the operator cannot edit it. Routes through the SWR
 // models cache; `?refresh=true` forces a fresh upstream fetch.
-export const listUpstreamModels = async (c: Context) => {
+export const listUpstreamModels = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
 
@@ -606,9 +603,8 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   return c.json(await serializeForResponse(upstream), 201);
 };
 
-export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) => {
+export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
@@ -648,9 +644,8 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody>) =>
 // The body carries an optional `proxy_fallback_list` override so a refresh
 // fired from an unsaved edit-form uses the in-progress chain rather than
 // the persisted one. See proxy-resolution.ts for the layered policy.
-export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody>) => {
+export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'codex') {
     return c.json({ error: 'Codex upstream not found' }, 404);
@@ -823,9 +818,8 @@ export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBod
   return c.json(await serializeForResponse(upstream), 201);
 };
 
-export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimportBody>) => {
+export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimportBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'claude-code') {
     return c.json({ error: 'Claude Code upstream not found' }, 404);
@@ -906,9 +900,8 @@ export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCod
   return c.json(await serializeForResponse(upstream), 201);
 };
 
-export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeCodeSetupTokenReimportBody>) => {
+export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeCodeSetupTokenReimportBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'claude-code') {
     return c.json({ error: 'Claude Code upstream not found' }, 404);
@@ -1056,9 +1049,8 @@ const attemptClaudeCodeRefresh = async (id: string, fetcher: Fetcher): Promise<R
 // `recoverFromRefreshRace` in access-token-cache.ts): on loss, re-read the
 // row; if a sibling rotated successfully, report success instead of a
 // misleading "credential dead" toast.
-export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody>) => {
+export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefreshNowBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (existing?.provider !== 'claude-code') {
     return c.json({ error: 'Claude Code upstream not found' }, 404);
@@ -1181,9 +1173,8 @@ const persistUsageProbeSnapshot = async (
   }
 };
 
-export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbeQuotaBody>) => {
+export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbeQuotaBody, '/:id'>) => {
   const id = c.req.param('id');
-  if (!id) return c.json({ error: 'upstream id is required' }, 400);
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
   // Setup-token credentials lack the user:profile scope; /api/oauth/usage

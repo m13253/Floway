@@ -26,11 +26,7 @@ import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { providerMeta } from '../upstreams/provider-meta.ts';
 import { Button } from '@floway-dev/ui';
 
-const props = defineProps<{
-  mode: 'create' | 'edit';
-  record: UpstreamRecord | null;
-  // Default provider for create mode; ignored in edit mode (taken from record).
-  initialProvider?: UpstreamProviderKind;
+type CommonPageProps = {
   nextSortOrder: number;
   flags: FlagDef[];
   // Resolved model list pre-fetched by the route loader from
@@ -41,7 +37,21 @@ const props = defineProps<{
   initialUpstreamModelsError?: string | null;
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;
-}>();
+};
+
+const props = defineProps<
+  | (CommonPageProps & {
+    mode: 'create';
+    record: null;
+    // Default provider for create mode; ignored in edit mode (taken from record).
+    initialProvider: UpstreamProviderKind;
+  })
+  | (CommonPageProps & {
+    mode: 'edit';
+    record: UpstreamRecord;
+    initialProvider?: undefined;
+  })
+>();
 
 const emit = defineEmits<{
   saved: [record: UpstreamRecord | null];
@@ -57,17 +67,20 @@ const currentColo = computed(() => runtimeInfo.value?.colo ?? null);
 type CreateBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['json'];
 
-// Edit mode always carries `record` (parent's v-if guards the null case);
-// create mode always carries `initialProvider` (the route param locks the
-// provider for the lifetime of this page).
-const activeProvider = computed<UpstreamProviderKind>(() => {
-  if (props.mode === 'edit') {
-    if (!props.record) throw new Error('UpstreamEditPage: edit mode requires a non-null record');
-    return props.record.provider;
-  }
-  if (!props.initialProvider) throw new Error('UpstreamEditPage: create mode requires an initialProvider');
-  return props.initialProvider;
-});
+// Edit mode: provider follows the record. Create mode: locked in by the
+// route param at mount time.
+const activeProvider = computed<UpstreamProviderKind>(() => props.mode === 'edit' ? props.record.provider : props.initialProvider);
+
+// Discriminated (mode, record) pair forwarded to UpstreamConfigPanel. The
+// page's own union already guarantees this shape; the explicit pairing
+// re-narrows for the template binding so Vue's prop-type check accepts it
+// alongside the live `liveRecord` ref (which is typed as `UpstreamRecord | null`
+// since it must survive a brief null window during `upstreamsStore.load()`).
+const modeRecord = computed<{ mode: 'create'; record: null } | { mode: 'edit'; record: UpstreamRecord }>(
+  () => liveRecord.value && props.mode === 'edit'
+    ? { mode: 'edit', record: liveRecord.value }
+    : { mode: 'create', record: null },
+);
 const name = ref('');
 const enabled = ref(true);
 const sortOrder = ref<number>(props.nextSortOrder);
@@ -144,7 +157,7 @@ const seedFresh = () => {
   ollamaDraft.value = blankOllamaDraft();
 };
 
-if (props.mode === 'edit' && props.record) seedFromRecord(props.record);
+if (props.mode === 'edit') seedFromRecord(props.record);
 else seedFresh();
 
 const customBearerTokenSet = computed(() => {
@@ -356,13 +369,13 @@ const save = async () => {
       const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: body }));
       if (error) { saveError.value = error.message; return; }
       emit('saved', data);
-    } else if (props.record) {
+    } else {
       const patch: PatchBody = baseFields();
       if (activeProvider.value === 'custom') patch.config = buildCustomConfig();
       else if (activeProvider.value === 'azure') patch.config = buildAzureConfig();
       else if (activeProvider.value === 'ollama') patch.config = buildOllamaConfig();
       const { error } = await callApi(
-        () => api.api.upstreams[':id'].$patch({ param: { id: props.record!.id }, json: patch }),
+        () => api.api.upstreams[':id'].$patch({ param: { id: props.record.id }, json: patch }),
       );
       if (error) { saveError.value = error.message; return; }
       emit('saved', props.record);
@@ -377,21 +390,7 @@ const cancel = async () => {
   await router.push('/dashboard/settings');
 };
 
-const onCopilotCompleted = async (newRecord: UpstreamRecord | undefined) => {
-  emit('saved', newRecord ?? null);
-  if (newRecord) await router.replace(`/dashboard/upstreams/${newRecord.id}`);
-};
-
-const onCodexImported = async (newRecord: UpstreamRecord) => {
-  emit('saved', newRecord);
-  await router.replace(`/dashboard/upstreams/${newRecord.id}`);
-};
-
-const onCodexError = (message: string) => {
-  saveError.value = message;
-};
-
-const onClaudeCodeImported = async (newRecord: UpstreamRecord) => {
+const onImported = async (newRecord: UpstreamRecord) => {
   emit('saved', newRecord);
   await router.replace(`/dashboard/upstreams/${newRecord.id}`);
 };
@@ -404,7 +403,7 @@ const onClaudeCodeQuotaRefreshed = (newRecord: UpstreamRecord) => {
   liveRecord.value = newRecord;
 };
 
-const onClaudeCodeError = (message: string) => {
+const onImportError = (message: string) => {
   saveError.value = message;
 };
 
@@ -513,7 +512,8 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         <span class="text-white/15">/</span>
         <RouterLink to="/dashboard/settings" class="hover:text-gray-300">Upstreams</RouterLink>
         <span class="text-white/15">/</span>
-        <span class="font-semibold text-white">{{ mode === 'create' ? 'New upstream' : (record?.name ?? 'Upstream') }}</span>
+        <span v-if="record" class="font-semibold text-white">{{ record.name }}</span>
+        <span v-else class="font-semibold text-white">New upstream</span>
       </nav>
       <div class="ml-auto flex items-center gap-2">
         <Button variant="secondary" :disabled="saving" @click="cancel">Cancel</Button>
@@ -535,6 +535,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
          clips or scrolls; the page does. -->
     <div :style="workbenchStyle" class="grid grid-cols-1 gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
       <UpstreamConfigPanel
+        v-bind="modeRecord"
         :provider="activeProvider"
         v-model:name="name"
         v-model:enabled="enabled"
@@ -544,8 +545,6 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"
-        :mode="mode"
-        :record="liveRecord"
         :flags="flags"
         :colo-aware="coloAware"
         :current-colo="currentColo"
@@ -562,12 +561,9 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :refreshing="refreshing"
         @fetch-models="fetchDraftModels"
         @refresh-cache="refreshCachedModels"
-        @copilot-completed="onCopilotCompleted"
-        @codex-imported="onCodexImported"
-        @codex-error="onCodexError"
-        @claude-code-imported="onClaudeCodeImported"
+        @imported="onImported"
+        @error="onImportError"
         @claude-code-quota-refreshed="onClaudeCodeQuotaRefreshed"
-        @claude-code-error="onClaudeCodeError"
       />
       <ModelsPanel
         ref="modelsPanelRef"

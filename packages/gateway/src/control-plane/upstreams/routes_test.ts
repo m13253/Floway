@@ -1927,7 +1927,7 @@ test('POST /api/upstreams/:id/codex-refresh-now without an override falls back t
   );
 });
 
-// --- POST /api/upstreams/:id/probe-quota ---
+// --- POST /api/upstreams/:id/claude-code-probe-quota ---
 //
 // Operator-driven active quota probe — Claude Code only. Mirrors real CC's
 // `fetchUtilization: GET /api/oauth/usage` call so operators get the same
@@ -1940,7 +1940,7 @@ const usageProbeBody = {
   seven_day_sonnet: { utilization: 0.05, resets_at: '2026-06-25T18:00:00Z' },
 };
 
-test('POST /api/upstreams/:id/probe-quota returns Anthropic body verbatim and persists into state', async () => {
+test('POST /api/upstreams/:id/claude-code-probe-quota returns Anthropic body verbatim and persists into state', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -1965,7 +1965,7 @@ test('POST /api/upstreams/:id/probe-quota returns Anthropic body verbatim and pe
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-probe-quota`, authed(adminSession, {}));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as Record<string, unknown> & { fetched_at: string };
       assertEquals(typeof body.fetched_at, 'string');
@@ -1982,7 +1982,7 @@ test('POST /api/upstreams/:id/probe-quota returns Anthropic body verbatim and pe
   assertEquals(typeof storedState.accounts[0].usageProbeSnapshot?.fetchedAt, 'number');
 });
 
-test('POST /api/upstreams/:id/probe-quota mints a fresh access token when the cached one is stale', async () => {
+test('POST /api/upstreams/:id/claude-code-probe-quota mints a fresh access token when the cached one is stale', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -2013,13 +2013,13 @@ test('POST /api/upstreams/:id/probe-quota mints a fresh access token when the ca
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-probe-quota`, authed(adminSession, {}));
       assertEquals(resp.status, 200);
     },
   );
 });
 
-test('POST /api/upstreams/:id/probe-quota surfaces upstream 401 as 502', async () => {
+test('POST /api/upstreams/:id/claude-code-probe-quota surfaces upstream 401 as 502', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -2037,7 +2037,7 @@ test('POST /api/upstreams/:id/probe-quota surfaces upstream 401 as 502', async (
   await withMockedFetch(
     () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'content-type': 'application/json' } }),
     async () => {
-      const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+      const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-probe-quota`, authed(adminSession, {}));
       assertEquals(resp.status, 502);
       const body = (await resp.json()) as { error: string };
       assertEquals(body.error.includes('401'), true);
@@ -2045,19 +2045,19 @@ test('POST /api/upstreams/:id/probe-quota surfaces upstream 401 as 502', async (
   );
 });
 
-test('POST /api/upstreams/:id/probe-quota rejects non-claude-code upstreams with 400', async () => {
+test('POST /api/upstreams/:id/claude-code-probe-quota rejects non-claude-code upstreams with 400', async () => {
   const { adminSession } = await setupAppTest();
   const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody()))).json()) as { id: string };
 
-  const resp = await requestApp(`/api/upstreams/${created.id}/probe-quota`, authed(adminSession, {}));
+  const resp = await requestApp(`/api/upstreams/${created.id}/claude-code-probe-quota`, authed(adminSession, {}));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('claude-code'), true);
 });
 
-test('POST /api/upstreams/:id/probe-quota 404s for an unknown upstream id', async () => {
+test('POST /api/upstreams/:id/claude-code-probe-quota 404s for an unknown upstream id', async () => {
   const { adminSession } = await setupAppTest();
-  const resp = await requestApp('/api/upstreams/nope/probe-quota', authed(adminSession, {}));
+  const resp = await requestApp('/api/upstreams/nope/claude-code-probe-quota', authed(adminSession, {}));
   assertEquals(resp.status, 404);
 });
 
