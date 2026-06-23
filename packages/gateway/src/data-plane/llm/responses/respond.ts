@@ -35,6 +35,9 @@ export const respondResponses = async (
   }
 
   if (result.type === 'plain') {
+    if (result.status >= 400) {
+      ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
+    }
     return { success: true, response: plainResultToResponse(result) };
   }
 

@@ -27,10 +27,20 @@ export const runScheduledMaintenance = async (): Promise<void> => {
 
 const sweepExpiredDumps = async (): Promise<void> => {
   const store = getDumpStore();
+  // Iterate every api key, including those with retention disabled. The
+  // disabled-retention branch (`purgeAll`) is the only path that catches a
+  // record that opened its accumulator before the operator toggled retention
+  // off — `openDumpAccumulator` snapshots `dumpRetentionSeconds` at request
+  // entry, so an in-flight stream still lands a row after the inline purge
+  // at toggle time. Sweeping `purgeAll` on every retention=null key folds
+  // those orphans up on the next tick.
   for (const key of await getRepo().apiKeys.list()) {
-    if (key.dumpRetentionSeconds === null) continue;
     try {
-      await store.purgeExpired(key.id, key.dumpRetentionSeconds);
+      if (key.dumpRetentionSeconds === null) {
+        await store.purgeAll(key.id);
+      } else {
+        await store.purgeExpired(key.id, key.dumpRetentionSeconds);
+      }
     } catch (err) {
       console.error('[scheduled] dump sweep failed', key.id, err);
     }

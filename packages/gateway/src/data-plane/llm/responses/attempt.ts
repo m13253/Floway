@@ -5,6 +5,7 @@ import { normalizeAssistantInputText } from './items/normalize-assistant-content
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
@@ -131,7 +132,12 @@ export const responsesAttempt = {
       targetApi: 'responses',
       responseId,
     }));
-    return { type: 'result', result: { ...upstreamCompacted, id: responseId } };
+    return {
+      type: 'result',
+      result: { ...upstreamCompacted, id: responseId },
+      modelIdentity: chainResult.modelIdentity,
+      usage: tokenUsageFromResponsesResult(upstreamCompacted),
+    };
   },
 };
 

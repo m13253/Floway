@@ -94,6 +94,7 @@ export const responsesHttp = {
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
+        ctx.dump?.success(result.modelIdentity, result.usage);
         const compactResponse = Response.json(result.result);
         return (ctx.dump?.finalize(compactResponse) ?? compactResponse);
       }

@@ -44,10 +44,15 @@ const prepareImagesGenerationsRequest = (bytes: Uint8Array): PreparedRequest => 
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const request = prepareImagesGenerationsRequest(requestBody.bytes);
-  if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
+  if (request.type === 'invalid') {
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, request.message, 400);
+    return (ctx.dump?.finalize(response) ?? response);
+  }
 
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: request.model });
+  ctx.dump?.requestedModel(request.model);
   const response = await passthroughServe({
     c,
     ctx,
@@ -69,6 +74,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
   // Response keeps the dump capture honest without a second read on the wire.
   const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   let form: FormData;
   try {
     form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
@@ -76,15 +82,19 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     // Match the embeddings serve stance: do not surface the underlying
     // parser's error text. The wording is enough for a client to know
     // they sent the wrong content type or a malformed body.
-    return passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400);
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400);
+    return (ctx.dump?.finalize(response) ?? response);
   }
 
   const modelRaw = form.get('model');
   if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
-    return passthroughApiError(c, 'Image edits request body must include a model field.', 400);
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, 'Image edits request body must include a model field.', 400);
+    return (ctx.dump?.finalize(response) ?? response);
   }
 
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: modelRaw });
+  ctx.dump?.requestedModel(modelRaw);
   const response = await passthroughServe({
     c,
     ctx,

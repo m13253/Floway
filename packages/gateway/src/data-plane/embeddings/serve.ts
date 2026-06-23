@@ -45,10 +45,15 @@ const prepareEmbeddingsRequest = (bytes: Uint8Array): { type: 'ok'; body: Record
 
 export const embeddings = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const request = prepareEmbeddingsRequest(requestBody.bytes);
-  if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
+  if (request.type === 'invalid') {
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, request.message, 400);
+    return (ctx.dump?.finalize(response) ?? response);
+  }
 
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: request.model });
+  ctx.dump?.requestedModel(request.model);
   const response = await passthroughServe({
     c,
     ctx,

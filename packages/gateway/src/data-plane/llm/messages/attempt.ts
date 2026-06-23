@@ -110,7 +110,7 @@ export const messagesAttempt = {
     // contract still has to fire so a provider that forgets to wrap fails
     // loud on the happy path.
     void recorder.durationMs();
-    return await plainResultFromResponse(response);
+    return await plainResultFromResponse(response, candidate.binding.upstream);
   },
 };
 

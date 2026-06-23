@@ -53,12 +53,15 @@ export interface InternalErrorResult {
 // that measures rather than generates (count_tokens). It is NOT an
 // `ExecuteResult`: the target emit/interceptor layer never produces one. The
 // orchestrator passes it straight to `respond` without persistence, and
-// `respond` emits it verbatim.
+// `respond` emits it verbatim. `upstream` is the responsible upstream id when
+// the body came from a real upstream call; absent for gateway-synthesized
+// envelopes (rewrite failures, internal-debug bodies).
 export interface PlainResult {
   type: 'plain';
   status: number;
   headers: Headers;
   body: Uint8Array;
+  upstream?: string;
 }
 
 export type ExecuteResult<T> = EventResult<T> | ApiErrorResult | InternalErrorResult;
@@ -88,7 +91,13 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
   ...(performance ? { performance } : {}),
 });
 
-export const plainResult = (status: number, headers: Headers, body: Uint8Array): PlainResult => ({ type: 'plain', status, headers, body });
+export const plainResult = (status: number, headers: Headers, body: Uint8Array, upstream?: string): PlainResult => ({
+  type: 'plain',
+  status,
+  headers,
+  body,
+  ...(upstream !== undefined ? { upstream } : {}),
+});
 
 export const readUpstreamApiError = async (response: Response, upstream?: string): Promise<ApiErrorResult> => ({
   type: 'api-error',

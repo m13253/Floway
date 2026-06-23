@@ -118,7 +118,7 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
   if (messagesResult.status !== 200) {
     // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
     const text = new TextDecoder().decode(messagesResult.body);
-    return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.');
+    return geminiErrorPlainResult(messagesResult.status, text || 'Upstream token counting request failed.', messagesResult.upstream);
   }
   let decoded: unknown;
   try { decoded = JSON.parse(new TextDecoder().decode(messagesResult.body)); } catch {}
@@ -137,13 +137,15 @@ const reshapeMessagesCountAsGemini = (messagesResult: PlainResult): PlainResult 
     200,
     new Headers({ 'content-type': 'application/json' }),
     new TextEncoder().encode(JSON.stringify({ totalTokens })),
+    messagesResult.upstream,
   );
 };
 
-const geminiErrorPlainResult = (status: number, message: string): PlainResult => plainResult(
+const geminiErrorPlainResult = (status: number, message: string, upstream?: string): PlainResult => plainResult(
   status,
   new Headers({ 'content-type': 'application/json' }),
   new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: geminiStatusForHttpStatus(status) } })),
+  upstream,
 );
 
 const geminiInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
