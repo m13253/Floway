@@ -20,7 +20,7 @@ export const respondChatCompletions = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.apiError(result.source, result.status);
+    ctx.dump?.apiError(result.source, result.status, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 

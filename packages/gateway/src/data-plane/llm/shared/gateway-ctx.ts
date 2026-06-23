@@ -44,6 +44,11 @@ export interface CreateGatewayCtxOptions {
   // WS Responses path uses `'WS'` so a dumped turn reads as
   // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
   method?: string;
+  // The model id parsed from the request payload (or from the URL on
+  // Gemini's routes), stamped on the dump immediately so even an
+  // outright-error turn carries model attribution. Omit only on error
+  // fallback paths where payload parsing itself failed.
+  model?: string;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
@@ -52,6 +57,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const backgroundScheduler = backgroundSchedulerFromContext(c);
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, backgroundScheduler);
+  if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
     upstreamIds,

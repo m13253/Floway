@@ -244,7 +244,7 @@ const callResponsesCompactAsExecuteResult = async (
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
-    return { ...(await readUpstreamApiError(providerResult.response)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
   return eventResult(

@@ -35,7 +35,7 @@ export const chatCompletionsHttp = {
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
-      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody });
+      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await chatCompletionsServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);

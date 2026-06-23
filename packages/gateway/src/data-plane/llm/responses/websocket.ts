@@ -170,6 +170,7 @@ const handleClientMessage = async (
       // sees the exact `response.create` payload the client sent.
       requestBody: { bytes: requestBytes, streamError: null },
       method: 'WS',
+      model: payload.model,
     });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
@@ -253,7 +254,7 @@ const respondResponsesWebSocket = async (input: {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.apiError(result.source, result.status);
+    ctx.dump?.apiError(result.source, result.status, result.upstream);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;

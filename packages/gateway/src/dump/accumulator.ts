@@ -40,20 +40,26 @@ interface ResponseSnapshot {
   readonly streamError: string | null;
 }
 
-// Two disjoint outcome slots the mid-flight hooks stamp: a success-path
-// identity (set by `success()`, leaves the record with full upstream +
-// model + token attribution) and an error-path message (set by `apiError` /
-// `internalError` / `error`, leaves the record with no success
-// attribution). `plain()` records neither — used by respond paths where the
-// gateway forwarded an upstream response verbatim without resolving its own
-// identity.
-interface DumpSuccessIdentity {
-  upstreamId: string;
-  model: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-}
-
+// Four independent attribution slots the mid-flight hooks fill: `model` and
+// `upstreamId` identify what the turn was about, `inputTokens` /
+// `outputTokens` quantify what the upstream reported. They're independent
+// because different outcomes set different subsets:
+//
+//   • Every protocol handler calls `requestedModel(model)` immediately after
+//     parsing the payload, so `model` is set regardless of outcome.
+//   • `success(identity, usage)` fills all four; the upstream-resolved model
+//     id may overwrite what `requestedModel` had.
+//   • `apiError(source, status, upstream?)` writes the failure message and,
+//     for real upstream errors, stamps `upstreamId` so a 4xx/5xx row in the
+//     dashboard shows which upstream rejected the call; gateway-synthesized
+//     envelopes leave `upstreamId` unset.
+//   • `internalError` / `error` only set the error message — the
+//     `requestedModel`-set model survives so even an internal-error row
+//     carries model attribution.
+//
+// `plain()` is the "we forwarded a non-streaming upstream response verbatim"
+// marker: it doesn't touch model/upstream/tokens (model from
+// `requestedModel` survives), it only clears any earlier error message.
 // Anthropic-style disjoint per-dimension counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
 // column. Missing dimensions stay null (not measured) instead of zero so a
@@ -85,7 +91,10 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 
 export class DumpAccumulator {
   private readonly events: DumpStreamEvent[] = [];
-  private successIdentity: DumpSuccessIdentity | null = null;
+  private model: string | null = null;
+  private upstreamId: string | null = null;
+  private inputTokens: number | null = null;
+  private outputTokens: number | null = null;
   private errorMessage: string | null = null;
 
   constructor(
@@ -97,8 +106,17 @@ export class DumpAccumulator {
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
-  apiError(source: 'upstream' | 'gateway', status: number): void {
+  // The model the client asked for, stamped by every protocol handler
+  // immediately after parsing the payload. Sets the model attribution
+  // regardless of outcome (success, gateway error, upstream error,
+  // internal error).
+  requestedModel(model: string): void {
+    this.model = model;
+  }
+
+  apiError(source: 'upstream' | 'gateway', status: number, upstream?: string): void {
     this.errorMessage = `${source} error ${status}`;
+    if (upstream !== undefined) this.upstreamId = upstream;
   }
 
   internalError(message: string): void {
@@ -106,7 +124,6 @@ export class DumpAccumulator {
   }
 
   plain(): void {
-    this.successIdentity = null;
     this.errorMessage = null;
   }
 
@@ -119,12 +136,10 @@ export class DumpAccumulator {
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
-    this.successIdentity = {
-      upstreamId: identity.upstream,
-      model: identity.model,
-      inputTokens: tokenUsageInput(usage),
-      outputTokens: usage?.output ?? null,
-    };
+    this.model = identity.model;
+    this.upstreamId = identity.upstream;
+    this.inputTokens = tokenUsageInput(usage);
+    this.outputTokens = usage?.output ?? null;
   }
 
   error(reason: unknown): void {
@@ -230,10 +245,10 @@ export class DumpAccumulator {
       method: this.requestSnapshot.method,
       path: this.requestSnapshot.path,
       status: response.status,
-      upstream: await resolveUpstreamRef(this.successIdentity?.upstreamId ?? null),
-      model: this.successIdentity?.model ?? null,
-      inputTokens: this.successIdentity?.inputTokens ?? null,
-      outputTokens: this.successIdentity?.outputTokens ?? null,
+      upstream: await resolveUpstreamRef(this.upstreamId),
+      model: this.model,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
       requestBytes: this.requestSnapshot.body.byteLength,
       responseBytes: response.bytes.byteLength,
       durationMs: completedAt - this.startedAt,

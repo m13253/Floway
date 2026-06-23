@@ -46,7 +46,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
-    return { ...(await readUpstreamApiError(providerResult.response)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   return eventResult(
     withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, durationMs),

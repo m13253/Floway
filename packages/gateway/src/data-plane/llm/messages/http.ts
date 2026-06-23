@@ -57,7 +57,7 @@ export const messagesHttp = {
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody });
+      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
@@ -74,7 +74,7 @@ export const messagesHttp = {
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+      const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await messagesServe.countTokens({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);

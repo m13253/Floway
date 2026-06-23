@@ -23,7 +23,11 @@ export interface EventResultMetadata {
 // non-2xx from a gateway-synthesized envelope (model not routable, missing
 // stored item, server-tool input rejected, etc.) so observers like the
 // request dump can record the failure category truthfully rather than
-// labelling every 4xx as `upstream error N`.
+// labelling every 4xx as `upstream error N`. `upstream` is the id of the
+// upstream that produced the error — set on real upstream 4xx/5xx
+// (`source === 'upstream'`) so the dump row can attribute the failure to
+// the upstream it came from; absent on gateway-synthesized envelopes that
+// never reached an upstream.
 export interface ApiErrorResult {
   type: 'api-error';
   source: 'upstream' | 'gateway';
@@ -31,6 +35,7 @@ export interface ApiErrorResult {
   headers: Headers;
   body: Uint8Array;
   performance?: PerformanceTelemetryContext;
+  upstream?: string;
 }
 
 // Gateway-side bug surface (parser crash, interceptor throw, etc.). The
@@ -85,12 +90,13 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
 
 export const plainResult = (status: number, headers: Headers, body: Uint8Array): PlainResult => ({ type: 'plain', status, headers, body });
 
-export const readUpstreamApiError = async (response: Response): Promise<ApiErrorResult> => ({
+export const readUpstreamApiError = async (response: Response, upstream?: string): Promise<ApiErrorResult> => ({
   type: 'api-error',
   source: 'upstream',
   status: response.status,
   headers: new Headers(response.headers),
   body: new Uint8Array(await response.arrayBuffer()),
+  ...(upstream !== undefined ? { upstream } : {}),
 });
 
 export const apiErrorToResponse = (error: ApiErrorResult): Response =>
