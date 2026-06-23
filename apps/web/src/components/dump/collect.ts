@@ -12,7 +12,7 @@
 //   - mid-stream error: result populated best-effort, error set, truncated true
 //   - catastrophic:     result null, error set, truncated true
 
-import type { DumpStreamEvent } from './types.ts';
+import type { DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import {
   chatCompletionsErrorPayloadMessage,
   type ChatCompletionsResult,

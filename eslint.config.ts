@@ -247,6 +247,17 @@ const config: Linter.Config[] = [
           },
         ],
       }],
+      // Block runtime `import { ... } from '@floway-dev/gateway[/...]'`
+      // — apps/web may only type-import from the gateway package (`import
+      // type`). Runtime imports would land gateway's data plane into the
+      // SPA bundle. Implemented via `no-restricted-syntax` rather than
+      // `@typescript-eslint/no-restricted-imports`'s `allowTypeImports`
+      // because the latter requires type-aware linting (it OOMs eslint's
+      // default heap on this workspace).
+      'no-restricted-syntax': ['error', {
+        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
+        message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
+      }],
     },
   },
   {

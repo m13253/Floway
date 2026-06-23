@@ -24,10 +24,6 @@
       "import": "./src/dump/types.ts",
       "types": "./src/dump/types.ts"
     },
-    "./dump-collect": {
-      "import": "./src/dump/collect.ts",
-      "types": "./src/dump/collect.ts"
-    },
     "./dump/test-fixtures": {
       "import": "./src/dump/test-fixtures.ts",
       "types": "./src/dump/test-fixtures.ts"

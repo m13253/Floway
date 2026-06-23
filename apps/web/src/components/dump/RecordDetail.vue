@@ -2,10 +2,10 @@
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
 import { errorLabel, statusIcon } from './badge.ts';
+import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from './collect.ts';
 import HeaderTable from './HeaderTable.vue';
 import { renderMultipart } from './multipart.ts';
 import { authFetch } from '../../api/client.ts';
-import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from '@floway-dev/gateway/dump-collect';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { chatCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
