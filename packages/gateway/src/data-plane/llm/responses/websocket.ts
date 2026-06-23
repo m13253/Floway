@@ -134,9 +134,10 @@ const handleClientMessage = async (
   let eventId: string | undefined;
   let ctx: GatewayCtx | undefined;
   try {
-    // Capture the raw frame bytes before we touch the JSON: a malformed
-    // payload still produces a dump record only once `ctx` exists (i.e.
-    // when we've decided this turn is a real `response.create`).
+    // Capture raw frame bytes up front so they're available as the dump's
+    // request body when `ctx` is constructed below. Payloads that fail to
+    // parse never reach ctx construction, so no dump record is emitted for
+    // them — there is no api-key-scoped turn to attribute them to.
     const requestBytes = wsDataToBytes(data);
     let parsed: unknown;
     try {
@@ -168,8 +169,6 @@ const handleClientMessage = async (
       // per-turn JSON frame bytes so an operator reading the dashboard
       // sees the exact `response.create` payload the client sent.
       requestBody: { bytes: requestBytes, streamError: null },
-      // Surfaces as `WS /v1/responses` in the dashboard so a turn is
-      // visually distinct from a `POST /v1/responses` HTTP call.
       method: 'WS',
     });
     const store = session.createStore(payload.store ?? undefined);
@@ -190,7 +189,7 @@ const handleClientMessage = async (
           param: 'previous_response_id',
           code: 'previous_response_not_found',
         }, eventId);
-        ctx.dump?.error(error.message);
+        ctx.dump?.error(error);
         ctx.dump?.finalize(400, []);
         return;
       }
@@ -365,11 +364,9 @@ const respondResponsesWebSocket = async (input: {
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
-    if (ctx.dump !== null) {
-      if (failed) ctx.dump.error(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
-      else ctx.dump.success(metadata.modelIdentity, state.usage);
-      ctx.dump.finalize(failed ? 500 : 200, []);
-    }
+    if (failed) ctx.dump?.error(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+    else ctx.dump?.success(metadata.modelIdentity, state.usage);
+    ctx.dump?.finalize(failed ? 500 : 200, []);
     try {
       await recordUsage(ctx, metadata.modelIdentity, state.usage);
     } catch (error) {

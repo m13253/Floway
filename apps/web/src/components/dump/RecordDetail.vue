@@ -115,7 +115,7 @@ const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
     if (decoded.error !== null) return { text: body.data, copyText: body.data, decodeError: decoded.error, isJson: false };
     text = decoded.text;
   }
-  // Sniff for JSON by trying to parse — `Content-Type` is hint at best
+  // Sniff for JSON by trying to parse — `Content-Type` is a hint at best
   // (the WS Responses path has no content-type for its synthesized
   // per-turn requests, and upstreams routinely mislabel error bodies);
   // a successful parse is the only ground truth.

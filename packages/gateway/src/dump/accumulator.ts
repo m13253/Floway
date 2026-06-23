@@ -22,7 +22,7 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
-// Frozen at ctx construction so `close()` never has to re-read a stream
+// Frozen at ctx construction so `finalize` never has to re-read a stream
 // the handler already consumed.
 interface RequestSnapshot {
   readonly method: string;
