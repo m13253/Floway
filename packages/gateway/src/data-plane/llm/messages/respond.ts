@@ -130,11 +130,12 @@ export const createMessagesStreamUsageState = () => ({
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
 
 // Returns a snapshot of the running usage on every frame that revises it, not
-// only on `message_stop`, so the observer can checkpoint billing state into
-// `SourceStreamState.usage` as the stream progresses. A client disconnect that
-// races the terminal frame would otherwise discard the last `message_delta`'s
-// output count. Each call returns a fresh object so the snapshot stored in
-// `SourceStreamState.usage` does not silently mutate when the next delta lands.
+// only on `message_stop`, so the respond layer can checkpoint billing state
+// into `SourceStreamState.usage` as the stream progresses. A client disconnect
+// that races the terminal frame would otherwise discard the last
+// `message_delta`'s output count. Each call returns a fresh object so the
+// snapshot stored in `SourceStreamState.usage` does not silently mutate when
+// the next delta lands.
 export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEvent>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;

@@ -147,7 +147,7 @@ export class DumpAccumulator {
   //     client. A null body falls through to the bare form.
   //
   // The background drain → record assembly → store put → broker publish is
-  // scheduled through the runtime's BackgroundScheduler so observer write
+  // scheduled through the runtime's BackgroundScheduler so dump write
   // failures cannot turn a successful upstream call into a 502.
   finalize(status: number, headers: ReadonlyArray<readonly [string, string]>): void;
   finalize(response: Response): Response;

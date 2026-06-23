@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
 import { createGatewayCtxFromHono } from './gateway-ctx.ts';
-import { EMPTY_REQUEST_BODY } from './request-body.ts';
+import type { RequestBody } from './request-body.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
+
+const EMPTY_REQUEST_BODY: RequestBody = { bytes: new Uint8Array(), streamError: null };
 
 const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   id: 'test-key',

@@ -2,7 +2,7 @@
 // `DumpStreamEvent[]` and we fold it back into the protocol's
 // non-streaming envelope by handing the stored `ProtocolFrame`s straight
 // to the same per-protocol reassembler the gateway runs against a live
-// upstream — no second fold impl, no SSE round-trip.
+// upstream.
 //
 // Streams may be partial (truncated dump, mid-stream error), so the
 // outcome reports `truncated` and `error` rather than throwing:

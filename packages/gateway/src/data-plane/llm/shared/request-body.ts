@@ -3,14 +3,11 @@ import type { Context } from 'hono';
 // Inbound body bytes the handler reads once and forwards into the dump
 // accumulator (so the handler's payload parser AND the dump see the same
 // bytes without a second read). `streamError` surfaces a client mid-upload
-// abort as a non-null message; observers see it on `meta.error`.
+// abort as a non-null message; the dump records it as `meta.error`.
 export interface RequestBody {
   readonly bytes: Uint8Array;
   readonly streamError: string | null;
 }
-
-// Sentinel for the WebSocket upgrade path, which carries no body.
-export const EMPTY_REQUEST_BODY: RequestBody = Object.freeze({ bytes: new Uint8Array(), streamError: null });
 
 // Reads the inbound body in full into a Uint8Array; the handler parses its
 // payload off the same buffer so the wire body is consumed exactly once. A
