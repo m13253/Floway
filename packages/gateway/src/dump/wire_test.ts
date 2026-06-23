@@ -1,56 +1,91 @@
 import { test } from 'vitest';
 
-import { decodeBodyFromWire, encodeBodyForWire } from './wire.ts';
+import type { StoredDumpRecord } from './types.ts';
+import { dumpRecordToWire } from './wire.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// Probe `looksTextual` (a private detail of `encodeBodyForWire`) through the
-// public encode helper: a textual content-type with valid UTF-8 bytes encodes
-// as utf8, a binary content-type or non-UTF-8 bytes falls through to base64.
-const utf8 = new TextEncoder().encode('x');
-
-test('encodeBodyForWire treats common textual content-types as utf8', () => {
-  for (const ct of [
-    'text/plain',
-    'text/html; charset=utf-8',
-    'application/json',
-    'application/json; charset=utf-8',
-    'APPLICATION/JSON',
-    'application/xml',
-    'application/x-www-form-urlencoded',
-    'text/plain;something',
-  ]) {
-    assertEquals(encodeBodyForWire(utf8, ct).encoding, 'utf8');
-  }
+const baseStored = (overrides: Partial<StoredDumpRecord> = {}): StoredDumpRecord => ({
+  meta: {
+    id: 'rec',
+    startedAt: 0,
+    completedAt: 1,
+    method: 'POST',
+    path: '/v1/x',
+    status: 200,
+    upstream: null,
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    requestBytes: 0,
+    responseBytes: 0,
+    durationMs: 1,
+    error: null,
+  },
+  request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
+  response: { status: 200, headers: [], body: { type: 'none' } },
+  ...overrides,
 });
 
-test('encodeBodyForWire treats binary content-types and empty content-type as base64', () => {
-  for (const ct of ['image/png', 'application/octet-stream', 'image/jpeg', 'application/pdf', '', 'image/png;base64']) {
-    assertEquals(encodeBodyForWire(utf8, ct).encoding, 'base64');
-  }
+// A textual request content-type with valid UTF-8 bytes serializes as utf8 on
+// the wire — the dashboard reads `data` directly as a string.
+test('dumpRecordToWire encodes a textual request body as utf8', () => {
+  const wire = dumpRecordToWire(baseStored({
+    request: {
+      method: 'POST',
+      path: '/v1/messages',
+      headers: [['content-type', 'application/json']],
+      body: new TextEncoder().encode('{"k":"v"}'),
+    },
+  }));
+  assertEquals(wire.request.body.encoding, 'utf8');
+  assertEquals(wire.request.body.data, '{"k":"v"}');
 });
 
-test('encodeBodyForWire/decodeBodyFromWire round-trip UTF-8 text', () => {
-  const bytes = new TextEncoder().encode('hello — world');
-  const wire = encodeBodyForWire(bytes, 'text/plain');
-  assertEquals(wire.encoding, 'utf8');
-  assertEquals(wire.data, 'hello — world');
-  const back = decodeBodyFromWire(wire);
-  assertEquals(new TextDecoder().decode(back), 'hello — world');
+// A binary content-type round-trips through base64 so JSON serialization
+// preserves every byte; the dashboard decodes base64 client-side.
+test('dumpRecordToWire encodes a binary response body as base64', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG magic
+  const wire = dumpRecordToWire(baseStored({
+    response: {
+      status: 200,
+      headers: [['content-type', 'image/png']],
+      body: { type: 'bytes', body: png },
+    },
+  }));
+  if (wire.response.body.type !== 'bytes') throw new Error('expected bytes');
+  assertEquals(wire.response.body.body.encoding, 'base64');
+  // Decoding the base64 back to bytes must reproduce the original sequence.
+  const binary = atob(wire.response.body.body.data);
+  assertEquals(Array.from(binary, c => c.charCodeAt(0)), [0x89, 0x50, 0x4E, 0x47]);
 });
 
-test('encodeBodyForWire falls back to base64 when textual content-type carries non-UTF-8 bytes', () => {
-  // 0xFF is invalid UTF-8 alone.
+// A content-type that claims to be text but carries bytes that do not decode
+// as UTF-8 falls through to base64 so the wire never silently corrupts.
+test('dumpRecordToWire falls back to base64 when textual content-type carries non-UTF-8 bytes', () => {
   const bytes = new Uint8Array([0xFF, 0xFE, 0xFD]);
-  const wire = encodeBodyForWire(bytes, 'text/plain');
-  assertEquals(wire.encoding, 'base64');
-  const back = decodeBodyFromWire(wire);
-  assertEquals(Array.from(back), [0xFF, 0xFE, 0xFD]);
+  const wire = dumpRecordToWire(baseStored({
+    request: {
+      method: 'POST',
+      path: '/v1/x',
+      headers: [['content-type', 'text/plain']],
+      body: bytes,
+    },
+  }));
+  assertEquals(wire.request.body.encoding, 'base64');
+  const binary = atob(wire.request.body.data);
+  assertEquals(Array.from(binary, c => c.charCodeAt(0)), [0xFF, 0xFE, 0xFD]);
 });
 
-test('encodeBodyForWire base64-encodes binary content-types', () => {
-  const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47]); // PNG magic
-  const wire = encodeBodyForWire(bytes, 'image/png');
-  assertEquals(wire.encoding, 'base64');
-  const back = decodeBodyFromWire(wire);
-  assertEquals(Array.from(back), [0x89, 0x50, 0x4E, 0x47]);
+// `stream` and `none` response bodies pass through wire serialization
+// unchanged because they carry no raw bytes.
+test('dumpRecordToWire passes stream + none response bodies through', () => {
+  const streamWire = dumpRecordToWire(baseStored({
+    response: { status: 200, headers: [], body: { type: 'stream', events: [] } },
+  }));
+  assertEquals(streamWire.response.body.type, 'stream');
+
+  const noneWire = dumpRecordToWire(baseStored({
+    response: { status: null, headers: [], body: { type: 'none' } },
+  }));
+  assertEquals(noneWire.response.body.type, 'none');
 });

@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { ownedKeyOr404 } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
+import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const LIST_LIMIT_DEFAULT = 100;
@@ -41,7 +42,7 @@ export const dumpRoutes = new Hono()
     if (owned instanceof Response) return owned;
     const record = await getDumpStore().get(owned, c.req.param('recordId')!);
     if (!record) return c.json({ error: 'Record not found' }, 404);
-    return c.json(record);
+    return c.json(dumpRecordToWire(record));
   })
   .get('/keys/:keyId/stream', async c => {
     // Browsers cannot set custom headers on EventSource, so this SSE route

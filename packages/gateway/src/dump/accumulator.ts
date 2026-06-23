@@ -12,12 +12,11 @@ import type { Context } from 'hono';
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
   DumpMetadata,
-  DumpRecord,
-  DumpResponseBody,
   DumpStreamEvent,
   DumpUpstreamRef,
+  StoredDumpRecord,
+  StoredDumpResponseBody,
 } from './types.ts';
-import { encodeBodyForWire } from './wire.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -61,7 +60,6 @@ interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly contentType: string;
   readonly body: Uint8Array;
   readonly streamError: string | null;
 }
@@ -69,7 +67,6 @@ interface RequestSnapshot {
 interface ResponseSnapshot {
   readonly status: number;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly contentType: string;
   readonly isStream: boolean;
   readonly bytes: Uint8Array;
   readonly streamError: string | null;
@@ -184,12 +181,11 @@ export class DumpAccumulator {
   close(response: Response): Response {
     const responseStatus = response.status;
     const responseHeaders = headerPairs(response.headers);
-    const contentType = response.headers.get('content-type') ?? '';
-    const isStream = contentType.startsWith('text/event-stream');
+    const isStream = (response.headers.get('content-type') ?? '').startsWith('text/event-stream');
 
     if (response.body === null) {
       this.backgroundScheduler(this.write({
-        status: responseStatus, headers: responseHeaders, contentType, isStream,
+        status: responseStatus, headers: responseHeaders, isStream,
         bytes: new Uint8Array(), streamError: null,
       }));
       return response;
@@ -214,7 +210,7 @@ export class DumpAccumulator {
       const bytes = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-      await this.write({ status: responseStatus, headers: responseHeaders, contentType, isStream, bytes, streamError });
+      await this.write({ status: responseStatus, headers: responseHeaders, isStream, bytes, streamError });
     })());
 
     return new Response(forClient, {
@@ -239,12 +235,12 @@ export class DumpAccumulator {
     // frames and fall back to the captured bytes; the `isStream`
     // discriminator off the outbound content-type still decides
     // bytes-vs-events on that fallback path.
-    const responseBody: DumpResponseBody = this.events.length > 0
+    const responseBody: StoredDumpResponseBody = this.events.length > 0
       ? { type: 'stream', events: this.events }
       : response.bytes.byteLength > 0 || response.streamError !== null
         ? response.isStream
           ? { type: 'stream', events: [] }
-          : { type: 'bytes', body: encodeBodyForWire(response.bytes, response.contentType) }
+          : { type: 'bytes', body: response.bytes }
         : { type: 'none' };
 
     const meta: DumpMetadata = {
@@ -267,13 +263,13 @@ export class DumpAccumulator {
       error: this.accounting.error ?? this.requestSnapshot.streamError ?? response.streamError,
     };
 
-    const record: DumpRecord = {
+    const record: StoredDumpRecord = {
       meta,
       request: {
         method: this.requestSnapshot.method,
         path: this.requestSnapshot.path,
         headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
-        body: encodeBodyForWire(this.requestSnapshot.body, this.requestSnapshot.contentType),
+        body: this.requestSnapshot.body,
       },
       response: {
         status: response.status,
@@ -306,7 +302,6 @@ export const openDumpAccumulator = (
     method: c.req.method,
     path: c.req.path,
     headers: headerPairs(c.req.raw.headers),
-    contentType: c.req.header('content-type') ?? '',
     body: requestBody.bytes,
     streamError: requestBody.streamError,
   };

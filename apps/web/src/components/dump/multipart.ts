@@ -146,7 +146,7 @@ export const renderMultipart = (b64: string, contentType: string): MultipartRend
     // multipart epilogue (usually empty). Stop processing parts when we
     // see the close-delimiter.
     if (bytes[start] === 0x2d && bytes[start + 1] === 0x2d) break;
-    let end = positions[i + 1]!;
+    const end = positions[i + 1]!;
     // Trim the leading CRLF after `--boundary` and the trailing CRLF
     // before the next `--boundary`.
     let bodyStart = start;
@@ -161,10 +161,7 @@ export const renderMultipart = (b64: string, contentType: string): MultipartRend
   if (parts.length === 0) return null;
 
   const renderedParts = parts.map(renderPart);
-  const text
-    = `--${boundary}\r\n`
-    + renderedParts.join(`\r\n--${boundary}\r\n`)
-    + `\r\n--${boundary}--\r\n`;
+  const text = `--${boundary}\r\n${renderedParts.join(`\r\n--${boundary}\r\n`)}\r\n--${boundary}--\r\n`;
   const binaryPartCount = parts.filter(p => !isTextContentType(p.contentType) && p.contentType !== '').length;
   return { text, partCount: parts.length, binaryPartCount };
 };

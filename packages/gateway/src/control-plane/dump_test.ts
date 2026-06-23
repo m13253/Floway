@@ -4,13 +4,13 @@ import { initDumpBroker, initDumpStore } from '../dump/registry.ts';
 import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-helpers.ts';
 import type { DumpStore } from '@floway-dev/gateway';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/dump-types';
+import type { DumpMetadata, DumpRecord, StoredDumpRecord } from '@floway-dev/gateway/dump-types';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
   baseFakeMeta({ id, completedAt, startedAt: completedAt - 1 });
 
-const fakeRecord = (id: string, completedAt: number): DumpRecord =>
+const fakeRecord = (id: string, completedAt: number): StoredDumpRecord =>
   baseFakeRecord({ id, completedAt, startedAt: completedAt - 1 });
 
 test('GET /api/dump/keys/:keyId/records lists newest-first', async () => {

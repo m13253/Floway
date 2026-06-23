@@ -1,5 +1,14 @@
-// Wire-level shapes for the per-API-key request dump feature, shared by
-// the gateway, platform impls, and the dashboard SPA.
+// Per-API-key request-dump types. Two parallel shapes split by where bodies
+// live:
+//
+//   - the storage shape (`Stored*`, with `body: Uint8Array`) is what the
+//     accumulator hands the store, what the store writes and rehydrates,
+//     and what flows in-process between the data plane and the dashboard's
+//     control-plane reader;
+//   - the wire shape (`Dump*`, with `body: DumpBody`) is the JSON-friendly
+//     view served to the dashboard by `dumpRecordToWire`.
+//
+// `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -43,8 +52,40 @@ export interface DumpStreamEvent {
   ts: number;               // ms relative to startedAt
 }
 
+// --- Storage shape (in-process, never serialized) ---
+
+export interface StoredDumpRequest {
+  method: string;
+  path: string;
+  // Captured verbatim with no redaction: the dump only surfaces to the
+  // owning API key's operator, who already holds the key.
+  headers: Array<[string, string]>;
+  body: Uint8Array;
+}
+
+export type StoredDumpResponseBody =
+  | { type: 'stream'; events: DumpStreamEvent[] }
+  | { type: 'bytes'; body: Uint8Array }
+  | { type: 'none' };
+
+export interface StoredDumpResponse {
+  status: number | null;
+  headers: Array<[string, string]>;
+  body: StoredDumpResponseBody;
+}
+
+export type StoredDumpRecord = {
+  meta: DumpMetadata;
+  request: StoredDumpRequest;
+  response: StoredDumpResponse;
+};
+
+// --- Wire shape (serialized JSON over the dashboard's control plane) ---
+
 // `utf8` is chosen from the upstream content-type, with a UTF-8-fatal
 // fallback to `base64` when a textual content-type carried non-UTF-8 bytes.
+// JSON cannot carry `Uint8Array` directly, so this discriminator lives at
+// the HTTP boundary and nowhere else.
 export type DumpBody =
   | { encoding: 'utf8'; data: string }
   | { encoding: 'base64'; data: string };
@@ -52,8 +93,6 @@ export type DumpBody =
 export interface DumpRequest {
   method: string;
   path: string;
-  // Captured verbatim with no redaction: the dump only surfaces to the
-  // owning API key's operator, who already holds the key.
   headers: Array<[string, string]>;
   body: DumpBody;
 }

@@ -1,6 +1,6 @@
 import type { DumpBroker } from './broker.ts';
 import type { DumpStore } from './store-contract.ts';
-import type { DumpMetadata, DumpRecord } from './types.ts';
+import type { DumpMetadata, StoredDumpRecord } from './types.ts';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({
   id: 'test-id',
@@ -20,9 +20,9 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
   ...overrides,
 });
 
-export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): DumpRecord => ({
+export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpRecord => ({
   meta: fakeMeta(overrides),
-  request: { method: 'POST', path: '/v1/x', headers: [], body: { encoding: 'utf8', data: '' } },
+  request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
   response: { status: 200, headers: [], body: { type: 'none' } },
 });
 
@@ -38,12 +38,12 @@ type DumpStubFailMethod =
 export interface DumpStubHandle {
   store: DumpStore;
   broker: DumpBroker;
-  stored: ReadonlyArray<{ keyId: string; record: DumpRecord }>;
+  stored: ReadonlyArray<{ keyId: string; record: StoredDumpRecord }>;
   published: ReadonlyArray<{ keyId: string; meta: DumpMetadata }>;
   purgedAll: ReadonlyArray<string>;
   purgedExpired: ReadonlyArray<{ keyId: string; retentionSeconds: number }>;
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
-  seed: (keyId: string, record: DumpRecord) => void;
+  seed: (keyId: string, record: StoredDumpRecord) => void;
   failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 
@@ -51,9 +51,9 @@ export const installDumpStubs = (
   initStore: (store: DumpStore) => void,
   initBroker: (broker: DumpBroker) => void,
 ): DumpStubHandle => {
-  const records = new Map<string, DumpRecord[]>();
+  const records = new Map<string, StoredDumpRecord[]>();
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
-  const stored: Array<{ keyId: string; record: DumpRecord }> = [];
+  const stored: Array<{ keyId: string; record: StoredDumpRecord }> = [];
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
   const purgedAll: string[] = [];
   const purgedExpired: Array<{ keyId: string; retentionSeconds: number }> = [];

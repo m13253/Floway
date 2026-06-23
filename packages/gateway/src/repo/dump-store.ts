@@ -1,14 +1,13 @@
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
-  DumpRecord,
   DumpRecordId,
-  DumpRequest,
-  DumpResponse,
-  DumpResponseBody,
   DumpStreamEvent,
+  StoredDumpRecord,
+  StoredDumpRequest,
+  StoredDumpResponse,
+  StoredDumpResponseBody,
 } from '../dump/types.ts';
-import { decodeBodyFromWire, encodeBodyForWire } from '../dump/wire.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
@@ -109,18 +108,16 @@ const fetchEventsBody = async (files: FileProvider, descriptor: BodyDescriptor):
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileProvider) {}
 
-  async put(keyId: string, record: DumpRecord): Promise<void> {
+  async put(keyId: string, record: StoredDumpRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
-    const requestRaw = decodeBodyFromWire(record.request.body);
-    const requestDescriptor = requestRaw.byteLength === 0
+    const requestDescriptor = record.request.body.byteLength === 0
       ? null
-      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), requestRaw, contentTypeOf(record.request.headers), 'bytes');
+      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body, contentTypeOf(record.request.headers), 'bytes');
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.body.type === 'bytes') {
-      const responseRaw = decodeBodyFromWire(record.response.body.body);
-      if (responseRaw.byteLength > 0) {
-        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), responseRaw, contentTypeOf(record.response.headers), 'bytes');
+      if (record.response.body.body.byteLength > 0) {
+        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, contentTypeOf(record.response.headers), 'bytes');
       }
     } else if (record.response.body.type === 'stream') {
       const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.body.events));
@@ -178,7 +175,7 @@ export class FileDumpStore implements DumpStore {
     }));
   }
 
-  async get(keyId: string, recordId: DumpRecordId): Promise<DumpRecord | null> {
+  async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
       'SELECT d.id, d.created_at, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
@@ -196,33 +193,28 @@ export class FileDumpStore implements DumpStore {
     const responseHeaders = row.response_headers_json ? JSON.parse(row.response_headers_json) as Array<[string, string]> : null;
     const responseDescriptor = row.response_body_descriptor ? JSON.parse(row.response_body_descriptor) as BodyDescriptor : null;
 
-    const request: DumpRequest = {
+    const request: StoredDumpRequest = {
       method: meta.method,
       path: meta.path,
       headers: requestHeaders,
-      body: requestDescriptor
-        ? encodeBodyForWire(await fetchBody(this.files, requestDescriptor), requestDescriptor.contentType)
-        : { encoding: 'utf8', data: '' },
+      body: requestDescriptor ? await fetchBody(this.files, requestDescriptor) : new Uint8Array(),
     };
 
     // Headers null iff `type: 'none'`; a null descriptor with headers is a
     // legitimate empty-body `bytes` response (nothing to gzip), reconstructed
-    // here from a zero-length buffer so the wire discriminator round-trips.
-    let responseBody: DumpResponseBody;
+    // here from a zero-length buffer so the discriminator round-trips.
+    let responseBody: StoredDumpResponseBody;
     if (responseHeaders === null) {
       responseBody = { type: 'none' };
     } else if (responseDescriptor === null) {
-      responseBody = { type: 'bytes', body: encodeBodyForWire(new Uint8Array(0), contentTypeOf(responseHeaders)) };
+      responseBody = { type: 'bytes', body: new Uint8Array() };
     } else if (responseDescriptor.type === 'events') {
       responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
     } else {
-      responseBody = {
-        type: 'bytes',
-        body: encodeBodyForWire(await fetchBody(this.files, responseDescriptor), responseDescriptor.contentType),
-      };
+      responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
     }
 
-    const response: DumpResponse = {
+    const response: StoredDumpResponse = {
       status: meta.status,
       headers: responseHeaders ?? [],
       body: responseBody,

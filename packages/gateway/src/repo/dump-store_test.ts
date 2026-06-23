@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
-import type { DumpRecord } from '../dump/types.ts';
+import type { StoredDumpRecord } from '../dump/types.ts';
 import { MemoryFileProvider } from '@floway-dev/platform';
 import type { FileProvider, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -58,7 +58,9 @@ const openDb = async (): Promise<SqlDatabase> => {
   };
 };
 
-const baseRecord = (id: string, completedAt: number): DumpRecord => ({
+const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+const baseRecord = (id: string, completedAt: number): StoredDumpRecord => ({
   meta: {
     id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
     upstream: null, model: 'm', inputTokens: 1, outputTokens: 2,
@@ -67,12 +69,12 @@ const baseRecord = (id: string, completedAt: number): DumpRecord => ({
   request: {
     method: 'POST', path: '/v1/x',
     headers: [['content-type', 'application/json']],
-    body: { encoding: 'utf8', data: '{"hello":"world"}' },
+    body: utf8('{"hello":"world"}'),
   },
   response: {
     status: 200,
     headers: [['content-type', 'application/json']],
-    body: { type: 'bytes', body: { encoding: 'utf8', data: '{"id":"abc"}' } },
+    body: { type: 'bytes', body: utf8('{"id":"abc"}') },
   },
 });
 
@@ -86,24 +88,22 @@ test('FileDumpStore round-trips a JSON record through gzip', async () => {
   const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
   assertExists(fetched);
   assertEquals(fetched.meta.id, record.meta.id);
-  assertEquals(fetched.request.body.encoding, 'utf8');
-  assertEquals(fetched.request.body.data, '{"hello":"world"}');
+  assertEquals(new TextDecoder().decode(fetched.request.body), '{"hello":"world"}');
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.body.encoding, 'utf8');
-  assertEquals(fetched.response.body.body.data, '{"id":"abc"}');
+  assertEquals(new TextDecoder().decode(fetched.response.body.body), '{"id":"abc"}');
 });
 
 test('FileDumpStore preserves the original content-type header on binary bodies', async () => {
   const db = await openDb();
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
-  const pngMagic = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).toString('base64');
-  const record: DumpRecord = {
+  const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+  const record: StoredDumpRecord = {
     ...baseRecord('01HZZ0000000000000000000PNG', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,
       headers: [['content-type', 'image/png']],
-      body: { type: 'bytes', body: { encoding: 'base64', data: pngMagic } },
+      body: { type: 'bytes', body: pngMagic },
     },
   };
 
@@ -113,8 +113,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   // The header pair must survive verbatim — no `;base64` suffix tacked on.
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'image/png');
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.body.encoding, 'base64');
-  assertEquals(fetched.response.body.body.data, pngMagic);
+  assertEquals(Array.from(fetched.response.body.body), Array.from(pngMagic));
 });
 
 test('FileDumpStore preserves the bytes discriminator on an empty-body response', async () => {
@@ -124,12 +123,12 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
   // 204-style: real upstream response with status + headers but a zero-length
   // body. Persistence drops the body file (nothing to gzip), but headers are
   // still written — the read path must surface this as `bytes`, not `none`.
-  const record: DumpRecord = {
+  const record: StoredDumpRecord = {
     ...baseRecord('01HZZ0000000000000000000E1', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 204,
       headers: [['content-type', 'application/json']],
-      body: { type: 'bytes', body: { encoding: 'utf8', data: '' } },
+      body: { type: 'bytes', body: new Uint8Array() },
     },
   };
 
@@ -137,8 +136,7 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
   const fetched = await store.get('key_x', '01HZZ0000000000000000000E1');
   assertExists(fetched);
   if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
-  assertEquals(fetched.response.body.body.encoding, 'utf8');
-  assertEquals(fetched.response.body.body.data, '');
+  assertEquals(fetched.response.body.body.byteLength, 0);
   assertEquals(fetched.response.headers.find(([k]) => k === 'content-type')?.[1], 'application/json');
 });
 
@@ -146,7 +144,7 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   const db = await openDb();
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
-  const record: DumpRecord = {
+  const record: StoredDumpRecord = {
     ...baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,
@@ -282,9 +280,9 @@ test('FileDumpStore: put + get round-trips through real-filesystem IO + node:sql
     await store.put('key_x', record);
     const fetched = await store.get('key_x', '01HZZ0000000000000000000A1');
     assertExists(fetched);
-    assertEquals(fetched.request.body.data, '{"hello":"world"}');
+    assertEquals(new TextDecoder().decode(fetched.request.body), '{"hello":"world"}');
     if (fetched.response.body.type !== 'bytes') throw new Error('expected bytes');
-    assertEquals(fetched.response.body.body.data, '{"id":"abc"}');
+    assertEquals(new TextDecoder().decode(fetched.response.body.body), '{"id":"abc"}');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

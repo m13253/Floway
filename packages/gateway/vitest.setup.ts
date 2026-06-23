@@ -1,7 +1,7 @@
 import type { DumpBroker } from './src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from './src/dump/registry.ts';
 import type { DumpStore } from './src/dump/store-contract.ts';
-import type { DumpMetadata, DumpRecord, DumpRecordId } from './src/dump/types.ts';
+import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from './src/dump/types.ts';
 import { initBackgroundSchedulerResolver } from './src/runtime/background.ts';
 import { trackBackground } from './src/test-helpers/background-tracker.ts';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
@@ -25,7 +25,7 @@ initBackgroundSchedulerResolver(_c => trackBackground);
 const noopStore: DumpStore = {
   async put(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
-  async get(_keyId: string, _id: DumpRecordId): Promise<DumpRecord | null> { return null; },
+  async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
   async purgeAll(): Promise<void> { /* noop */ },
   async purgeExpired(): Promise<void> { /* noop */ },
 };
