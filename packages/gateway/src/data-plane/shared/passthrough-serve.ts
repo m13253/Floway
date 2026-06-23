@@ -121,7 +121,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
     const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
-      ctx.dump?.apiError('gateway', 404);
+      ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
@@ -149,7 +149,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.apiError('upstream', response.status, binding.upstream);
+        ctx.dump?.error('upstream', binding.upstream);
         return forwardUpstreamResponse(response);
       }
 
@@ -177,18 +177,18 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       return forwardUpstreamResponse(response);
     }
 
-    ctx.dump?.apiError('gateway', 400);
+    ctx.dump?.error('gateway');
     return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(modelId), failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) {
-        ctx.dump?.apiError('upstream', forwarded.status);
+        ctx.dump?.error('upstream');
         return forwarded;
       }
     }
     recordRequestPerformance(ctx.backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
-    ctx.dump?.error(e);
+    ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }
 };

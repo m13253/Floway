@@ -8,6 +8,7 @@ import type { Context } from 'hono';
 
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import type {
+  DumpErrorMeta,
   DumpMetadata,
   DumpStreamEvent,
   DumpUpstreamRef,
@@ -49,17 +50,22 @@ interface ResponseSnapshot {
 //     parsing the payload, so `model` is set regardless of outcome.
 //   • `success(identity, usage)` fills all four; the upstream-resolved model
 //     id may overwrite what `requestedModel` had.
-//   • `apiError(source, status, upstream?)` writes the failure message and,
-//     for real upstream errors, stamps `upstreamId` so a 4xx/5xx row in the
-//     dashboard shows which upstream rejected the call; gateway-synthesized
-//     envelopes leave `upstreamId` unset.
-//   • `internalError` / `error` only set the error message — the
-//     `requestedModel`-set model survives so even an internal-error row
-//     carries model attribution.
+//   • `error(kind, upstream?)` records a categorized terminal error
+//     (`kind` is one of three result-type categories the respond layer maps
+//     to a clean HTTP status). Real upstream non-2xx pass `upstream` so a
+//     4xx/5xx row in the dashboard names the upstream that rejected the
+//     call; the gateway-synthesized arm may also pass it when a candidate
+//     was already chosen (item-not-found rewrite, server-tool input
+//     rejection); `kind: 'internal'` carries no upstream.
+//   • `failed(reason)` records an uncategorized terminal failure: a
+//     mid-stream tear, a try/catch that fell outside the result-type matrix,
+//     a passthrough exception. Caller passes a string or Error; the
+//     accumulator one-line-formats it. No status field, no upstream — the
+//     dashboard's display label is just `failed` (with the `reason` shown
+//     separately in the detail panel).
 //
-// `plain()` is the "we forwarded a non-streaming upstream response verbatim"
-// marker: it doesn't touch model/upstream/tokens (model from
-// `requestedModel` survives), it only clears any earlier error message.
+// `requestedModel`-set model survives across both error variants so even an
+// outright-failed turn carries model attribution.
 
 // Anthropic-style disjoint per-dimension counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
@@ -96,7 +102,7 @@ export class DumpAccumulator {
   private upstreamId: string | null = null;
   private inputTokens: number | null = null;
   private outputTokens: number | null = null;
-  private errorMessage: string | null = null;
+  private errorMeta: DumpErrorMeta | null = null;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -111,17 +117,13 @@ export class DumpAccumulator {
     this.model = model;
   }
 
-  apiError(source: 'upstream' | 'gateway', status: number, upstream?: string): void {
-    this.errorMessage = `${source} error ${status}`;
+  error(kind: 'upstream' | 'gateway' | 'internal', upstream?: string): void {
+    this.errorMeta = { kind };
     if (upstream !== undefined) this.upstreamId = upstream;
   }
 
-  internalError(message: string): void {
-    this.errorMessage = message;
-  }
-
-  plain(): void {
-    this.errorMessage = null;
+  failed(reason: unknown): void {
+    this.errorMeta = { kind: 'failed', reason: typeof reason === 'string' ? reason : oneLineError(reason) };
   }
 
   // Records one protocol frame. Stored as the canonical ProtocolFrame so
@@ -137,10 +139,6 @@ export class DumpAccumulator {
     this.upstreamId = identity.upstream;
     this.inputTokens = tokenUsageInput(usage);
     this.outputTokens = usage?.output ?? null;
-  }
-
-  error(reason: unknown): void {
-    this.errorMessage = typeof reason === 'string' ? reason : oneLineError(reason);
   }
 
   // --- response-side: handler exit ---
@@ -249,10 +247,13 @@ export class DumpAccumulator {
       requestBytes: this.requestSnapshot.body.byteLength,
       responseBytes: response.bytes.byteLength,
       durationMs: completedAt - this.startedAt,
-      // Precedence: explicit upstream-side errors raised by the respond path
-      // come first; otherwise a request-body read failure (operator-side
-      // payload didn't arrive intact) outranks a response-body read failure.
-      error: this.errorMessage ?? this.requestSnapshot.streamError ?? response.streamError,
+      // Precedence: an explicit error stamp from the respond path wins;
+      // otherwise a request-body read failure (operator-side payload didn't
+      // arrive intact) outranks a response-body read failure. Both stream-
+      // read failures surface as `kind: 'failed'`.
+      error: this.errorMeta
+        ?? (this.requestSnapshot.streamError !== null ? { kind: 'failed', reason: this.requestSnapshot.streamError } : null)
+        ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
     };
 
     const record: StoredDumpRecord = {

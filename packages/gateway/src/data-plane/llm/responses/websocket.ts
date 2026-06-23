@@ -190,7 +190,7 @@ const handleClientMessage = async (
           param: 'previous_response_id',
           code: 'previous_response_not_found',
         }, eventId);
-        ctx.dump?.error(error);
+        ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
       }
@@ -210,7 +210,7 @@ const handleClientMessage = async (
     }
     sendError(socket, 500, serverErrorEnvelope(error), eventId);
     if (ctx !== undefined) {
-      ctx.dump?.error(error);
+      ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }
   }
@@ -254,7 +254,7 @@ const respondResponsesWebSocket = async (input: {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.apiError(result.source, result.status, result.upstream);
+    ctx.dump?.error(result.source, result.upstream);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;
@@ -262,7 +262,7 @@ const respondResponsesWebSocket = async (input: {
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.internalError(result.error.message);
+    ctx.dump?.error('internal');
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
     return;
@@ -365,7 +365,7 @@ const respondResponsesWebSocket = async (input: {
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
-    if (failed) ctx.dump?.error(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+    if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     else ctx.dump?.success(metadata.modelIdentity, state.usage);
     ctx.dump?.finalize(failed ? 500 : 200, []);
     try {

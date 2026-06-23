@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
-import { rowTintClass, statusIcon } from './badge.ts';
+import { errorLabel, rowTintClass, statusIcon } from './badge.ts';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -197,11 +197,11 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
               {{ record.upstream.name }}
             </span>
             <span
-              v-if="record.error"
+              v-if="errorLabel(record.error, record.status)"
               class="ml-auto min-w-0 truncate text-accent-rose"
-              :title="record.error"
+              :title="errorLabel(record.error, record.status) ?? undefined"
             >
-              {{ record.error }}
+              {{ errorLabel(record.error, record.status) }}
             </span>
             <span v-else class="ml-auto shrink-0 text-gray-600">
               {{ totalTokens(record) === null ? '—' : `${formatTokens(totalTokens(record)!)} tok` }}

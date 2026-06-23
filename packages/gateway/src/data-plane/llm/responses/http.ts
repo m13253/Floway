@@ -74,7 +74,7 @@ export const responsesHttp = {
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) {
         const response = previousResponseNotFoundResponse(error.previousResponseId);
-        ctx?.dump?.apiError('gateway', 400);
+        ctx?.dump?.error('gateway');
         return (ctx?.dump?.finalize(response) ?? response);
       }
       return await respondWithInternalError(c, error, requestBody);
@@ -98,7 +98,7 @@ export const responsesHttp = {
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) {
         const response = previousResponseNotFoundResponse(error.previousResponseId);
-        ctx?.dump?.apiError('gateway', 400);
+        ctx?.dump?.error('gateway');
         return (ctx?.dump?.finalize(response) ?? response);
       }
       return await respondWithInternalError(c, error, requestBody);

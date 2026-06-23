@@ -24,18 +24,17 @@ export const respondResponses = async (
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.apiError(result.source, result.status, result.upstream);
+    ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.internalError(result.error.message);
+    ctx.dump?.error('internal');
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 
   if (result.type === 'plain') {
-    ctx.dump?.plain();
     return { success: true, response: plainResultToResponse(result) };
   }
 
@@ -53,7 +52,7 @@ export const respondResponses = async (
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
-      ctx.dump?.error(error);
+      ctx.dump?.failed(error);
       return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error)) };
     }
   }
@@ -70,7 +69,7 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       const failed = state.failedAfter(completion);
       if (failed) {
-        ctx.dump?.error(`responses stream failed (completion=${completion}, source-failed=${state.failed})`);
+        ctx.dump?.failed(`responses stream failed (completion=${completion}, source-failed=${state.failed})`);
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }

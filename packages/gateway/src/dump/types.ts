@@ -20,6 +20,16 @@ export interface DumpUpstreamRef {
   kind: string;
 }
 
+// What went wrong on a failed turn. Either a categorized result (kind is one
+// of three result-type categories the respond layer maps to a clean HTTP
+// status) or an uncategorized failure (caught exception, mid-stream tear,
+// passthrough catch-all) carrying its raw reason text. The categorized form
+// stores no status — `DumpMetadata.status` already does — so the dashboard
+// composes the display label as `${kind} error ${status}`.
+export type DumpErrorMeta =
+  | { kind: 'upstream' | 'gateway' | 'internal' }
+  | { kind: 'failed'; reason: string };
+
 export interface DumpMetadata {
   id: DumpRecordId;
   startedAt: number;        // unix ms
@@ -35,7 +45,7 @@ export interface DumpMetadata {
   requestBytes: number;
   responseBytes: number;
   durationMs: number;
-  error: string | null;     // single-line summary
+  error: DumpErrorMeta | null;
 }
 
 // Canonical protocol frame the gateway's respond layer fans out to every
