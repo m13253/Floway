@@ -15,6 +15,7 @@ import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
 import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -24,7 +25,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
-import { USERNAME_PATTERN, type exportQuery, type importBody } from '../schemas.ts';
+import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
@@ -247,6 +248,14 @@ const validateProxyFallbackReferences = (
   return null;
 };
 
+const parseImportedDumpRetention = (value: unknown): number | null => {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > DUMP_RETENTION_MAX_SECONDS) {
+    throw new Error(`dumpRetentionSeconds must be null or a positive integer up to ${DUMP_RETENTION_MAX_SECONDS}`);
+  }
+  return value;
+};
+
 const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
@@ -273,6 +282,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
         deletedAt: record.deletedAt,
+        dumpRetentionSeconds: parseImportedDumpRetention(record.dumpRetentionSeconds),
       });
     } catch (error) {
       return { type: 'invalid', index: i, error: error instanceof Error ? error.message : String(error) };
@@ -681,7 +691,15 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const performance = performanceResult.records;
 
   const repo = getRepo();
-  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [], mode);
+  // Snapshot pre-import key state once and reuse it for identity validation
+  // and the dump-purge transitions below. Replace mode also needs to purge
+  // each pre-existing key's dumps (otherwise the new owner of a reused id
+  // silently inherits the old owner's captures); merge mode needs the prior
+  // `dumpRetentionSeconds` per key id so a retention shrink/disable in the
+  // imported payload triggers the same purge transition `updateKey` would.
+  const preImportKeys = await repo.apiKeys.listIncludingDeleted();
+  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(k => [k.id, k.dumpRetentionSeconds]));
+  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
 
   // In merge mode an imported upstream's proxy_fallback_list may reference an
@@ -692,6 +710,14 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
 
   if (mode === 'replace') {
+    // Wipe each existing key's dump capture before the replace deletes wave so
+    // a reused id in the imported payload cannot inherit the previous owner's
+    // captures, and any live SSE subscriber is told the key went away.
+    for (const k of preImportKeys) {
+      await getDumpStore().purgeAll(k.id);
+      await notifyDisabledBestEffort(k.id, 'replace-mode import');
+    }
+
     // Replace mode is intentionally non-atomic across repos: D1 binding does not expose multi-repo
     // transactions, and a coordinated batch would require every repo to surface its writes as
     // prepared statements. A failure between the deleteAll wave and the per-record save loop
@@ -729,7 +755,20 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       dialTimeoutSeconds: proxy.dial_timeout_seconds,
     });
   }
-  for (const key of apiKeys) await repo.apiKeys.save(key);
+  for (const key of apiKeys) {
+    // Merge mode mirrors `updateKey`'s purge transition when retention is
+    // flipped off or shrunk; replace mode already purged everything above.
+    const previous = preImportRetentionById.get(key.id) ?? null;
+    await repo.apiKeys.save(key);
+    if (mode === 'merge' && previous !== key.dumpRetentionSeconds) {
+      if (key.dumpRetentionSeconds === null && previous !== null) {
+        await getDumpStore().purgeAll(key.id);
+        await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
+      } else if (previous !== null && key.dumpRetentionSeconds !== null && key.dumpRetentionSeconds < previous) {
+        await getDumpStore().purgeExpired(key.id, key.dumpRetentionSeconds);
+      }
+    }
+  }
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.searchUsage.set(record);
   for (const upstream of upstreams) await repo.upstreams.save(upstream);

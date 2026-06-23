@@ -536,6 +536,7 @@ const makeRespondCtx = (): GatewayCtx => ({
   backgroundScheduler: () => {},
   requestStartedAt: 0,
   currentColo: null,
+  dump: null,
 });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [

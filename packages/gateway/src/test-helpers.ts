@@ -5,6 +5,7 @@ import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
+import { trackBackground } from './test-helpers/background-tracker.ts';
 import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -97,9 +98,9 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   initRepo(repo);
   initFileProvider(new MemoryFileProvider());
   initImageProcessor(createInMemoryImageProcessor());
-  initBackgroundSchedulerResolver(_c => promise => {
-    promise.catch(err => console.error('[background]', err));
-  });
+  // Route background promises through the shared tracker so flushBackground()
+  // can deterministically await them — see test-helpers/background-tracker.ts.
+  initBackgroundSchedulerResolver(_c => trackBackground);
 
   const adminKey = options.adminKey ?? 'admin-test-key';
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
@@ -129,6 +130,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   };
   await repo.apiKeys.save(apiKey);
 

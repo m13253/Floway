@@ -110,7 +110,7 @@ export const messagesAttempt = {
     // contract still has to fire so a provider that forgets to wrap fails
     // loud on the happy path.
     void recorder.durationMs();
-    return await plainResultFromResponse(response);
+    return await plainResultFromResponse(response, candidate.binding.upstream);
   },
 };
 
@@ -124,7 +124,7 @@ const rewriteOrRenderMessagesFailure = async (
   payload: MessagesPayload,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
-): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'upstream-error' } }> => {
+): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
       payload.messages as readonly MessagesMessage[],
@@ -139,7 +139,8 @@ const rewriteOrRenderMessagesFailure = async (
     if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {
-        type: 'upstream-error',
+        type: 'api-error',
+        source: 'gateway',
         status: 400,
         headers: new Headers({ 'content-type': 'application/json' }),
         body: new TextEncoder().encode(JSON.stringify({

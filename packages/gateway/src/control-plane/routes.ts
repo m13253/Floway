@@ -4,6 +4,7 @@ import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
+import { dumpRoutes } from './dump.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
@@ -54,6 +55,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // `upstream_ids ⊆ user.upstreamIds` check) is the real authorization gate;
   // this endpoint just feeds the picker UI.
   .get('/api/upstream-options', listUpstreamOptions)
+  .route('/api/dump', dumpRoutes)
   // Self-service password change is session-only (the current-password check
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.

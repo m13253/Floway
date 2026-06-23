@@ -1,3 +1,5 @@
+import type { RequestBody } from './request-body.ts';
+import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
@@ -19,6 +21,10 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
   readonly currentColo: string | null;
+  // Null when the api key has no retention configured, in which case the
+  // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
+  // `ctx.dump?.finalize(response) ?? response` returns the response unchanged.
+  readonly dump: DumpAccumulator | null;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -27,21 +33,41 @@ export interface CreateGatewayCtxOptions {
   // handler can cancel mid-stream); HTTP call sites let the factory mint one
   // when wantsStream is true.
   downstreamAbortController?: AbortController;
+  // Already-buffered inbound request body bytes. HTTP handlers read them
+  // once via `readRequestBody` and pass them in so the dump accumulator's
+  // snapshot reflects the exact bytes the handler parsed. WebSocket
+  // upgrades carry no HTTP body — the WS Responses path passes the
+  // per-turn JSON message bytes here so the dump captures the turn's
+  // input verbatim.
+  requestBody: RequestBody;
+  // Override the HTTP method recorded on the dump's request snapshot. The
+  // WS Responses path uses `'WS'` so a dumped turn reads as
+  // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
+  method?: string;
+  // The model id parsed from the request payload (or from the URL on
+  // Gemini's routes), stamped on the dump immediately so even an
+  // outright-error turn carries model attribution. Omit only on error
+  // fallback paths where payload parsing itself failed.
+  model?: string;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
-  const apiKeyId = apiKeyFromContext(c).id;
+  const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
+  const backgroundScheduler = backgroundSchedulerFromContext(c);
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, backgroundScheduler);
+  if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
-    apiKeyId,
+    apiKeyId: apiKey.id,
     upstreamIds,
     abortSignal: controller?.signal,
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
-    backgroundScheduler: backgroundSchedulerFromContext(c),
+    backgroundScheduler,
     requestStartedAt: performance.now(),
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     currentColo: getCurrentColo(c.req.raw),
+    dump,
   };
 };

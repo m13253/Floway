@@ -58,6 +58,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
     createdAt: '2026-04-30T11:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
+    dumpRetentionSeconds: null,
   });
 
   const response = await requestApp(

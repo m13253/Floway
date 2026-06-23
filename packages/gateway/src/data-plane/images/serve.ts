@@ -10,6 +10,8 @@
 
 import type { Context } from 'hono';
 
+import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
+import { readRequestBody } from '../llm/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesResponse } from '../shared/telemetry/usage.ts';
 
@@ -23,10 +25,10 @@ type PreparedRequest =
   | { type: 'ok'; body: Record<string, unknown>; model: string }
   | { type: 'invalid'; message: string };
 
-const prepareImagesGenerationsRequest = (body: string): PreparedRequest => {
+const prepareImagesGenerationsRequest = (bytes: Uint8Array): PreparedRequest => {
   let request: ImagesGenerationsRequestBody;
   try {
-    const parsed = JSON.parse(body) as unknown;
+    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { type: 'invalid', message: 'Images generations request body must be an object.' };
     }
@@ -41,11 +43,19 @@ const prepareImagesGenerationsRequest = (body: string): PreparedRequest => {
 };
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
-  const request = prepareImagesGenerationsRequest(await c.req.text());
-  if (request.type === 'invalid') return passthroughApiError(c, request.message, 400);
+  const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+  const request = prepareImagesGenerationsRequest(requestBody.bytes);
+  if (request.type === 'invalid') {
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, request.message, 400);
+    return (ctx.dump?.finalize(response) ?? response);
+  }
 
-  return await passthroughServe({
+  ctx.dump?.requestedModel(request.model);
+  const response = await passthroughServe({
     c,
+    ctx,
     sourceApi: 'images_generations',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
@@ -56,26 +66,38 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
+  return (ctx.dump?.finalize(response) ?? response);
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
+  // Buffer the multipart body once. Hono's formData() helper would consume
+  // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
+  // Response keeps the dump capture honest without a second read on the wire.
+  const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   let form: FormData;
   try {
-    form = await c.req.raw.formData();
+    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
   } catch {
     // Match the embeddings serve stance: do not surface the underlying
     // parser's error text. The wording is enough for a client to know
     // they sent the wrong content type or a malformed body.
-    return passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400);
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400);
+    return (ctx.dump?.finalize(response) ?? response);
   }
 
   const modelRaw = form.get('model');
   if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
-    return passthroughApiError(c, 'Image edits request body must include a model field.', 400);
+    ctx.dump?.error('gateway');
+    const response = passthroughApiError(c, 'Image edits request body must include a model field.', 400);
+    return (ctx.dump?.finalize(response) ?? response);
   }
 
-  return await passthroughServe({
+  ctx.dump?.requestedModel(modelRaw);
+  const response = await passthroughServe({
     c,
+    ctx,
     sourceApi: 'images_edits',
     model: modelRaw,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
@@ -95,4 +117,5 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
+  return (ctx.dump?.finalize(response) ?? response);
 };

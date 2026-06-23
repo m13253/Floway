@@ -1,16 +1,15 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from './events/to-result.ts';
-import { messagesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { upstreamErrorToResponse } from '@floway-dev/provider';
+import { apiErrorToResponse } from '@floway-dev/provider';
 
 type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 
@@ -25,31 +24,41 @@ export const respondMessages = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    return { success: false, response: upstreamErrorToResponse(result) };
+    ctx.dump?.error(result.source, result.upstream);
+    return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    ctx.dump?.failed(result.error.message);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
 
-  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
+  if (result.type === 'plain') {
+    if (result.status >= 400) {
+      ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
+    }
+    return { success: true, response: plainResultToResponse(result) };
+  }
 
   const state = new SourceStreamState();
   const usageState = createMessagesStreamUsageState();
-  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream);
+  const frames = observeMessagesFrames(result.events, state, usageState, wantsStream, ctx);
 
   if (!wantsStream) {
     try {
       const response = await collectMessagesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromMessagesUsage(response.usage));
+      const usage = tokenUsageFromMessagesUsage(response.usage);
+      ctx.dump?.success(metadata.modelIdentity, usage);
+      await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
+      ctx.dump?.failed(error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error)) };
     }
   }
@@ -64,12 +73,18 @@ export const respondMessages = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      const failed = state.failedAfter(completion);
+      if (failed) {
+        ctx.dump?.failed(`messages stream failed (completion=${completion}, source-failed=${state.failed})`);
+      } else {
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
+      }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {
         console.error('Failed to record Messages usage:', error);
       } finally {
-        recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
+        recordPerformance(ctx, metadata.performance, failed);
       }
     }
   });
@@ -117,11 +132,12 @@ export const createMessagesStreamUsageState = () => ({
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
 
 // Returns a snapshot of the running usage on every frame that revises it, not
-// only on `message_stop`, so the observer can checkpoint billing state into
-// `SourceStreamState.usage` as the stream progresses. A client disconnect that
-// races the terminal frame would otherwise discard the last `message_delta`'s
-// output count. Each call returns a fresh object so the snapshot stored in
-// `SourceStreamState.usage` does not silently mutate when the next delta lands.
+// only on `message_stop`, so the respond layer can checkpoint billing state
+// into `SourceStreamState.usage` as the stream progresses. A client disconnect
+// that races the terminal frame would otherwise discard the last
+// `message_delta`'s output count. Each call returns a fresh object so the
+// snapshot stored in `SourceStreamState.usage` does not silently mutate when
+// the next delta lands.
 export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamEvent>, state: MessagesStreamUsageState) => {
   if (frame.type !== 'event') return null;
   const { event } = frame;
@@ -178,8 +194,10 @@ const observeMessagesFrames = async function* (
   state: SourceStreamState,
   usageState: MessagesStreamUsageState,
   observeUsage: boolean,
+  ctx: GatewayCtx,
 ) {
   for await (const frame of frames) {
+    ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && frame.event.type === 'error';
     if (failed) state.failed = true;
     if (observeUsage) {

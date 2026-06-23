@@ -1,12 +1,12 @@
-import type { Context } from 'hono';
-
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -46,44 +46,67 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // etc.) as a Responses-shaped 502 with the same internal-error envelope the
 // in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic.
-const respondWithInternalError = async (c: Context, error: unknown): Promise<Response> => {
+// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
+// caller passes its outer `ctx` when one was already constructed (so the
+// dump row preserves the model attribution the request-time
+// `requestedModel` stamped); a fresh ctx is minted only for pre-parse
+// failures where no payload was available to read model from.
+const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
-  const { response } = await respondResponses(c, result, false, ctx);
-  return response;
+  const { response } = await respondResponses(c, result, false, effectiveCtx);
+  return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
+const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
+  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+
 export const responsesHttp = {
-  generate: async (c: Context): Promise<Response> => {
+  generate: async (c: AuthedContext): Promise<Response> => {
+    const requestBody = await readRequestBody(c);
+    let ctx: GatewayCtx | undefined;
     try {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), true);
+      const payload = parsePayload(requestBody, true);
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, { wantsStream });
+      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
-      return response;
+      return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      return await respondWithInternalError(c, error);
+      if (error instanceof PreviousResponseNotFoundError) {
+        const response = previousResponseNotFoundResponse(error.previousResponseId);
+        ctx?.dump?.error('gateway');
+        return (ctx?.dump?.finalize(response) ?? response);
+      }
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 
-  compact: async (c: Context): Promise<Response> => {
+  compact: async (c: AuthedContext): Promise<Response> => {
+    const requestBody = await readRequestBody(c);
+    let ctx: GatewayCtx | undefined;
     try {
-      const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), false);
-      const ctx = createGatewayCtxFromHono(c, { wantsStream: false });
+      const payload = parsePayload(requestBody, false);
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
-      if (result.type === 'result') return Response.json(result.result);
+      if (result.type === 'result') {
+        ctx.dump?.success(result.modelIdentity, result.usage);
+        const compactResponse = Response.json(result.result);
+        return (ctx.dump?.finalize(compactResponse) ?? compactResponse);
+      }
       const { response } = await respondResponses(c, result, false, ctx);
-      return response;
+      return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
-      return await respondWithInternalError(c, error);
+      if (error instanceof PreviousResponseNotFoundError) {
+        const response = previousResponseNotFoundResponse(error.previousResponseId);
+        ctx?.dump?.error('gateway');
+        return (ctx?.dump?.finalize(response) ?? response);
+      }
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 };

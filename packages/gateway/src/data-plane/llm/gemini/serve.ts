@@ -42,7 +42,7 @@ export const geminiServe = {
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
 
-    // Any non-throwing attempt result — events, upstream-error, or
+    // Any non-throwing attempt result — events, api-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
     // upstream.

@@ -19,7 +19,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamError, streamingProviderCall, upstreamErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -234,7 +234,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         { headers: stream.headers },
       );
     }
-    return await readUpstreamError(stream.response);
+    return await readUpstreamApiError(stream.response);
   };
 
   // Lowering rebuilds a ProviderStreamResult so callers continue to relay
@@ -254,8 +254,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         ...(result.headers ? { headers: result.headers } : {}),
       };
     }
-    if (result.type === 'upstream-error') {
-      return { ok: false, response: upstreamErrorToResponse(result), modelKey };
+    if (result.type === 'api-error') {
+      return { ok: false, response: apiErrorToResponse(result), modelKey };
     }
     throw new Error(`Copilot boundary chain produced unexpected ExecuteResult shape '${result.type}'`);
   };

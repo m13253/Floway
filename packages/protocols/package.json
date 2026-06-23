@@ -14,7 +14,8 @@
     "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"

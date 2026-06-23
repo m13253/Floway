@@ -54,6 +54,7 @@ const gatewayCtx = (): GatewayCtx => ({
   wantsStream: true,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
 });

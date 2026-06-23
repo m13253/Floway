@@ -104,7 +104,7 @@ export const prepareResponsesServePlan = async (args: {
   // its target row loaded by the affinity walk.
   await stageUserInputItems(payload.input, store);
 
-  // Any non-throwing attempt result — events, upstream-error, or
+  // Any non-throwing attempt result — events, api-error, or
   // internal-error — IS the answer for this request: an upstream 4xx/5xx
   // from the first viable candidate is final, not a hint to try another
   // upstream.

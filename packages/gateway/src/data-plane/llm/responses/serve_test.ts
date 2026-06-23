@@ -55,6 +55,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   wantsStream: true,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
@@ -220,7 +221,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   // An upstream error from the first candidate IS the final answer — the
   // gateway does not retry on a different upstream just because the first one
   // produced an HTTP error.
-  assertEquals(result.type, 'upstream-error');
+  assertEquals(result.type, 'api-error');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 0);
 });
@@ -236,8 +237,8 @@ test('generate renders model-missing when no candidates are available', async ()
     headers: new Headers(),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
@@ -271,8 +272,8 @@ test('generate renders routing-unavailable as a 400 when a forcing item names an
     headers: new Headers(),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
@@ -304,8 +305,8 @@ test('compact renders routing-unavailable when no candidate exposes the response
     headers: new Headers(),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.code, 'responses_item_routing_unavailable');

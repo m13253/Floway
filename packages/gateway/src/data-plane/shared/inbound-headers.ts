@@ -10,13 +10,13 @@ import type { Context } from 'hono';
 //   passthrough). Letting any of these survive would clobber a pinned
 //   value or leak a private one.
 //
-// - HTTP/1.1 framing + hop-by-hop (RFC 9110 §7.6.1). `content-length` and
-//   `transfer-encoding` describe the inbound body and would mis-frame the
-//   re-serialized outbound body — on Node this surfaces as undici's
-//   `RequestContentLengthMismatchError`; Workers' `fetch` silently rewrites
-//   the framing. `connection`, `keep-alive`, `proxy-connection`, `te`,
-//   `trailer`, `upgrade`, `expect` are end-to-end meaningless; the runtime
-//   fetch refuses most of them outright.
+// - HTTP/1.1 framing + hop-by-hop (RFC 9110 §7.6.1). `content-length`,
+//   `content-encoding`, and `transfer-encoding` describe the inbound body
+//   and would mis-frame the re-serialized outbound body — on Node this
+//   surfaces as undici's `RequestContentLengthMismatchError`; Workers'
+//   `fetch` silently rewrites the framing. `connection`, `keep-alive`,
+//   `proxy-connection`, `te`, `trailer`, `upgrade`, `expect` are end-to-end
+//   meaningless; the runtime fetch refuses most of them outright.
 //
 // - `accept-encoding`. End-to-end in spec terms, transport-level in
 //   practice: the runtime fetch advertises the encodings it can
@@ -47,6 +47,7 @@ const SCRUBBED_INBOUND_HEADER_NAMES = [
   'authorization',
   'cdn-loop',
   'connection',
+  'content-encoding',
   'content-length',
   'content-type',
   'cookie',

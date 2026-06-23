@@ -24,6 +24,7 @@ const ctx = (): GatewayCtx => ({
   wantsStream: false,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
@@ -65,7 +66,8 @@ test('respondGemini preserves upstream Google RPC Status body', async () => {
   };
 
   const response = await requestGeminiResponse({
-    type: 'upstream-error',
+    type: 'api-error',
+    source: 'upstream',
     status: 400,
     headers: new Headers({ 'content-type': 'application/json' }),
     body: encoder.encode(JSON.stringify(upstreamBody)),

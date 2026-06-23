@@ -13,6 +13,8 @@ export interface ApiKey {
   // null = inherit global upstream order; array = whitelist + priority order.
   upstreamIds: string[] | null;
   deletedAt: string | null;
+  // null = dump capture disabled; positive integer = seconds of retention.
+  dumpRetentionSeconds: number | null;
 }
 
 export interface User {

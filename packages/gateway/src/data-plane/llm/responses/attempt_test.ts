@@ -23,6 +23,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   wantsStream: true,
   runtimeLocation: 'test',
   currentColo: null,
+  dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
 });
@@ -228,8 +229,8 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     headers: new Headers(),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.code, null);
@@ -258,8 +259,8 @@ test('generate passes non-events provider result through unchanged', async () =>
     headers: new Headers(),
   });
 
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') throw new Error('unreachable');
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 502);
   // Wrap must not run when the upstream failed before any events flowed.
   assertEquals(wrapSpy.mock.calls.length, 0);

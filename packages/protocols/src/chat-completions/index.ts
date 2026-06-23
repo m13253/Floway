@@ -147,3 +147,7 @@ export interface ChatCompletionsDelta {
 export * from './errors.ts';
 
 export { parseChatCompletionsStream, type ParseChatCompletionsStreamOptions } from './stream.ts';
+
+export { CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult } from './to-result.ts';
+export { reassembleChatCompletionsEvents } from './reassemble.ts';
+export { chatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

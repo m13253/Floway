@@ -5,13 +5,15 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 // Anthropic Messages error envelope used to render pre-stream
-// `LlmServeFailure`s.
+// `LlmServeFailure`s. These are gateway-synthesized rather than received
+// from any upstream — `source: 'gateway'` so the dump labels them as such.
 const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,
 ): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => ({
-  type: 'upstream-error',
+  type: 'api-error',
+  source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({

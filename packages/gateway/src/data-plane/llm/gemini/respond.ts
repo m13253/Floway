@@ -2,15 +2,14 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
-import { GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from './events/to-result.ts';
-import { geminiProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import { type ExecuteResult, type PlainResult, type UpstreamErrorResult, type InternalDebugError, toInternalDebugError, decodeUpstreamErrorBody } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
@@ -24,30 +23,40 @@ export const respondGemini = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    return { success: false, response: geminiUpstreamErrorResponse(result) };
+    ctx.dump?.error(result.source, result.upstream);
+    return { success: false, response: geminiApiErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    ctx.dump?.failed(result.error.message);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
 
-  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
+  if (result.type === 'plain') {
+    if (result.status >= 400) {
+      ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
+    }
+    return { success: true, response: plainResultToResponse(result) };
+  }
 
   const state = new SourceStreamState();
-  const frames = observeGeminiFrames(result.events, state, wantsStream);
+  const frames = observeGeminiFrames(result.events, state, wantsStream, ctx);
 
   if (!wantsStream) {
     try {
       const response = await collectGeminiProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromGeminiResponse(response));
+      const usage = tokenUsageFromGeminiResponse(response);
+      ctx.dump?.success(metadata.modelIdentity, usage);
+      await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
+      ctx.dump?.failed(error);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
   }
@@ -62,12 +71,18 @@ export const respondGemini = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      const failed = state.failedAfter(completion);
+      if (failed) {
+        ctx.dump?.failed(`gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
+      } else {
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
+      }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {
         console.error('Failed to record Gemini usage:', error);
       } finally {
-        recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
+        recordPerformance(ctx, metadata.performance, failed);
       }
     }
   });
@@ -144,7 +159,7 @@ const geminiErrorResponse = (status: number, message: string, debug: GeminiError
   return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
 
-const geminiUpstreamErrorResponse = (error: UpstreamErrorResult): Response => upstreamGoogleRpcErrorResponse(error) ?? geminiErrorResponse(error.status, upstreamErrorMessage(error));
+const geminiApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiErrorResponse(error.status, apiErrorMessage(error));
 
 const geminiCollectErrorResponse = (error: unknown): Response => {
   const geminiError = caughtGeminiErrorEvent(error);
@@ -170,8 +185,8 @@ const isGeminiErrorResponse = (value: unknown): value is GeminiErrorResponse => 
   return typeof payload.code === 'number' && typeof payload.message === 'string' && typeof payload.status === 'string';
 };
 
-const upstreamGoogleRpcErrorResponse = (error: UpstreamErrorResult): Response | null => {
-  const parsed = parseJson(decodeUpstreamErrorBody(error).trim());
+const googleRpcErrorPassthroughResponse = (error: ApiErrorResult): Response | null => {
+  const parsed = parseJson(decodeApiErrorBody(error).trim());
   if (!isGeminiErrorResponse(parsed)) return null;
 
   return new Response(error.body.slice(), {
@@ -180,8 +195,8 @@ const upstreamGoogleRpcErrorResponse = (error: UpstreamErrorResult): Response | 
   });
 };
 
-const upstreamErrorMessage = (error: UpstreamErrorResult): string => {
-  const body = decodeUpstreamErrorBody(error).trim();
+const apiErrorMessage = (error: ApiErrorResult): string => {
+  const body = decodeApiErrorBody(error).trim();
   return body || 'Upstream Gemini request failed.';
 };
 
@@ -196,8 +211,9 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 
 const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
-const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
+const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
   for await (const frame of frames) {
+    ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
     if (failed) state.failed = true;
     if (observeUsage) {

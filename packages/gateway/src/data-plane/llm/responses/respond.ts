@@ -1,16 +1,15 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './events/to-result.ts';
-import { responsesProtocolFrameToSSEFrame } from './events/to-sse.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { upstreamErrorToResponse } from '@floway-dev/provider';
+import { apiErrorToResponse } from '@floway-dev/provider';
 
 // Renders an upstream Responses result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
@@ -23,30 +22,40 @@ export const respondResponses = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    return { success: false, response: upstreamErrorToResponse(result) };
+    ctx.dump?.error(result.source, result.upstream);
+    return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    ctx.dump?.failed(result.error.message);
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 
-  if (result.type === 'plain') return { success: true, response: plainResultToResponse(result) };
+  if (result.type === 'plain') {
+    if (result.status >= 400) {
+      ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
+    }
+    return { success: true, response: plainResultToResponse(result) };
+  }
 
   const state = new SourceStreamState();
-  const frames = observeResponsesFrames(result.events, state, wantsStream);
+  const frames = observeResponsesFrames(result.events, state, wantsStream, ctx);
 
   if (!wantsStream) {
     try {
       const response = await collectResponsesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
-      await recordUsage(ctx, metadata.modelIdentity, tokenUsageFromResponsesResult(response));
+      const usage = tokenUsageFromResponsesResult(response);
+      ctx.dump?.success(metadata.modelIdentity, usage);
+      await recordUsage(ctx, metadata.modelIdentity, usage);
       recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed');
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true);
+      ctx.dump?.failed(error);
       return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error)) };
     }
   }
@@ -61,12 +70,18 @@ export const respondResponses = async (
       });
     } finally {
       const metadata = await eventResultMetadata(result);
+      const failed = state.failedAfter(completion);
+      if (failed) {
+        ctx.dump?.failed(`responses stream failed (completion=${completion}, source-failed=${state.failed})`);
+      } else {
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
+      }
       try {
         await recordUsage(ctx, metadata.modelIdentity, state.usage);
       } catch (error) {
         console.error('Failed to record Responses HTTP usage:', error);
       } finally {
-        recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
+        recordPerformance(ctx, metadata.performance, failed);
       }
     }
   });
@@ -108,8 +123,9 @@ const internalResponsesStreamErrorFrame = (error: unknown) => {
 
 const isResponsesTerminalFrame = (frame: ProtocolFrame<ResponsesStreamEvent>) => frame.type === 'event' && isResponsesTerminalEvent(frame.event);
 
-const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean) {
+const observeResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
   for await (const frame of frames) {
+    ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed');
     if (failed) state.failed = true;
     if (observeUsage) {

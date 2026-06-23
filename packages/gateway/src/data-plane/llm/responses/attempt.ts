@@ -5,6 +5,7 @@ import { normalizeAssistantInputText } from './items/normalize-assistant-content
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
@@ -14,11 +15,11 @@ import { tryCatchLlmServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
-import { collectResponsesProtocolEventsToResult } from './events/to-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamError, type ExecuteResult } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ExecuteResult } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -131,7 +132,12 @@ export const responsesAttempt = {
       targetApi: 'responses',
       responseId,
     }));
-    return { type: 'result', result: { ...upstreamCompacted, id: responseId } };
+    return {
+      type: 'result',
+      result: { ...upstreamCompacted, id: responseId },
+      modelIdentity: chainResult.modelIdentity,
+      usage: tokenUsageFromResponsesResult(upstreamCompacted),
+    };
   },
 };
 
@@ -158,7 +164,8 @@ const rewriteOrRenderFailure = async (
     if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {
-        type: 'upstream-error',
+        type: 'api-error',
+        source: 'gateway',
         status: 404,
         headers: new Headers({ 'content-type': 'application/json' }),
         body: new TextEncoder().encode(JSON.stringify({
@@ -243,7 +250,7 @@ const callResponsesCompactAsExecuteResult = async (
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
-    return { ...(await readUpstreamError(providerResult.response)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
   return eventResult(

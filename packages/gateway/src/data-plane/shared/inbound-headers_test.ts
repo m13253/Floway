@@ -26,6 +26,9 @@ describe('inboundHeadersForUpstream', () => {
         'cookie': 'session=abc',
         'host': 'gateway.example.com',
         'content-type': 'multipart/form-data; boundary=abc',
+        'content-length': '12345',
+        'content-encoding': 'gzip',
+        'transfer-encoding': 'chunked',
         'anthropic-beta': 'context-1m',
         'anthropic-version': '2023-06-01',
         'user-agent': 'claude-sdk/1.0',
@@ -41,6 +44,9 @@ describe('inboundHeadersForUpstream', () => {
     assertEquals(headers.has('cookie'), false);
     assertEquals(headers.has('host'), false);
     assertEquals(headers.has('content-type'), false);
+    assertEquals(headers.has('content-length'), false);
+    assertEquals(headers.has('content-encoding'), false);
+    assertEquals(headers.has('transfer-encoding'), false);
     assertEquals(headers.get('anthropic-beta'), 'context-1m');
     assertEquals(headers.get('anthropic-version'), '2023-06-01');
     assertEquals(headers.get('user-agent'), 'claude-sdk/1.0');

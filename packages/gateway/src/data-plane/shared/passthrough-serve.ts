@@ -19,13 +19,12 @@ import type { NonLlmServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, runtimeLocationFromRequest } from './telemetry/performance.ts';
+import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -89,6 +88,7 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 
 export interface PassthroughServeContext {
   readonly c: AuthedContext;
+  readonly ctx: GatewayCtx;
   readonly sourceApi: NonLlmServeApiName;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
@@ -112,18 +112,16 @@ export interface PassthroughServeContext {
   readonly noBindingMessage: (modelId: string) => string;
 }
 
-export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Response> => {
-  const { c, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = ctx;
+export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
+  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = input;
   const requestStartedAt = performance.now();
-  const apiKeyId = apiKeyFromContext(c).id;
-  const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
-  const backgroundScheduler = backgroundSchedulerFromContext(c);
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundScheduler);
+    const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
+    const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
+      ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
@@ -134,35 +132,37 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       const { response, modelKey } = await call(binding, {
         fetcher: fetcherForUpstream(binding.upstream),
         recordUpstreamLatency: recorder.record,
-        waitUntil: backgroundScheduler,
+        waitUntil: ctx.backgroundScheduler,
         headers: inboundHeadersForUpstream(c),
       });
       const upstreamDurationMs = recorder.durationMs();
       const performanceContext: PerformanceTelemetryContext = {
-        keyId: apiKeyId,
+        keyId: ctx.apiKeyId,
         model: modelId,
         upstream: binding.upstream,
         modelKey,
         stream: false,
-        runtimeLocation,
+        runtimeLocation: ctx.runtimeLocation,
       };
       lastPerformance = performanceContext;
 
       if (!response.ok) {
-        recordUpstreamPerformance(backgroundScheduler, performanceContext, true, upstreamDurationMs);
-        recordRequestPerformance(backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+        recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
+        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+        ctx.dump?.error('upstream', binding.upstream);
         return forwardUpstreamResponse(response);
       }
 
-      recordUpstreamPerformance(backgroundScheduler, performanceContext, false, upstreamDurationMs);
+      recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
+      ctx.dump?.success({ model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
       if (usage) {
         scheduleUsageRecord(
-          backgroundScheduler,
+          ctx.backgroundScheduler,
           recordTokenUsage(
-            apiKeyId,
+            ctx.apiKeyId,
             {
               model: modelId,
               upstream: binding.upstream,
@@ -173,17 +173,22 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
           ),
         );
       }
-      recordRequestPerformance(backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
+      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
       return forwardUpstreamResponse(response);
     }
 
+    ctx.dump?.error('gateway');
     return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(modelId), failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
-      if (forwarded) return forwarded;
+      if (forwarded) {
+        ctx.dump?.error('upstream');
+        return forwarded;
+      }
     }
-    recordRequestPerformance(backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
+    recordRequestPerformance(ctx.backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
+    ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }
 };

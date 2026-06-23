@@ -51,6 +51,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
+  dumpRetentionSeconds: null,
   ...overrides,
 });
 
