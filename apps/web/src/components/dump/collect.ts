@@ -76,7 +76,7 @@ export const collectByKind = (kind: CollectKind, events: readonly DumpStreamEven
 // reassemblers wrap upstream error events as "Upstream SSE error: ..."
 // for the live path, which would clobber the raw message we surfaced.
 
-export const collectMessagesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<MessagesResult>> => {
+const collectMessagesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<MessagesResult>> => {
   let truncated = true;
   let error: string | null = null;
   for (const ev of events) {
@@ -103,7 +103,7 @@ export const collectMessagesStream = async (events: readonly DumpStreamEvent[]):
   }
 };
 
-export const collectChatCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<ChatCompletionsResult>> => {
+const collectChatCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<ChatCompletionsResult>> => {
   let truncated = true;
   let error: string | null = null;
   for (const ev of events) {
@@ -132,7 +132,7 @@ export const collectChatCompletionsStream = async (events: readonly DumpStreamEv
   }
 };
 
-export const collectResponsesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<ResponsesResult>> => {
+const collectResponsesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<ResponsesResult>> => {
   let truncated = true;
   let error: string | null = null;
   for (const ev of events) {
@@ -163,7 +163,7 @@ export const collectResponsesStream = async (events: readonly DumpStreamEvent[])
   }
 };
 
-export const collectGeminiStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<GeminiResult>> => {
+const collectGeminiStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<GeminiResult>> => {
   let truncated = true;
   let error: string | null = null;
   for (const ev of events) {

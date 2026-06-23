@@ -2,7 +2,7 @@ import type { DumpErrorMeta } from '@floway-dev/gateway/dump-types';
 
 type RowSeverity = 'ok' | 'warn' | 'err';
 
-export const rowSeverity = (status: number | null, error: DumpErrorMeta | null): RowSeverity => {
+const rowSeverity = (status: number | null, error: DumpErrorMeta | null): RowSeverity => {
   if (status === null || error !== null) return 'err';
   if (status >= 500) return 'err';
   if (status >= 400) return 'warn';
@@ -21,7 +21,7 @@ export const rowTintClass = (status: number | null, error: DumpErrorMeta | null,
 // At-a-glance gateway-answered-OK signal: check on 2xx, cross (severity-
 // tinted) otherwise. The exact status code and any error string surface
 // elsewhere (list-row trailer, detail-section error caption).
-export interface StatusIcon {
+interface StatusIcon {
   readonly iconClass: string;
   readonly colorClass: string;
   readonly tooltip: string;

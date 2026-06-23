@@ -101,7 +101,7 @@ export type DumpBody =
   | { encoding: 'utf8'; data: string }
   | { encoding: 'base64'; data: string };
 
-export interface DumpRequest {
+interface DumpRequest {
   method: string;
   path: string;
   headers: Array<[string, string]>;
@@ -113,7 +113,7 @@ export type DumpResponseBody =
   | { type: 'bytes'; body: DumpBody }
   | { type: 'none' };
 
-export interface DumpResponse {
+interface DumpResponse {
   status: number | null;
   headers: Array<[string, string]>;
   body: DumpResponseBody;
