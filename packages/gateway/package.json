@@ -17,16 +17,12 @@
       "types": "./src/data-plane/tools/web-search/types.ts"
     },
     "./dump-codec": {
-      "import": "./src/dump/broker.ts",
-      "types": "./src/dump/broker.ts"
+      "import": "./src/dump/codec.ts",
+      "types": "./src/dump/codec.ts"
     },
     "./dump-types": {
       "import": "./src/dump/types.ts",
       "types": "./src/dump/types.ts"
-    },
-    "./dump/test-fixtures": {
-      "import": "./src/dump/test-fixtures.ts",
-      "types": "./src/dump/test-fixtures.ts"
     }
   },
   "scripts": {
