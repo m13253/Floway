@@ -3,6 +3,7 @@ import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
 import { statusBadgeClass } from './badge.ts';
 import HeaderTable from './HeaderTable.vue';
+import { renderMultipart } from './multipart.ts';
 import { authFetch } from '../../api/client.ts';
 import { collectByKind, type CollectKind, type CollectOutcome, detectCollectKind } from '@floway-dev/gateway/dump-collect';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
@@ -82,16 +83,39 @@ const decodeBase64Utf8 = (b64: string): { text: string; error: string | null } =
 
 interface RenderedBody {
   text: string;
+  // Optional clipboard payload distinct from `text`. Set when the rendered
+  // text is a reading-only transformation of the wire body and "Copy"
+  // should give back something replay-friendly instead. Multipart bodies
+  // set this to the original wire base64 so an operator can `--data-binary
+  // @file` straight back into curl.
+  copyText: string | null;
   decodeError: string | null;
   parseError: string | null;
   isJson: boolean;
+  // Number of `[binary, …]` placeholders the multipart renderer inserted,
+  // null when the body is not multipart/form-data.
+  multipartBinaryParts: number | null;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', decodeError: null, parseError: null, isJson: false };
+  if (body.data.length === 0) return { text: '', copyText: null, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: null };
+  if (contentType.toLowerCase().startsWith('multipart/')) {
+    // The base64-encoded multipart body holds arbitrary binary in its file
+    // parts; a straight UTF-8 decode would either throw (fatal mode) or
+    // produce mojibake. Hand it to the multipart renderer so each part's
+    // text content shows readably and each binary part collapses to a
+    // `[binary, N bytes, content-type=…]` placeholder followed by its
+    // base64. Copy returns the original wire-base64 unchanged so an
+    // operator can replay the request straight from the clipboard.
+    const source = body.encoding === 'base64' ? body.data : btoa(body.data);
+    const rendered = renderMultipart(source, contentType);
+    if (rendered !== null) {
+      return { text: rendered.text, copyText: source, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: rendered.binaryPartCount };
+    }
+  }
   if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
   const decoded = decodeBase64Utf8(body.data);
-  if (decoded.error !== null) return { text: body.data, decodeError: decoded.error, parseError: null, isJson: false };
+  if (decoded.error !== null) return { text: body.data, copyText: null, decodeError: decoded.error, parseError: null, isJson: false, multipartBinaryParts: null };
   return renderTextBody(decoded.text, contentType);
 };
 
@@ -106,13 +130,13 @@ const renderTextBody = (body: string, contentType: string): RenderedBody => {
   if (isJsonContentType(contentType)) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return { text: JSON.stringify(parsed, null, 2), decodeError: null, parseError: null, isJson: true };
+      return { text: JSON.stringify(parsed, null, 2), copyText: null, decodeError: null, parseError: null, isJson: true, multipartBinaryParts: null };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      return { text: body, decodeError: null, parseError: message, isJson: false };
+      return { text: body, copyText: null, decodeError: null, parseError: message, isJson: false, multipartBinaryParts: null };
     }
   }
-  return { text: body, decodeError: null, parseError: null, isJson: false };
+  return { text: body, copyText: null, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: null };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
@@ -289,7 +313,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
       <section class="border-t border-white/[0.06]">
         <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request body</span>
-          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.text, 'req-body')">
+          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.copyText ?? requestBody.text, 'req-body')">
             {{ copyLabelFor('req-body') }}
           </button>
         </header>
@@ -352,7 +376,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             </button>
           </template>
           <template v-else-if="record.response.body.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
-            <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.text, 'res-body')">
+            <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.copyText ?? responseBodyRendered.text, 'res-body')">
               {{ copyLabelFor('res-body') }}
             </button>
           </template>

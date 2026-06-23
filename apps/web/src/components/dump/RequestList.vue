@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useNow } from '@vueuse/core';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
@@ -93,7 +94,15 @@ const totalTokens = (meta: DumpMetadata): number | null => {
   return (meta.inputTokens ?? 0) + (meta.outputTokens ?? 0);
 };
 
-const relTime = (ms: number) => dayjs(ms).fromNow();
+// Wall-clock tick that drives the "X minutes ago" label so an idle list
+// still re-renders past timestamps as time advances. Without it, the
+// `dayjs().fromNow()` value is captured at first render and never refreshes
+// until some other reactive trigger forces a redraw.
+const now = useNow({ interval: 30_000 });
+const relTime = (ms: number): string => {
+  void now.value;
+  return dayjs(ms).fromNow();
+};
 const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
 const onRowKey = (id: string) => { selectedId.value = id; };
@@ -155,8 +164,8 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
               {{ statusLabel(record.status) }}
             </span>
             <span
-              class="min-w-0 truncate"
-              :class="record.model ? 'font-mono text-gray-300' : 'text-gray-500'"
+              class="min-w-0 truncate text-gray-300"
+              :class="record.model ? 'font-mono' : ''"
             >
               {{ record.model ?? 'Unknown' }}
             </span>
@@ -166,8 +175,8 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           </div>
 
           <div class="mt-1 flex items-center gap-3 text-[11px]">
-            <span class="min-w-0 flex-1 truncate font-mono text-gray-400" :title="`${record.method} ${record.path}`">
-              {{ record.method }} {{ record.path }}
+            <span class="min-w-0 flex-1 truncate font-mono text-gray-500" :title="`${record.method} ${record.path}`">
+              {{ record.path }}
             </span>
             <span class="flex shrink-0 items-center gap-2.5 text-gray-500">
               <span class="inline-flex items-center gap-0.5" :title="`Duration ${record.durationMs}ms`">

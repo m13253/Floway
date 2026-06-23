@@ -38,6 +38,21 @@ them. Code-level rules about error handling, comments, and style live in the
 global agent instructions and in ESLint config — read those, not a copy
 here.
 
+A per-API-key request dump is available as an operator opt-in. Setting
+`dump_retention_seconds` on a key turns on capture for every model-invoking
+request that key makes; the gateway records the verbatim inbound bytes
+(headers + body) and the verbatim outbound bytes (or, for SSE/streamGenerate
+endpoints, the per-protocol stream frames in canonical `ProtocolFrame` form)
+together with the routed upstream + model + token accounting and the
+request-total latency. The dashboard's Requests tab subscribes to a live SSE
+feed of new records and fetches a full record on click; an hourly cron
+sweeps anything older than the per-key retention window. Storage uses the
+platform's existing `SqlDatabase` (one `dump_records` table) and
+`FileProvider` (gzipped bodies at hour-bucketed paths so the sweep can
+`deletePrefix` whole expired hours), and a content-agnostic `BroadcastDO`
+WebSocket-Hibernation actor (Cloudflare) or in-process `EventTarget` (Node)
+fans live records out to connected dashboards.
+
 Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a
 Vue + Vite SPA. Cloudflare Workers is the production deployment target;
 Node.js (`node:sqlite` + `sharp` + filesystem) is a parallel deployment
