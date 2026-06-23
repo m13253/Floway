@@ -26,7 +26,7 @@ export const respondChatCompletions = async (
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.error('internal');
+    ctx.dump?.failed(result.error.message);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
 

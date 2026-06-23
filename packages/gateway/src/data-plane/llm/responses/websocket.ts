@@ -262,7 +262,7 @@ const respondResponsesWebSocket = async (input: {
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.error('internal');
+    ctx.dump?.failed(result.error.message);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
     return;

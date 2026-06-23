@@ -50,19 +50,18 @@ interface ResponseSnapshot {
 //     parsing the payload, so `model` is set regardless of outcome.
 //   • `success(identity, usage)` fills all four; the upstream-resolved model
 //     id may overwrite what `requestedModel` had.
-//   • `error(kind, upstream?)` records a categorized terminal error
-//     (`kind` is one of three result-type categories the respond layer maps
-//     to a clean HTTP status). Real upstream non-2xx pass `upstream` so a
-//     4xx/5xx row in the dashboard names the upstream that rejected the
-//     call; the gateway-synthesized arm may also pass it when a candidate
+//   • `error(kind, upstream?)` records a categorized api-error envelope
+//     (`kind` matches `ApiErrorResult.source`). Real upstream non-2xx pass
+//     `upstream` so a 4xx/5xx row in the dashboard names the upstream that
+//     rejected the call; the gateway arm may also pass it when a candidate
 //     was already chosen (item-not-found rewrite, server-tool input
-//     rejection); `kind: 'internal'` carries no upstream.
-//   • `failed(reason)` records an uncategorized terminal failure: a
-//     mid-stream tear, a try/catch that fell outside the result-type matrix,
-//     a passthrough exception. Caller passes a string or Error; the
-//     accumulator one-line-formats it. No status field, no upstream — the
-//     dashboard's display label is just `failed` (with the `reason` shown
-//     separately in the detail panel).
+//     rejection).
+//   • `failed(reason)` records an uncategorized terminal failure: a thrown
+//     exception (caught by the respond layer or passthrough-serve), a
+//     source-emitted error frame, a downstream cancel, or a writer error.
+//     Caller passes a string or Error; the accumulator one-line-formats
+//     it (`.message` only — never the stack, which lives in the response
+//     body's debug envelope).
 //
 // `requestedModel`-set model survives across both error variants so even an
 // outright-failed turn carries model attribution.
@@ -117,7 +116,7 @@ export class DumpAccumulator {
     this.model = model;
   }
 
-  error(kind: 'upstream' | 'gateway' | 'internal', upstream?: string): void {
+  error(kind: 'upstream' | 'gateway', upstream?: string): void {
     this.errorMeta = { kind };
     if (upstream !== undefined) this.upstreamId = upstream;
   }
