@@ -46,7 +46,7 @@ describe('inboundHeadersForUpstream', () => {
     assertEquals(headers.get('user-agent'), 'claude-sdk/1.0');
   });
 
-  test('strips HTTP/1.1 framing, hop-by-hop, and accept-encoding while preserving propagation signals', async () => {
+  test('strips HTTP/1.1 framing, hop-by-hop, accept-encoding, and client-IP propagation signals', async () => {
     const app = new Hono();
     let headers: Headers | undefined;
     app.post('/test', c => {
@@ -68,7 +68,13 @@ describe('inboundHeadersForUpstream', () => {
         'upgrade': 'websocket',
         'forwarded': 'for=192.0.2.1;proto=https',
         'x-real-ip': '192.0.2.1',
+        'x-client-ip': '192.0.2.1',
+        'true-client-ip': '192.0.2.1',
         'x-forwarded-for': '192.0.2.1',
+        'x-forwarded-host': 'gateway.example.com',
+        'x-forwarded-proto': 'https',
+        'cdn-loop': 'cloudflare',
+        'anthropic-beta': 'context-1m',
       },
       body: 'inbound-body-bytes',
     });
@@ -84,12 +90,45 @@ describe('inboundHeadersForUpstream', () => {
       'trailer',
       'transfer-encoding',
       'upgrade',
+      'forwarded',
+      'x-real-ip',
+      'x-client-ip',
+      'true-client-ip',
+      'x-forwarded-for',
+      'x-forwarded-host',
+      'x-forwarded-proto',
+      'cdn-loop',
     ]) {
       assertEquals(headers.has(name), false);
     }
-    assertEquals(headers.get('forwarded'), 'for=192.0.2.1;proto=https');
-    assertEquals(headers.get('x-real-ip'), '192.0.2.1');
-    assertEquals(headers.get('x-forwarded-for'), '192.0.2.1');
+    assertEquals(headers.get('anthropic-beta'), 'context-1m');
+  });
+
+  test('strips every cf-* header Cloudflare injects, by prefix', async () => {
+    const app = new Hono();
+    let headers: Headers | undefined;
+    app.get('/test', c => {
+      headers = inboundHeadersForUpstream(c);
+      return c.text('ok');
+    });
+    await app.request('/test', {
+      headers: {
+        'cf-connecting-ip': '203.0.113.10',
+        'cf-connecting-ipv6': '2001:db8::1',
+        'cf-ipcountry': 'US',
+        'cf-ray': 'abcdef1234567890-IAD',
+        'cf-visitor': '{"scheme":"https"}',
+        'cf-warp-tag-id': 'tag-1',
+        'cf-worker': 'gateway.example.com',
+        'cf-something-future': 'whatever',
+        'anthropic-beta': 'context-1m',
+      },
+    });
+    assertExists(headers);
+    for (const name of [...headers.keys()]) {
+      if (name.startsWith('cf-')) throw new Error(`expected cf-* to be scrubbed, saw ${name}`);
+    }
+    assertEquals(headers.get('anthropic-beta'), 'context-1m');
   });
 
   test('returns a fresh Headers each call so mutations do not leak across requests', async () => {
