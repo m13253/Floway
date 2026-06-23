@@ -19,7 +19,7 @@ import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { InternalErrorResult, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 // Inbound body bytes the handler reads once and forwards into the
 // accumulator (so the handler's payload parser AND the dump see the same
@@ -70,21 +70,19 @@ interface ResponseSnapshot {
 // of {upstreamError, internalError, plain, success, error} fires per
 // request and is the source of truth for the dump row's tokens / model /
 // upstream / error columns.
-interface DumpAccounting {
-  upstreamId: string | null;
-  model: string | null;
+// Two disjoint outcome slots stamped by the mid-flight hooks: a
+// success-path identity (set by `success()`, leaves the record with full
+// upstream + model + token attribution) and an error-path message (set by
+// `upstreamError` / `internalError` / `error`, leaves the record with no
+// success attribution). `plain()` is the explicit no-op that records
+// neither — used by respond paths where the gateway forwarded an upstream
+// response verbatim without resolving its own identity.
+interface DumpSuccessIdentity {
+  upstreamId: string;
+  model: string;
   inputTokens: number | null;
   outputTokens: number | null;
-  error: string | null;
 }
-
-const plainAccounting: DumpAccounting = Object.freeze({
-  upstreamId: null,
-  model: null,
-  inputTokens: null,
-  outputTokens: null,
-  error: null,
-});
 
 // Anthropic-style disjoint per-dimension counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
@@ -117,7 +115,8 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 
 export class DumpAccumulator {
   private readonly events: DumpStreamEvent[] = [];
-  private accounting: DumpAccounting = plainAccounting;
+  private successIdentity: DumpSuccessIdentity | null = null;
+  private errorMessage: string | null = null;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -129,38 +128,37 @@ export class DumpAccumulator {
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
   upstreamError(status: number): void {
-    this.accounting = { ...plainAccounting, error: `upstream error ${status}` };
+    this.errorMessage = `upstream error ${status}`;
   }
 
-  internalError(result: InternalErrorResult): void {
-    this.accounting = { ...plainAccounting, error: result.error.message };
+  internalError(message: string): void {
+    this.errorMessage = message;
   }
 
   plain(): void {
-    this.accounting = plainAccounting;
+    this.successIdentity = null;
+    this.errorMessage = null;
   }
 
-  // Records one protocol frame. Stored as the canonical ProtocolFrame —
-  // the dashboard derives the SSE wire view on demand via the per-protocol
-  // `XProtocolFrameToSSEFrame` and folds via the shared
-  // `collectXProtocolEventsToResult`, so neither serialization nor parsing
-  // happens on this path.
+  // Records one protocol frame. Stored as the canonical ProtocolFrame so
+  // neither serialization nor parsing happens on this path; the dashboard
+  // derives the SSE wire view on demand via the per-protocol
+  // frame-to-SSE encoder + reducer.
   frame(frame: ProtocolFrame<unknown>): void {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
-    this.accounting = {
+    this.successIdentity = {
       upstreamId: identity.upstream,
       model: identity.model,
       inputTokens: tokenUsageInput(usage),
       outputTokens: usage?.output ?? null,
-      error: null,
     };
   }
 
   error(reason: unknown): void {
-    this.accounting = { ...plainAccounting, error: typeof reason === 'string' ? reason : oneLineError(reason) };
+    this.errorMessage = typeof reason === 'string' ? reason : oneLineError(reason);
   }
 
   // --- response-side: handler exit ---
@@ -241,17 +239,17 @@ export class DumpAccumulator {
       method: this.requestSnapshot.method,
       path: this.requestSnapshot.path,
       status: response.status,
-      upstream: await resolveUpstreamRef(this.accounting.upstreamId),
-      model: this.accounting.model,
-      inputTokens: this.accounting.inputTokens,
-      outputTokens: this.accounting.outputTokens,
+      upstream: await resolveUpstreamRef(this.successIdentity?.upstreamId ?? null),
+      model: this.successIdentity?.model ?? null,
+      inputTokens: this.successIdentity?.inputTokens ?? null,
+      outputTokens: this.successIdentity?.outputTokens ?? null,
       requestBytes: this.requestSnapshot.body.byteLength,
       responseBytes: response.bytes.byteLength,
       durationMs: completedAt - this.startedAt,
       // Precedence: explicit upstream-side errors raised by the respond path
       // come first; otherwise a request-body read failure (operator-side
       // payload didn't arrive intact) outranks a response-body read failure.
-      error: this.accounting.error ?? this.requestSnapshot.streamError ?? response.streamError,
+      error: this.errorMessage ?? this.requestSnapshot.streamError ?? response.streamError,
     };
 
     const record: StoredDumpRecord = {

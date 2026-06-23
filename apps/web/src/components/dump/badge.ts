@@ -25,3 +25,8 @@ export const rowTintClass = (status: number | null, error: string | null, select
   case 'ok': return 'hover:bg-white/[0.02]';
   }
 };
+
+// "No response" surfaces when no upstream response status was produced
+// (transport failure, abort before bytes, dial error). Matches the
+// gateway's null encoding rather than hard-coding 0.
+export const statusLabel = (status: number | null): string => status === null ? 'No response' : String(status);

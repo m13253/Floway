@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
-import { statusBadgeClass } from './badge.ts';
+import { statusBadgeClass, statusLabel } from './badge.ts';
 import HeaderTable from './HeaderTable.vue';
 import { renderMultipart } from './multipart.ts';
 import { authFetch } from '../../api/client.ts';
@@ -130,15 +130,16 @@ const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
   return { text, copyText: text, decodeError: null, parseError: null, isJson: false };
 };
 
-const requestBody = computed<RenderedBody | null>(() => {
-  if (!record.value) return null;
-  return renderBody(record.value.request.body, contentTypeOf(record.value.request.headers));
-});
+const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, parseError: null, isJson: false };
 
-const responseBodyRendered = computed<RenderedBody | null>(() => {
-  if (!record.value) return null;
+const requestBody = computed<RenderedBody>(() => record.value
+  ? renderBody(record.value.request.body, contentTypeOf(record.value.request.headers))
+  : EMPTY_BODY);
+
+const responseBodyRendered = computed<RenderedBody>(() => {
+  if (!record.value) return EMPTY_BODY;
   const r = record.value.response;
-  if (r.body.type !== 'bytes') return null;
+  if (r.body.type !== 'bytes') return EMPTY_BODY;
   return renderBody(r.body.body, contentTypeOf(r.headers));
 });
 
@@ -254,10 +255,6 @@ const formatTs = (ms: number) => {
   return `${(ms / 1000).toFixed(2)}s`;
 };
 
-// "No response" surfaces when no upstream response status was produced
-// (transport failure, abort before bytes, dial error).
-const statusLabel = (status: number | null): string => status === null ? 'No response' : String(status);
-
 const sectionHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border-white/[0.06] bg-surface-900/85 px-4 py-2.5 backdrop-blur-md';
 const copyBtn = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-white/[0.06]';
 const copyBtnNeutral = 'text-gray-400 hover:text-gray-200';
@@ -298,11 +295,11 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
       <section class="border-t border-white/[0.06]">
         <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request body</span>
-          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.copyText, 'req-body')">
+          <button v-if="requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.copyText, 'req-body')">
             {{ copyLabelFor('req-body') }}
           </button>
         </header>
-        <div v-if="!requestBody || !requestBody.text" class="px-4 py-3 text-xs text-gray-600">No request body.</div>
+        <div v-if="!requestBody.text" class="px-4 py-3 text-xs text-gray-600">No request body.</div>
         <template v-else>
           <p v-if="requestBody.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
             Could not decode the request body ({{ requestBody.decodeError }}); showing raw base64 below.
@@ -360,7 +357,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
               {{ copyLabelFor('res-events') }}
             </button>
           </template>
-          <template v-else-if="record.response.body.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
+          <template v-else-if="record.response.body.type === 'bytes' && responseBodyRendered.text">
             <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.copyText, 'res-body')">
               {{ copyLabelFor('res-body') }}
             </button>
@@ -372,7 +369,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
         </template>
 
         <template v-else-if="record.response.body.type === 'bytes'">
-          <p v-if="!responseBodyRendered || !responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
+          <p v-if="!responseBodyRendered.text" class="px-4 py-3 text-xs text-gray-600">Empty body.</p>
           <template v-else>
             <p v-if="responseBodyRendered.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Could not decode the response body ({{ responseBodyRendered.decodeError }}); showing raw base64 below.

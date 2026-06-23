@@ -30,7 +30,7 @@ export const respondResponses = async (
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.internalError(result);
+    ctx.dump?.internalError(result.error.message);
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
 

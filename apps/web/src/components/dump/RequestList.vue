@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
-import { rowTintClass, statusBadgeClass } from './badge.ts';
+import { rowTintClass, statusBadgeClass, statusLabel } from './badge.ts';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -81,11 +81,6 @@ const upstreamKindTextClass = (kind: string): string => {
   }
 };
 
-// "No response" surfaces when no upstream response status was produced
-// (transport failure, abort before bytes, dial error). Match the
-// gateway's null encoding rather than hard-coding 0.
-const statusLabel = (status: number | null): string => status === null ? 'No response' : String(status);
-
 // `inputTokens` / `outputTokens` are null when the upstream didn't report
 // that dimension. Collapsing both to 0 would conflate "not measured" with
 // "zero tokens".
@@ -105,7 +100,7 @@ const relTime = (ms: number): string => {
 };
 const fullTime = (ms: number): string => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
-const onRowKey = (id: string) => { selectedId.value = id; };
+const selectRow = (id: string) => { selectedId.value = id; };
 
 const rovingTabIndex = (record: DumpMetadata, position: number): 0 | -1 => {
   if (selectedId.value === record.id) return 0;
@@ -150,9 +145,9 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           :data-record-id="record.id"
           class="cursor-pointer px-3 py-2.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent-cyan/60"
           :class="rowTintClass(record.status, record.error, selectedId === record.id)"
-          @click="onRowKey(record.id)"
-          @keydown.enter.prevent="onRowKey(record.id)"
-          @keydown.space.prevent="onRowKey(record.id)"
+          @click="selectRow(record.id)"
+          @keydown.enter.prevent="selectRow(record.id)"
+          @keydown.space.prevent="selectRow(record.id)"
           @keydown.up.prevent="moveSelection($event, -1)"
           @keydown.down.prevent="moveSelection($event, 1)"
         >
