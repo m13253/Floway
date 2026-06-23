@@ -171,10 +171,6 @@ const handleClientMessage = async (
       // Surfaces as `WS /v1/responses` in the dashboard so a turn is
       // visually distinct from a `POST /v1/responses` HTTP call.
       method: 'WS',
-      // The WS upgrade has no content-type header; declare one for the
-      // turn's JSON message bytes so the wire encoder picks utf8 and the
-      // dashboard pretty-prints the dump's request body.
-      extraRequestHeaders: [['content-type', 'application/json']],
     });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';

@@ -89,12 +89,11 @@ interface RenderedBody {
   // `--data-binary @-` replay the request straight from the clipboard.
   copyText: string;
   decodeError: string | null;
-  parseError: string | null;
   isJson: boolean;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', copyText: '', decodeError: null, parseError: null, isJson: false };
+  if (body.data.length === 0) return { text: '', copyText: '', decodeError: null, isJson: false };
   if (contentType.toLowerCase().startsWith('multipart/')) {
     // The base64-encoded multipart body holds arbitrary binary in its file
     // parts; a straight UTF-8 decode would either throw (fatal mode) or
@@ -105,7 +104,7 @@ const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
     const source = body.encoding === 'base64' ? body.data : btoa(body.data);
     const text = renderMultipart(source, contentType);
     if (text !== null) {
-      return { text, copyText: source, decodeError: null, parseError: null, isJson: false };
+      return { text, copyText: source, decodeError: null, isJson: false };
     }
   }
   let text: string;
@@ -113,24 +112,23 @@ const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
     text = body.data;
   } else {
     const decoded = decodeBase64Utf8(body.data);
-    if (decoded.error !== null) return { text: body.data, copyText: body.data, decodeError: decoded.error, parseError: null, isJson: false };
+    if (decoded.error !== null) return { text: body.data, copyText: body.data, decodeError: decoded.error, isJson: false };
     text = decoded.text;
   }
-  const ct = contentType.toLowerCase();
-  const isJson = ct.includes('application/json') || ct.includes('+json') || ct.includes('application/x-ndjson');
-  if (isJson) {
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      const pretty = JSON.stringify(parsed, null, 2);
-      return { text: pretty, copyText: pretty, decodeError: null, parseError: null, isJson: true };
-    } catch (e) {
-      return { text, copyText: text, decodeError: null, parseError: e instanceof Error ? e.message : String(e), isJson: false };
-    }
+  // Sniff for JSON by trying to parse — `Content-Type` is hint at best
+  // (the WS Responses path has no content-type for its synthesized
+  // per-turn requests, and upstreams routinely mislabel error bodies);
+  // a successful parse is the only ground truth.
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const pretty = JSON.stringify(parsed, null, 2);
+    return { text: pretty, copyText: pretty, decodeError: null, isJson: true };
+  } catch {
+    return { text, copyText: text, decodeError: null, isJson: false };
   }
-  return { text, copyText: text, decodeError: null, parseError: null, isJson: false };
 };
 
-const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, parseError: null, isJson: false };
+const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, isJson: false };
 
 const requestBody = computed<RenderedBody>(() => record.value
   ? renderBody(record.value.request.body, contentTypeOf(record.value.request.headers))
@@ -304,9 +302,6 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
           <p v-if="requestBody.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
             Could not decode the request body ({{ requestBody.decodeError }}); showing raw base64 below.
           </p>
-          <p v-if="requestBody.parseError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-            Content-type declared JSON but the body did not parse ({{ requestBody.parseError }}); showing raw text below.
-          </p>
           <Code flush :code="requestBody.text" :language="requestBody.isJson ? 'json' : 'text'" :copyable="false" />
         </template>
       </section>
@@ -373,9 +368,6 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
           <template v-else>
             <p v-if="responseBodyRendered.decodeError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
               Could not decode the response body ({{ responseBodyRendered.decodeError }}); showing raw base64 below.
-            </p>
-            <p v-if="responseBodyRendered.parseError" class="mx-4 mt-3 rounded-md border border-accent-amber/30 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
-              Content-type declared JSON but the body did not parse ({{ responseBodyRendered.parseError }}); showing raw text below.
             </p>
             <Code flush :code="responseBodyRendered.text" :language="responseBodyRendered.isJson ? 'json' : 'text'" :copyable="false" />
           </template>

@@ -61,7 +61,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
-  return (ctx.dump?.close(response) ?? response);
+  return (ctx.dump?.finalize(response) ?? response);
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
@@ -107,5 +107,5 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromImagesResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
-  return (ctx.dump?.close(response) ?? response);
+  return (ctx.dump?.finalize(response) ?? response);
 };

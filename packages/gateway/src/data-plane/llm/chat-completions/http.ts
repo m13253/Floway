@@ -20,7 +20,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondChatCompletions(c, result, false, false, ctx);
-  return (ctx.dump?.close(response) ?? response);
+  return (ctx.dump?.finalize(response) ?? response);
 };
 
 export const chatCompletionsHttp = {
@@ -39,7 +39,7 @@ export const chatCompletionsHttp = {
       const store = createNonResponsesSourceStore(ctx.apiKeyId);
       const result = await chatCompletionsServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
-      return (ctx.dump?.close(response) ?? response);
+      return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
       return await respondWithInternalError(c, error, requestBody);
     }

@@ -63,7 +63,7 @@ const respondWithGeminiError = async (
       body: new TextEncoder().encode(body),
     };
     const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
-    return (ctx.dump?.close(response) ?? response);
+    return (ctx.dump?.finalize(response) ?? response);
   }
   return geminiInternalRpcErrorResponse(500, error);
 };
@@ -92,7 +92,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   try {
     const result = await geminiServe.generate({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, wantsStream, ctx);
-    return (ctx.dump?.close(response) ?? response);
+    return (ctx.dump?.finalize(response) ?? response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, wantsStream);
   }
@@ -108,7 +108,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
   try {
     const result = await geminiServe.countTokens({ payload, ctx, store, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, false, ctx);
-    return (ctx.dump?.close(response) ?? response);
+    return (ctx.dump?.finalize(response) ?? response);
   } catch (error) {
     return await respondWithGeminiError(c, error, ctx, false);
   }

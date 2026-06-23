@@ -23,7 +23,7 @@ export interface GatewayCtx {
   readonly currentColo: string | null;
   // Null when the api key has no retention configured, in which case the
   // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
-  // `ctx.dump?.close(response) ?? response` returns the response unchanged.
+  // `ctx.dump?.finalize(response) ?? response` returns the response unchanged.
   readonly dump: DumpAccumulator | null;
 }
 
@@ -44,10 +44,6 @@ export interface CreateGatewayCtxOptions {
   // WS Responses path uses `'WS'` so a dumped turn reads as
   // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
   method?: string;
-  // Prepended to the dump's captured request headers. The WS Responses
-  // path uses this to declare `content-type: application/json` for the
-  // turn's JSON message bytes so the dashboard pretty-prints the request.
-  extraRequestHeaders?: ReadonlyArray<readonly [string, string]>;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
@@ -55,10 +51,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const backgroundScheduler = backgroundSchedulerFromContext(c);
-  const dump = openDumpAccumulator(c, apiKey, opts.requestBody, backgroundScheduler, {
-    method: opts.method,
-    extraRequestHeaders: opts.extraRequestHeaders,
-  });
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, backgroundScheduler);
   return {
     apiKeyId: apiKey.id,
     upstreamIds,

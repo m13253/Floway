@@ -62,5 +62,5 @@ export const embeddings = async (c: Context): Promise<Response> => {
     extractUsage: tokenUsageFromPromptTokenResponse,
     noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
   });
-  return (ctx.dump?.close(response) ?? response);
+  return (ctx.dump?.finalize(response) ?? response);
 };
