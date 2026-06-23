@@ -133,6 +133,21 @@ export class DumpAccumulator {
 
   // --- response-side: handler exit ---
 
+  // Schedules the dump-record write for a turn that does not have an HTTP
+  // Response object — i.e. the WebSocket Responses path, where the
+  // "response" is the stream of frames already captured via `frame()` and
+  // the terminal status is supplied by the caller (200 on success, an
+  // upstream/internal status on failure).
+  finalize(status: number, headers: ReadonlyArray<readonly [string, string]>): void {
+    this.backgroundScheduler(this.write({
+      status,
+      headers: headers.map(([k, v]) => [k, v]),
+      isStream: this.events.length > 0,
+      bytes: new Uint8Array(),
+      streamError: null,
+    }));
+  }
+
   // Tees the response body so the client gets bytes flowing while a
   // background reader accumulates the other half. The returned Response
   // streams the client-side bytes; status, statusText, and headers pass
@@ -247,6 +262,18 @@ export class DumpAccumulator {
   }
 }
 
+export interface OpenDumpAccumulatorOptions {
+  // Overrides the HTTP method recorded on the dump's request snapshot. The
+  // WebSocket Responses path passes `'WS'` so a dumped turn reads as
+  // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
+  method?: string;
+  // Prepended to the request snapshot's headers. The WS Responses path
+  // uses this to declare `content-type: application/json` for the turn's
+  // JSON message bytes; the dashboard then renders the dump's request
+  // body as pretty-printed JSON instead of falling back to base64.
+  extraRequestHeaders?: ReadonlyArray<readonly [string, string]>;
+}
+
 // Returns null when the api key opts out of dumps; callers then skip all
 // per-request dump work.
 export const openDumpAccumulator = (
@@ -254,12 +281,15 @@ export const openDumpAccumulator = (
   apiKey: ApiKey,
   requestBody: RequestBody,
   backgroundScheduler: BackgroundScheduler,
+  options: OpenDumpAccumulatorOptions = {},
 ): DumpAccumulator | null => {
   if (apiKey.dumpRetentionSeconds === null) return null;
+  const headers = headerPairs(c.req.raw.headers);
+  if (options.extraRequestHeaders) headers.unshift(...options.extraRequestHeaders.map(([k, v]) => [k, v] as [string, string]));
   const requestSnapshot: RequestSnapshot = {
-    method: c.req.method,
+    method: options.method ?? c.req.method,
     path: c.req.path,
-    headers: headerPairs(c.req.raw.headers),
+    headers,
     body: requestBody.bytes,
     streamError: requestBody.streamError,
   };

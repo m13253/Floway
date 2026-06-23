@@ -7,7 +7,6 @@ import { tokenUsageFromResponsesResult } from './usage.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { EMPTY_REQUEST_BODY } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -133,8 +132,18 @@ const handleClientMessage = async (
 ): Promise<void> => {
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
+  let ctx: GatewayCtx | undefined;
   try {
-    const parsed = parseClientMessageData(data);
+    // Capture the raw frame bytes before we touch the JSON: a malformed
+    // payload still produces a dump record only once `ctx` exists (i.e.
+    // when we've decided this turn is a real `response.create`).
+    const requestBytes = wsDataToBytes(data);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(requestBytes)) as unknown;
+    } catch (cause) {
+      throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
     eventId = parsed && typeof parsed === 'object' && typeof (parsed as { event_id?: unknown }).event_id === 'string'
       ? (parsed as { event_id: string }).event_id
       : undefined;
@@ -152,7 +161,21 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController, requestBody: EMPTY_REQUEST_BODY });
+    ctx = createGatewayCtxFromHono(c, {
+      wantsStream: true,
+      downstreamAbortController,
+      // The WS upgrade has no HTTP body; the dump's request body is the
+      // per-turn JSON frame bytes so an operator reading the dashboard
+      // sees the exact `response.create` payload the client sent.
+      requestBody: { bytes: requestBytes, streamError: null },
+      // Surfaces as `WS /v1/responses` in the dashboard so a turn is
+      // visually distinct from a `POST /v1/responses` HTTP call.
+      method: 'WS',
+      // The WS upgrade has no content-type header; declare one for the
+      // turn's JSON message bytes so the wire encoder picks utf8 and the
+      // dashboard pretty-prints the dump's request body.
+      extraRequestHeaders: [['content-type', 'application/json']],
+    });
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 
@@ -171,6 +194,8 @@ const handleClientMessage = async (
           param: 'previous_response_id',
           code: 'previous_response_not_found',
         }, eventId);
+        ctx.dump?.error(error.message);
+        ctx.dump?.finalize(400, []);
         return;
       }
       throw error;
@@ -188,26 +213,20 @@ const handleClientMessage = async (
       return;
     }
     sendError(socket, 500, serverErrorEnvelope(error), eventId);
+    if (ctx !== undefined) {
+      ctx.dump?.error(error);
+      ctx.dump?.finalize(500, []);
+    }
   }
 };
 
 class WebSocketClientMessageError extends Error {}
 
-const parseClientMessageData = (data: unknown): unknown => {
-  const text = typeof data === 'string'
-    ? data
-    : data instanceof ArrayBuffer
-      ? new TextDecoder().decode(data)
-      : ArrayBuffer.isView(data)
-        ? new TextDecoder().decode(data)
-        : null;
-  if (text === null) throw new WebSocketClientMessageError(`Unsupported WebSocket message data: ${typeof data}`);
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch (cause) {
-    throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
-  }
+const wsDataToBytes = (data: unknown): Uint8Array => {
+  if (typeof data === 'string') return new TextEncoder().encode(data);
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  throw new WebSocketClientMessageError(`Unsupported WebSocket message data: ${typeof data}`);
 };
 
 const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent => {
@@ -239,12 +258,16 @@ const respondResponsesWebSocket = async (input: {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'upstream-error') {
     recordPerformance(ctx, result.performance, true);
+    ctx.dump?.upstreamError(result.status);
+    ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordPerformance(ctx, result.performance, true);
+    ctx.dump?.internalError(result.error.message);
+    ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
     return;
   }
@@ -287,6 +310,9 @@ const respondResponsesWebSocket = async (input: {
 
         const frame = next.result.value;
         pendingNext = pendingWsFrameResult(iterator.next());
+        // Capture every frame (events + the `done` sentinel) so the
+        // dashboard can reassemble the turn identically to the HTTP path.
+        ctx.dump?.frame(frame);
         if (frame.type !== 'event') continue;
 
         const event = frame.event;
@@ -342,12 +368,18 @@ const respondResponsesWebSocket = async (input: {
     sendError(socket, 500, serverErrorEnvelope(error), eventId);
   } finally {
     const metadata = await eventResultMetadata(result);
+    const failed = state.failedAfter(completion);
+    if (ctx.dump !== null) {
+      if (failed) ctx.dump.error(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
+      else ctx.dump.success(metadata.modelIdentity, state.usage);
+      ctx.dump.finalize(failed ? 500 : 200, []);
+    }
     try {
       await recordUsage(ctx, metadata.modelIdentity, state.usage);
     } catch (error) {
       console.error('Failed to record Responses WebSocket usage:', error);
     } finally {
-      recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
+      recordPerformance(ctx, metadata.performance, failed);
     }
   }
 };

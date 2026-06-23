@@ -36,8 +36,18 @@ export interface CreateGatewayCtxOptions {
   // Already-buffered inbound request body bytes. HTTP handlers read them
   // once via `readRequestBody` and pass them in so the dump accumulator's
   // snapshot reflects the exact bytes the handler parsed. WebSocket
-  // upgrades carry no body and pass `EMPTY_REQUEST_BODY` explicitly.
+  // upgrades carry no HTTP body — the WS Responses path passes the
+  // per-turn JSON message bytes here so the dump captures the turn's
+  // input verbatim.
   requestBody: RequestBody;
+  // Override the HTTP method recorded on the dump's request snapshot. The
+  // WS Responses path uses `'WS'` so a dumped turn reads as
+  // `WS /v1/responses` in the dashboard rather than the upgrade's `GET`.
+  method?: string;
+  // Prepended to the dump's captured request headers. The WS Responses
+  // path uses this to declare `content-type: application/json` for the
+  // turn's JSON message bytes so the dashboard pretty-prints the request.
+  extraRequestHeaders?: ReadonlyArray<readonly [string, string]>;
 }
 
 export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCtxOptions): GatewayCtx => {
@@ -45,7 +55,10 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const backgroundScheduler = backgroundSchedulerFromContext(c);
-  const dump = openDumpAccumulator(c, apiKey, opts.requestBody, backgroundScheduler);
+  const dump = openDumpAccumulator(c, apiKey, opts.requestBody, backgroundScheduler, {
+    method: opts.method,
+    extraRequestHeaders: opts.extraRequestHeaders,
+  });
   return {
     apiKeyId: apiKey.id,
     upstreamIds,
