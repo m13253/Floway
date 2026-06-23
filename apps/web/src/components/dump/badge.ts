@@ -42,5 +42,8 @@ export const statusIcon = (status: number | null, error: DumpErrorMeta | null): 
 // the detail panel renders that text separately.
 export const errorLabel = (error: DumpErrorMeta | null, status: number | null): string | null => {
   if (!error || error.kind === 'failed') return null;
-  return `${error.kind} error ${status ?? '???'}`;
+  // `||` over `??` deliberately: 0 isn't a real HTTP status, so a falsy
+  // status (null, undefined, or 0) should fall through to the canary.
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  return `${error.kind} error ${status || '???'}`;
 };

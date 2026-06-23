@@ -5,7 +5,7 @@ import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -46,14 +46,18 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // etc.) as a Responses-shaped 502 with the same internal-error envelope the
 // in-flow `internal-error` ExecuteResult produces. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic.
-const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody): Promise<Response> => {
+// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
+// caller passes its outer `ctx` when one was already constructed (so the
+// dump row preserves the model attribution the request-time
+// `requestedModel` stamped); a fresh ctx is minted only for pre-parse
+// failures where no payload was available to read model from.
+const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
-  const { response } = await respondResponses(c, result, false, ctx);
-  return (ctx.dump?.finalize(response) ?? response);
+  const { response } = await respondResponses(c, result, false, effectiveCtx);
+  return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
 const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
@@ -62,7 +66,7 @@ const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    let ctx: GatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody, true);
       const wantsStream = payload.stream === true;
@@ -77,13 +81,13 @@ export const responsesHttp = {
         ctx?.dump?.error('gateway');
         return (ctx?.dump?.finalize(response) ?? response);
       }
-      return await respondWithInternalError(c, error, requestBody);
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 
   compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+    let ctx: GatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody, false);
       ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
@@ -101,7 +105,7 @@ export const responsesHttp = {
         ctx?.dump?.error('gateway');
         return (ctx?.dump?.finalize(response) ?? response);
       }
-      return await respondWithInternalError(c, error, requestBody);
+      return await respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 };

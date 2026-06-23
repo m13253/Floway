@@ -1,12 +1,12 @@
-import type { GeminiCandidate, GeminiErrorResponse, GeminiResult, GeminiPart, GeminiStreamEvent } from './index.ts';
+import type { GeminiCandidate, GeminiResult, GeminiPart, GeminiStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-// Field-fidelity contract — see {@link captureExtras}. The typed paths below
-// accumulate the fields we understand (parts, role, finishReason, top-level
-// modelVersion / responseId / usageMetadata); the key sets here name those
-// known fields so anything else an upstream emits — `safetyRatings`,
-// `groundingMetadata`, `citationMetadata`, future Gemini extensions, etc. —
-// survives onto the assembled result.
+// Field-fidelity contract — see {@link captureExtras}. We accumulate the
+// fields we understand on typed paths (parts, role, finishReason on
+// candidates; modelVersion / responseId / usageMetadata on the top-level
+// result); the key sets here name those known fields so anything else an
+// upstream emits — `safetyRatings`, `groundingMetadata`, `citationMetadata`,
+// future Gemini extensions, etc. — survives onto the assembled result.
 const KNOWN_RESULT_KEYS = new Set(['candidates', 'modelVersion', 'responseId', 'usageMetadata']);
 const KNOWN_CANDIDATE_KEYS = new Set(['index', 'content', 'finishReason']);
 
@@ -75,15 +75,13 @@ const finalizeCandidate = (candidate: GeminiCandidateWithExtras): GeminiCandidat
   return extras ? ({ ...rest, ...extras } as GeminiCandidate) : (rest as GeminiCandidate);
 };
 
-const isError = (event: GeminiStreamEvent): event is GeminiErrorResponse => 'error' in event;
-
 export async function reassembleGeminiEvents(events: AsyncIterable<GeminiStreamEvent>): Promise<GeminiResult> {
   const candidates = new Map<number, GeminiCandidateWithExtras>();
   const result: GeminiResult = {};
   const resultExtras: Record<string, unknown> = {};
 
   for await (const event of events) {
-    if (isError(event)) {
+    if ('error' in event) {
       throw new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
     }
 

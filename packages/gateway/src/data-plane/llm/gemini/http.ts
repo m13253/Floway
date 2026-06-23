@@ -6,7 +6,7 @@ import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 
 interface GeminiModelAction {
   readonly model: string;
@@ -43,12 +43,13 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
   }
 };
 
-// Surfaces a pre-stream throw as a Gemini-RPC envelope. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body through `respondGemini`'s `api-error` path with
-// `source: 'upstream'` so it gets wrapped in the Google-RPC envelope
-// (status, code, message). Other failures collapse to the Gemini
-// internal-error envelope.
+// Surfaces a pre-stream throw as a Gemini-RPC envelope, routing through
+// `respondGemini` so the dump records the failure exactly as the sibling
+// HTTP handlers do. A `ProviderModelsUnavailableError` carrying an upstream
+// HTTP body relays that body through the `api-error` path with `source:
+// 'upstream'`; everything else collapses to an `internal-error` result
+// rendered as the Gemini internal-error envelope (status, code, message,
+// stack, cause, target_api).
 const respondWithGeminiError = async (
   c: AuthedContext,
   error: unknown,
@@ -67,7 +68,9 @@ const respondWithGeminiError = async (
     const { response } = await respondGemini(c, apiErrorResult, wantsStream, ctx);
     return (ctx.dump?.finalize(response) ?? response);
   }
-  return geminiInternalRpcErrorResponse(500, error);
+  const internalResult = internalErrorResult(500, toInternalDebugError(error));
+  const { response } = await respondGemini(c, internalResult, wantsStream, ctx);
+  return (ctx.dump?.finalize(response) ?? response);
 };
 
 // Single entry for `/v1beta/models/:modelAction`. Splits the model and action

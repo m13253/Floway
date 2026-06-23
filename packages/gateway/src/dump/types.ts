@@ -26,8 +26,7 @@ export interface DumpUpstreamRef {
 // respond layer / passthrough-serve caught or observed mid-flight: thrown
 // exceptions, source-emitted error events, downstream cancels, write
 // errors) carrying its one-line reason text. The categorized form stores
-// no status — `DumpMetadata.status` already does — so the dashboard
-// composes the display label as `${kind} error ${status}`.
+// no status — `DumpMetadata.status` already does.
 export type DumpErrorMeta =
   | { kind: 'upstream' | 'gateway' }
   | { kind: 'failed'; reason: string };
