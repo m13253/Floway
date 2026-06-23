@@ -16,25 +16,20 @@ export const rowTintClass = (status: number | null, error: string | null, select
   }
 };
 
-// The status of the dumped response, expressed as a check/cross glyph. The
-// actual status code and any error string surface in the row's trailer
-// (`record.error`) and in the detail-section error caption, so this is just
-// the "did the gateway end up answering OK or not" signal at a glance. A 2xx
-// with no error is a check; everything else (4xx / 5xx / null status /
-// non-null error) is a cross, tinted by severity.
+// At-a-glance gateway-answered-OK signal: check on 2xx, cross (severity-
+// tinted) otherwise. The exact status code and any error string surface
+// elsewhere (list-row trailer, detail-section error caption).
 export interface StatusIcon {
   readonly iconClass: string;
   readonly colorClass: string;
-  // Tooltip / aria-label fallback so the glyph stays accessible.
   readonly tooltip: string;
 }
 
-const statusTooltip = (status: number | null): string => status === null ? 'No response' : `HTTP ${status}`;
-
 export const statusIcon = (status: number | null, error: string | null): StatusIcon => {
+  const tooltip = status === null ? 'No response' : `HTTP ${status}`;
   switch (rowSeverity(status, error)) {
-  case 'ok': return { iconClass: 'i-lucide-check', colorClass: 'text-accent-emerald', tooltip: statusTooltip(status) };
-  case 'warn': return { iconClass: 'i-lucide-x', colorClass: 'text-accent-amber', tooltip: statusTooltip(status) };
-  case 'err': return { iconClass: 'i-lucide-x', colorClass: 'text-accent-rose', tooltip: statusTooltip(status) };
+  case 'ok': return { iconClass: 'i-lucide-check', colorClass: 'text-accent-emerald', tooltip };
+  case 'warn': return { iconClass: 'i-lucide-x', colorClass: 'text-accent-amber', tooltip };
+  case 'err': return { iconClass: 'i-lucide-x', colorClass: 'text-accent-rose', tooltip };
   }
 };

@@ -62,25 +62,31 @@ const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     try {
       const payload = parsePayload(requestBody, true);
       const wantsStream = payload.stream === true;
-      const ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
+      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
+      if (error instanceof PreviousResponseNotFoundError) {
+        const response = previousResponseNotFoundResponse(error.previousResponseId);
+        ctx?.dump?.apiError('gateway', 400);
+        return (ctx?.dump?.finalize(response) ?? response);
+      }
       return await respondWithInternalError(c, error, requestBody);
     }
   },
 
   compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
+    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
     try {
       const payload = parsePayload(requestBody, false);
-      const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
+      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
@@ -90,7 +96,11 @@ export const responsesHttp = {
       const { response } = await respondResponses(c, result, false, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) return previousResponseNotFoundResponse(error.previousResponseId);
+      if (error instanceof PreviousResponseNotFoundError) {
+        const response = previousResponseNotFoundResponse(error.previousResponseId);
+        ctx?.dump?.apiError('gateway', 400);
+        return (ctx?.dump?.finalize(response) ?? response);
+      }
       return await respondWithInternalError(c, error, requestBody);
     }
   },

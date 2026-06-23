@@ -183,7 +183,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
       if (forwarded) {
-        ctx.dump?.plain();
+        ctx.dump?.apiError('upstream', forwarded.status);
         return forwarded;
       }
     }

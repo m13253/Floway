@@ -60,6 +60,7 @@ interface ResponseSnapshot {
 // `plain()` is the "we forwarded a non-streaming upstream response verbatim"
 // marker: it doesn't touch model/upstream/tokens (model from
 // `requestedModel` survives), it only clears any earlier error message.
+
 // Anthropic-style disjoint per-dimension counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
 // column. Missing dimensions stay null (not measured) instead of zero so a
@@ -106,10 +107,6 @@ export class DumpAccumulator {
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
-  // The model the client asked for, stamped by every protocol handler
-  // immediately after parsing the payload. Sets the model attribution
-  // regardless of outcome (success, gateway error, upstream error,
-  // internal error).
   requestedModel(model: string): void {
     this.model = model;
   }
