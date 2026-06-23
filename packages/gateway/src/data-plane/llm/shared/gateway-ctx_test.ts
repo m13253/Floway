@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono, EMPTY_REQUEST_BODY } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono } from './gateway-ctx.ts';
+import { EMPTY_REQUEST_BODY } from './request-body.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';

@@ -40,7 +40,6 @@ export const respondResponses = async (
   }
 
   const state = new SourceStreamState();
-  // Tee frames to the dump buffer before the stream/non-stream split so the dashboard sees the same event view either way.
   const frames = observeResponsesFrames(result.events, state, wantsStream, ctx);
 
   if (!wantsStream) {

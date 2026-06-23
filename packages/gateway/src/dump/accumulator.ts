@@ -1,8 +1,8 @@
-// First-class per-request dump pipeline. Opens the per-request session
-// (request snapshot + opt-in decision) and exposes the mid-flight hooks
-// the respond layer calls to record outcomes and frames. When the api
-// key has no retention configured, opening returns null and the data
-// plane pays no per-request cost.
+// Per-request dump pipeline. Opens the dump session (request snapshot +
+// opt-in decision) and exposes the mid-flight hooks the respond layer
+// calls to record outcomes and frames. When the api key has no retention
+// configured, opening returns null and the data plane pays no per-request
+// cost.
 
 import type { Context } from 'hono';
 
@@ -14,39 +14,13 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
+import type { RequestBody } from '../data-plane/llm/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
-
-// Inbound body bytes the handler reads once and forwards into the
-// accumulator (so the handler's payload parser AND the dump see the same
-// bytes without a second read). `streamError` surfaces a client mid-upload
-// abort as a non-null message; observers see it on `meta.error`.
-export interface RequestBody {
-  readonly bytes: Uint8Array;
-  readonly streamError: string | null;
-}
-
-// Shared sentinel for the WebSocket upgrade path, which carries no body.
-export const EMPTY_REQUEST_BODY: RequestBody = Object.freeze({ bytes: new Uint8Array(), streamError: null });
-
-// Reads the inbound body in full into a Uint8Array. Stays here so dump
-// bytes are sourced from one place; the handler also parses its payload
-// off `result.bytes` so the wire body is consumed exactly once. A body
-// read failure (client aborted upload) surfaces as a non-null
-// `streamError` instead of throwing — the dump captures the partial
-// payload + the cause, the handler still sees a parse error of its own.
-export const readRequestBody = async (c: Context): Promise<RequestBody> => {
-  if (c.req.raw.body === null) return { bytes: new Uint8Array(), streamError: null };
-  try {
-    return { bytes: new Uint8Array(await c.req.raw.arrayBuffer()), streamError: null };
-  } catch (err) {
-    return { bytes: new Uint8Array(), streamError: oneLineError(err) };
-  }
-};
 
 // Frozen at ctx construction so `close()` never has to re-read a stream
 // the handler already consumed.
@@ -66,17 +40,13 @@ interface ResponseSnapshot {
   readonly streamError: string | null;
 }
 
-// Accounting the respond layer fills in via the lifecycle hooks below; one
-// of {upstreamError, internalError, plain, success, error} fires per
-// request and is the source of truth for the dump row's tokens / model /
-// upstream / error columns.
-// Two disjoint outcome slots stamped by the mid-flight hooks: a
-// success-path identity (set by `success()`, leaves the record with full
-// upstream + model + token attribution) and an error-path message (set by
+// Two disjoint outcome slots the mid-flight hooks stamp: a success-path
+// identity (set by `success()`, leaves the record with full upstream +
+// model + token attribution) and an error-path message (set by
 // `upstreamError` / `internalError` / `error`, leaves the record with no
-// success attribution). `plain()` is the explicit no-op that records
-// neither — used by respond paths where the gateway forwarded an upstream
-// response verbatim without resolving its own identity.
+// success attribution). `plain()` records neither — used by respond paths
+// where the gateway forwarded an upstream response verbatim without
+// resolving its own identity.
 interface DumpSuccessIdentity {
   upstreamId: string;
   model: string;

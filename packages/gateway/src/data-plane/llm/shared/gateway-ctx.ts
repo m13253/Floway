@@ -1,4 +1,5 @@
-import { type DumpAccumulator, openDumpAccumulator, type RequestBody } from '../../../dump/accumulator.ts';
+import type { RequestBody } from './request-body.ts';
+import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
@@ -20,10 +21,9 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
   readonly currentColo: string | null;
-  // First-class dump session. Null when the api key has no retention
-  // configured, in which case the respond layer's `ctx.dump?.X(...)` calls
-  // collapse to no-ops and `ctx.dump?.close(response) ?? response` returns
-  // the response unchanged.
+  // Null when the api key has no retention configured, in which case the
+  // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
+  // `ctx.dump?.close(response) ?? response` returns the response unchanged.
   readonly dump: DumpAccumulator | null;
 }
 
@@ -59,5 +59,3 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     dump,
   };
 };
-
-export { EMPTY_REQUEST_BODY, readRequestBody, type RequestBody } from '../../../dump/accumulator.ts';

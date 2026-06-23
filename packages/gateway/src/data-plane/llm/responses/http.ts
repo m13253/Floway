@@ -5,7 +5,8 @@ import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, readRequestBody, type RequestBody } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
+import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -84,7 +85,7 @@ export const responsesHttp = {
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         const compactResponse = Response.json(result.result);
-        return ctx.dump?.close(compactResponse) ?? compactResponse;
+        return (ctx.dump?.close(compactResponse) ?? compactResponse);
       }
       const { response } = await respondResponses(c, result, false, ctx);
       return (ctx.dump?.close(response) ?? response);

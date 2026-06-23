@@ -16,7 +16,7 @@
       "import": "./src/data-plane/tools/web-search/types.ts",
       "types": "./src/data-plane/tools/web-search/types.ts"
     },
-    "./dump": {
+    "./dump-codec": {
       "import": "./src/dump/broker.ts",
       "types": "./src/dump/broker.ts"
     },
