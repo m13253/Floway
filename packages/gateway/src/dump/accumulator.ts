@@ -1,11 +1,8 @@
-// First-class per-request dump pipeline. Owns every dump-side concern:
-//   - opening the per-request session (request snapshot + opt-in decision)
-//   - mid-flight hooks the respond layer calls to record outcomes + frames
-//   - closing the response (tee, background drain, write to store + broker)
-//
-// The data plane sees `ctx.dump: DumpAccumulator | null` and threads it as a
-// first-class citizen. When the api key has no retention configured, opening
-// returns null and the data plane pays no per-request cost.
+// First-class per-request dump pipeline. Opens the per-request session
+// (request snapshot + opt-in decision) and exposes the mid-flight hooks
+// the respond layer calls to record outcomes and frames. When the api
+// key has no retention configured, opening returns null and the data
+// plane pays no per-request cost.
 
 import type { Context } from 'hono';
 
@@ -34,8 +31,6 @@ export interface RequestBody {
 }
 
 // Shared sentinel for the WebSocket upgrade path, which carries no body.
-// Reusing one frozen instance keeps the WS site honest ("I genuinely
-// have no body") and avoids per-request allocation.
 export const EMPTY_REQUEST_BODY: RequestBody = Object.freeze({ bytes: new Uint8Array(), streamError: null });
 
 // Reads the inbound body in full into a Uint8Array. Stays here so dump
@@ -53,9 +48,8 @@ export const readRequestBody = async (c: Context): Promise<RequestBody> => {
   }
 };
 
-// Frozen at ctx construction time. Carries everything the dump record needs
-// from the inbound request, so `close()` doesn't have to re-read a stream
-// the handler has already consumed.
+// Frozen at ctx construction so `close()` never has to re-read a stream
+// the handler already consumed.
 interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
@@ -84,13 +78,13 @@ interface DumpAccounting {
   error: string | null;
 }
 
-const plainAccounting: DumpAccounting = {
+const plainAccounting: DumpAccounting = Object.freeze({
   upstreamId: null,
   model: null,
   inputTokens: null,
   outputTokens: null,
   error: null,
-};
+});
 
 // Anthropic-style disjoint per-dimension counts: input excludes cache reads
 // and cache writes; sum the present ones onto the dump's single inputTokens
@@ -165,7 +159,7 @@ export class DumpAccumulator {
     };
   }
 
-  error(reason: string | unknown): void {
+  error(reason: unknown): void {
     this.accounting = { ...plainAccounting, error: typeof reason === 'string' ? reason : oneLineError(reason) };
   }
 
@@ -229,12 +223,9 @@ export class DumpAccumulator {
     const completedAt = Date.now();
     const recordId = ulid(completedAt);
 
-    // Prefer the accumulator's frame log over the outbound body so dumps
-    // reflect the gateway's own frame sequence regardless of the
-    // negotiated wire shape. Non-LLM endpoints (passthrough) produce no
-    // frames and fall back to the captured bytes; the `isStream`
-    // discriminator off the outbound content-type still decides
-    // bytes-vs-events on that fallback path.
+    // Prefer the accumulator's frame log so dumps reflect the gateway's
+    // frame sequence regardless of negotiated wire shape; passthrough
+    // endpoints with no frames fall back to captured bytes.
     const responseBody: StoredDumpResponseBody = this.events.length > 0
       ? { type: 'stream', events: this.events }
       : response.bytes.byteLength > 0 || response.streamError !== null
@@ -288,9 +279,8 @@ export class DumpAccumulator {
   }
 }
 
-// Opens a dump session for this request. Returns null on opt-out (the api
-// key has no retention configured), so the data plane pays no per-request
-// cost — no snapshot allocation, no body capture, no tee on close.
+// Returns null when the api key opts out of dumps; callers then skip all
+// per-request dump work.
 export const openDumpAccumulator = (
   c: Context,
   apiKey: ApiKey,

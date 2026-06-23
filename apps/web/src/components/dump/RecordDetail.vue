@@ -82,61 +82,52 @@ const decodeBase64Utf8 = (b64: string): { text: string; error: string | null } =
 };
 
 interface RenderedBody {
+  // Human-readable rendering of the body — the Code block's source.
   text: string;
-  // Optional clipboard payload distinct from `text`. Set when the rendered
-  // text is a reading-only transformation of the wire body and "Copy"
-  // should give back something replay-friendly instead. Multipart bodies
-  // set this to the original wire base64 so an operator can `--data-binary
-  // @file` straight back into curl.
-  copyText: string | null;
+  // Clipboard payload. Equals `text` for plain bodies; for multipart it
+  // holds the original wire base64 so an operator can `base64 -d` it and
+  // `--data-binary @-` replay the request straight from the clipboard.
+  copyText: string;
   decodeError: string | null;
   parseError: string | null;
   isJson: boolean;
-  // Number of `[binary, …]` placeholders the multipart renderer inserted,
-  // null when the body is not multipart/form-data.
-  multipartBinaryParts: number | null;
 }
 
 const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
-  if (body.data.length === 0) return { text: '', copyText: null, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: null };
+  if (body.data.length === 0) return { text: '', copyText: '', decodeError: null, parseError: null, isJson: false };
   if (contentType.toLowerCase().startsWith('multipart/')) {
     // The base64-encoded multipart body holds arbitrary binary in its file
     // parts; a straight UTF-8 decode would either throw (fatal mode) or
     // produce mojibake. Hand it to the multipart renderer so each part's
     // text content shows readably and each binary part collapses to a
-    // `[binary, N bytes, content-type=…]` placeholder followed by its
-    // base64. Copy returns the original wire-base64 unchanged so an
-    // operator can replay the request straight from the clipboard.
+    // `[binary, N bytes, content-type=…]` placeholder followed by its own
+    // base64. copyText keeps the original wire base64 unchanged.
     const source = body.encoding === 'base64' ? body.data : btoa(body.data);
-    const rendered = renderMultipart(source, contentType);
-    if (rendered !== null) {
-      return { text: rendered.text, copyText: source, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: rendered.binaryPartCount };
+    const text = renderMultipart(source, contentType);
+    if (text !== null) {
+      return { text, copyText: source, decodeError: null, parseError: null, isJson: false };
     }
   }
-  if (body.encoding === 'utf8') return renderTextBody(body.data, contentType);
-  const decoded = decodeBase64Utf8(body.data);
-  if (decoded.error !== null) return { text: body.data, copyText: null, decodeError: decoded.error, parseError: null, isJson: false, multipartBinaryParts: null };
-  return renderTextBody(decoded.text, contentType);
-};
-
-const isJsonContentType = (ct: string): boolean => {
-  const lower = ct.toLowerCase();
-  return lower.includes('application/json')
-    || lower.includes('+json')
-    || lower.includes('application/x-ndjson');
-};
-
-const renderTextBody = (body: string, contentType: string): RenderedBody => {
-  if (isJsonContentType(contentType)) {
+  let text: string;
+  if (body.encoding === 'utf8') {
+    text = body.data;
+  } else {
+    const decoded = decodeBase64Utf8(body.data);
+    if (decoded.error !== null) return { text: body.data, copyText: body.data, decodeError: decoded.error, parseError: null, isJson: false };
+    text = decoded.text;
+  }
+  const ct = contentType.toLowerCase();
+  const isJson = ct.includes('application/json') || ct.includes('+json') || ct.includes('application/x-ndjson');
+  if (isJson) {
     try {
-      const parsed = JSON.parse(body) as unknown;
-      return { text: JSON.stringify(parsed, null, 2), copyText: null, decodeError: null, parseError: null, isJson: true, multipartBinaryParts: null };
+      const parsed = JSON.parse(text) as unknown;
+      const pretty = JSON.stringify(parsed, null, 2);
+      return { text: pretty, copyText: pretty, decodeError: null, parseError: null, isJson: true };
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      return { text: body, copyText: null, decodeError: null, parseError: message, isJson: false, multipartBinaryParts: null };
+      return { text, copyText: text, decodeError: null, parseError: e instanceof Error ? e.message : String(e), isJson: false };
     }
   }
-  return { text: body, copyText: null, decodeError: null, parseError: null, isJson: false, multipartBinaryParts: null };
+  return { text, copyText: text, decodeError: null, parseError: null, isJson: false };
 };
 
 const requestBody = computed<RenderedBody | null>(() => {
@@ -157,10 +148,11 @@ const streamEvents = computed<DumpStreamEvent[]>(() => {
   return r.body.type === 'stream' ? r.body.events : [];
 });
 
-// Per-protocol SSE serializer. Stored frames are protocol-typed but
-// `DumpStreamEvent.frame` carries them as `ProtocolFrame<unknown>`; the
-// serializer dispatch + per-frame call is the cold reverse of what the
-// gateway's respond layer does live.
+const collectKind = computed(() => record.value ? detectCollectKind(record.value.meta.path) : null);
+
+// `DumpStreamEvent.frame` is `ProtocolFrame<unknown>` because storage is
+// protocol-agnostic; the per-kind dispatch here is the cold reverse of
+// what the gateway's respond layer does live.
 const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
   try {
     switch (kind) {
@@ -175,13 +167,9 @@ const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): Ss
   }
 };
 
-// Pretty-print each event's serialized SSE data as JSON when it parses;
-// otherwise pass the raw payload through with the parse-error captured.
-// Computed once per record so the v-for doesn't re-parse on every render.
-// Most upstream SSE protocols (Messages, Responses, chat-completions)
-// frame every data line as JSON, so a parse failure is operator-actionable
-// — surface it via a chip in the event header rather than silently
-// rendering as raw text.
+// Surface JSON parse failures via a chip in the event header rather than
+// silently rendering as raw text — every supported upstream frames its
+// data lines as JSON, so a parse failure is operator-actionable.
 const eventsRendered = computed(() => {
   const kind = collectKind.value;
   return streamEvents.value.map(ev => {
@@ -208,8 +196,6 @@ const eventsCopyText = computed(() => {
     .filter(s => s.length > 0)
     .join('\n');
 });
-
-const collectKind = computed(() => record.value ? detectCollectKind(record.value.meta.path) : null);
 
 // Folding is async (the shared reassembler consumes an AsyncIterable);
 // drive it through a watch so the `collected` ref settles on each event
@@ -261,7 +247,6 @@ const copyLabelFor = (section: string): string => {
   if (copyState.value === `error:${section}`) return 'Copy failed';
   return 'Copy';
 };
-const copyDangerFor = (section: string): boolean => copyState.value === `error:${section}`;
 
 const formatTs = (ms: number) => {
   if (ms < 1) return `${ms.toFixed(3)}ms`;
@@ -277,7 +262,7 @@ const sectionHeader = 'sticky top-0 z-10 flex items-center gap-2 border-b border
 const copyBtn = 'inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] transition-colors hover:bg-white/[0.06]';
 const copyBtnNeutral = 'text-gray-400 hover:text-gray-200';
 const copyBtnDanger = 'border border-accent-rose/40 bg-accent-rose/10 text-accent-rose';
-const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ? copyBtnDanger : copyBtnNeutral}`;
+const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `error:${section}` ? copyBtnDanger : copyBtnNeutral}`;
 </script>
 
 <template>
@@ -313,7 +298,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
       <section class="border-t border-white/[0.06]">
         <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Request body</span>
-          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.copyText ?? requestBody.text, 'req-body')">
+          <button v-if="requestBody && requestBody.text" type="button" :class="`ml-auto ${copyBtnClass('req-body')}`" @click="copy(requestBody.copyText, 'req-body')">
             {{ copyLabelFor('req-body') }}
           </button>
         </header>
@@ -376,7 +361,7 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyDangerFor(section) ?
             </button>
           </template>
           <template v-else-if="record.response.body.type === 'bytes' && responseBodyRendered && responseBodyRendered.text">
-            <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.copyText ?? responseBodyRendered.text, 'res-body')">
+            <button type="button" :class="`ml-auto ${copyBtnClass('res-body')}`" @click="copy(responseBodyRendered.copyText, 'res-body')">
               {{ copyLabelFor('res-body') }}
             </button>
           </template>

@@ -84,7 +84,7 @@ const upstreamKindTextClass = (kind: string): string => {
 // "No response" surfaces when no upstream response status was produced
 // (transport failure, abort before bytes, dial error). Match the
 // gateway's null encoding rather than hard-coding 0.
-const statusLabel = (status: number | null) => status === null ? 'No response' : String(status);
+const statusLabel = (status: number | null): string => status === null ? 'No response' : String(status);
 
 // `inputTokens` / `outputTokens` are null when the upstream didn't report
 // that dimension. Collapsing both to 0 would conflate "not measured" with
@@ -103,7 +103,7 @@ const relTime = (ms: number): string => {
   void now.value;
   return dayjs(ms).fromNow();
 };
-const fullTime = (ms: number) => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
+const fullTime = (ms: number): string => dayjs(ms).format('YYYY-MM-DD HH:mm:ss');
 
 const onRowKey = (id: string) => { selectedId.value = id; };
 

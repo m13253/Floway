@@ -18,13 +18,10 @@ const HOUR_MS = 60 * 60 * 1000;
 
 interface BodyDescriptor {
   key: string;
-  contentType: string;
   type: 'bytes' | 'events';
 }
 
 interface DumpRow {
-  id: string;
-  created_at: number;
   upstream_id: string | null;
   upstream_name: string | null;
   upstream_kind: string | null;
@@ -39,7 +36,7 @@ interface DumpRow {
 // (auth/validation reject, no candidate matched); a non-null id with a null
 // joined `upstream_name` means the referenced upstream was since deleted.
 // `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
-const hydrateUpstream = (row: { upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }) => {
+const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind'>) => {
   if (row.upstream_id === null || row.upstream_name === null) return null;
   return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind! };
 };
@@ -67,9 +64,6 @@ const bucketPrefix = (keyId: string, bucket: string): string => `${ROOT}/${keyId
 const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' | 'resp'): string =>
   `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
 
-const contentTypeOf = (headers: ReadonlyArray<[string, string]>): string =>
-  headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
   return new Uint8Array(await stream.arrayBuffer());
@@ -84,25 +78,17 @@ const putBody = async (
   files: FileProvider,
   key: string,
   rawBytes: Uint8Array,
-  contentType: string,
   type: 'bytes' | 'events',
 ): Promise<BodyDescriptor> => {
   const gz = await gzip(rawBytes);
   await files.put(key, gz);
-  return { key, contentType, type };
+  return { key, type };
 };
 
 const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<Uint8Array> => {
   const gz = await files.get(descriptor.key);
   if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
   return await gunzip(gz);
-};
-
-const fetchEventsBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<DumpStreamEvent[]> => {
-  const raw = await fetchBody(files, descriptor);
-  const parsed = JSON.parse(new TextDecoder().decode(raw));
-  if (!Array.isArray(parsed)) throw new Error(`dump events payload not an array at key=${descriptor.key}`);
-  return parsed as DumpStreamEvent[];
 };
 
 export class FileDumpStore implements DumpStore {
@@ -112,16 +98,15 @@ export class FileDumpStore implements DumpStore {
     const bucket = hourBucket(record.meta.completedAt);
     const requestDescriptor = record.request.body.byteLength === 0
       ? null
-      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body, contentTypeOf(record.request.headers), 'bytes');
+      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body, 'bytes');
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.body.type === 'bytes') {
       if (record.response.body.body.byteLength > 0) {
-        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, contentTypeOf(record.response.headers), 'bytes');
+        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, 'bytes');
       }
     } else if (record.response.body.type === 'stream') {
-      const eventsJson = new TextEncoder().encode(JSON.stringify(record.response.body.events));
-      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), eventsJson, contentTypeOf(record.response.headers), 'events');
+      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
     }
 
     // Strip the in-memory `upstream` field; the ref is rebuilt from the join
@@ -168,7 +153,7 @@ export class FileDumpStore implements DumpStore {
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, opts.limit)
       : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, beforeId, opts.limit);
-    const { results } = await stmt.all<{ meta_json: string; upstream_id: string | null; upstream_name: string | null; upstream_kind: string | null }>();
+    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind'>>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
       upstream: hydrateUpstream(row),
@@ -177,7 +162,7 @@ export class FileDumpStore implements DumpStore {
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT d.id, d.created_at, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, '
+      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'WHERE d.key_id = ? AND d.id = ?',
@@ -209,7 +194,9 @@ export class FileDumpStore implements DumpStore {
     } else if (responseDescriptor === null) {
       responseBody = { type: 'bytes', body: new Uint8Array() };
     } else if (responseDescriptor.type === 'events') {
-      responseBody = { type: 'stream', events: await fetchEventsBody(this.files, responseDescriptor) };
+      const parsed = JSON.parse(new TextDecoder().decode(await fetchBody(this.files, responseDescriptor))) as unknown;
+      if (!Array.isArray(parsed)) throw new Error(`dump events payload not an array at key=${responseDescriptor.key}`);
+      responseBody = { type: 'stream', events: parsed as DumpStreamEvent[] };
     } else {
       responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
     }

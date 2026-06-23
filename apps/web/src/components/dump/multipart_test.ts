@@ -46,11 +46,9 @@ describe('renderMultipart', () => {
     ], boundary);
     const out = renderMultipart(toBase64(bytes), `multipart/form-data; boundary=${boundary}`);
     expect(out).not.toBeNull();
-    expect(out!.partCount).toBe(2);
-    expect(out!.binaryPartCount).toBe(0);
-    expect(out!.text).toContain('Content-Disposition: form-data; name="model"');
-    expect(out!.text).toContain('gpt-image-2');
-    expect(out!.text).toContain('Make it shine');
+    expect(out!).toContain('Content-Disposition: form-data; name="model"');
+    expect(out!).toContain('gpt-image-2');
+    expect(out!).toContain('Make it shine');
   });
 
   it('collapses a binary part to a placeholder followed by its base64', () => {
@@ -63,17 +61,15 @@ describe('renderMultipart', () => {
     ], boundary);
     const out = renderMultipart(toBase64(bytes), `multipart/form-data; boundary=${boundary}`);
     expect(out).not.toBeNull();
-    expect(out!.partCount).toBe(2);
-    expect(out!.binaryPartCount).toBe(1);
-    expect(out!.text).toContain('Content-Disposition: form-data; name="model"');
-    expect(out!.text).toContain('gpt-image-2');
-    expect(out!.text).toContain('Content-Disposition: form-data; name="image"; filename="blank.png"');
-    expect(out!.text).toContain('Content-Type: image/png');
-    expect(out!.text).toContain('[binary, 8 bytes, content-type=image/png]');
+    expect(out!).toContain('Content-Disposition: form-data; name="model"');
+    expect(out!).toContain('gpt-image-2');
+    expect(out!).toContain('Content-Disposition: form-data; name="image"; filename="blank.png"');
+    expect(out!).toContain('Content-Type: image/png');
+    expect(out!).toContain('[binary, 8 bytes, content-type=image/png]');
     // The base64 of the 8-byte PNG signature must appear right after the
     // placeholder; the raw bytes themselves must not leak into the text.
-    expect(out!.text).toContain(toBase64(png));
-    expect(out!.text).not.toContain('\x89PNG');
+    expect(out!).toContain(toBase64(png));
+    expect(out!).not.toContain('\x89PNG');
   });
 
   it('wraps long base64 to MIME-style 76-char lines', () => {
@@ -85,7 +81,7 @@ describe('renderMultipart', () => {
     ], boundary);
     const out = renderMultipart(toBase64(bytes), `multipart/form-data; boundary=${boundary}`);
     expect(out).not.toBeNull();
-    const lines = out!.text.split('\n');
+    const lines = out!.split('\n');
     const placeholderIdx = lines.findIndex(l => l.startsWith('[binary,'));
     const b64Lines = [];
     for (let i = placeholderIdx + 1; i < lines.length && /^[A-Za-z0-9+/=]+$/.test(lines[i]!); i++) {
@@ -103,7 +99,7 @@ describe('renderMultipart', () => {
     const bytes = buildBody([{ name: 'k', body: 'v' }], boundary);
     const out = renderMultipart(toBase64(bytes), `multipart/form-data; boundary="${boundary}"`);
     expect(out).not.toBeNull();
-    expect(out!.text).toContain('name="k"');
-    expect(out!.text).toContain('v');
+    expect(out!).toContain('name="k"');
+    expect(out!).toContain('v');
   });
 });
