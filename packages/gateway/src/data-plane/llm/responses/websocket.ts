@@ -251,9 +251,9 @@ const respondResponsesWebSocket = async (input: {
   readonly ctx: GatewayCtx;
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result.status);
+    ctx.dump?.apiError(result.source, result.status);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;

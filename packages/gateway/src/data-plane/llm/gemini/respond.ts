@@ -9,7 +9,7 @@ import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
-import { type ExecuteResult, type PlainResult, type UpstreamErrorResult, type InternalDebugError, toInternalDebugError, decodeUpstreamErrorBody } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and
@@ -23,10 +23,10 @@ export const respondGemini = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result.status);
-    return { success: false, response: geminiUpstreamErrorResponse(result) };
+    ctx.dump?.apiError(result.source, result.status);
+    return { success: false, response: geminiApiErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
@@ -157,7 +157,7 @@ const geminiErrorResponse = (status: number, message: string, debug: GeminiError
   return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
 
-const geminiUpstreamErrorResponse = (error: UpstreamErrorResult): Response => upstreamGoogleRpcErrorResponse(error) ?? geminiErrorResponse(error.status, upstreamErrorMessage(error));
+const geminiApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiErrorResponse(error.status, apiErrorMessage(error));
 
 const geminiCollectErrorResponse = (error: unknown): Response => {
   const geminiError = caughtGeminiErrorEvent(error);
@@ -183,8 +183,8 @@ const isGeminiErrorResponse = (value: unknown): value is GeminiErrorResponse => 
   return typeof payload.code === 'number' && typeof payload.message === 'string' && typeof payload.status === 'string';
 };
 
-const upstreamGoogleRpcErrorResponse = (error: UpstreamErrorResult): Response | null => {
-  const parsed = parseJson(decodeUpstreamErrorBody(error).trim());
+const googleRpcErrorPassthroughResponse = (error: ApiErrorResult): Response | null => {
+  const parsed = parseJson(decodeApiErrorBody(error).trim());
   if (!isGeminiErrorResponse(parsed)) return null;
 
   return new Response(error.body.slice(), {
@@ -193,8 +193,8 @@ const upstreamGoogleRpcErrorResponse = (error: UpstreamErrorResult): Response | 
   });
 };
 
-const upstreamErrorMessage = (error: UpstreamErrorResult): string => {
-  const body = decodeUpstreamErrorBody(error).trim();
+const apiErrorMessage = (error: ApiErrorResult): string => {
+  const body = decodeApiErrorBody(error).trim();
   return body || 'Upstream Gemini request failed.';
 };
 

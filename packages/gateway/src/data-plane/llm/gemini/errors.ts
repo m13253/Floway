@@ -29,7 +29,8 @@ export const geminiStatusForHttpStatus = (status: number): string => {
 };
 
 const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => ({
-  type: 'upstream-error',
+  type: 'api-error',
+  source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({

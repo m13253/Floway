@@ -11,20 +11,20 @@ export type { InternalDebugError } from './error.ts';
 export { toInternalDebugError } from './error.ts';
 
 export type {
+  ApiErrorResult,
   EventResult,
   EventResultMetadata,
   ExecuteResult,
   InternalErrorResult,
   PlainResult,
-  UpstreamErrorResult,
 } from './result.ts';
 export {
-  decodeUpstreamErrorBody,
+  apiErrorToResponse,
+  decodeApiErrorBody,
   eventResult,
   internalErrorResult,
   plainResult,
-  readUpstreamError,
-  upstreamErrorToResponse,
+  readUpstreamApiError,
 } from './result.ts';
 
 export type {

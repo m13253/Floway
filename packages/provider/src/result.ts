@@ -18,14 +18,25 @@ export interface EventResultMetadata {
   performance?: PerformanceTelemetryContext;
 }
 
-export interface UpstreamErrorResult {
-  type: 'upstream-error';
+// HTTP-shaped error envelope the respond layer forwards to the client
+// verbatim (status + headers + body). `source` distinguishes a real upstream
+// non-2xx from a gateway-synthesized envelope (model not routable, missing
+// stored item, server-tool input rejected, etc.) so observers like the
+// request dump can record the failure category truthfully rather than
+// labelling every 4xx as `upstream error N`.
+export interface ApiErrorResult {
+  type: 'api-error';
+  source: 'upstream' | 'gateway';
   status: number;
   headers: Headers;
   body: Uint8Array;
   performance?: PerformanceTelemetryContext;
 }
 
+// Gateway-side bug surface (parser crash, interceptor throw, etc.). The
+// protocol's respond layer renders a debug envelope around `error`
+// (stack, cause, target_api) rather than passing through a wire body —
+// the shape differs from `ApiErrorResult` for that reason.
 export interface InternalErrorResult {
   type: 'internal-error';
   status: number;
@@ -45,7 +56,7 @@ export interface PlainResult {
   body: Uint8Array;
 }
 
-export type ExecuteResult<T> = EventResult<T> | UpstreamErrorResult | InternalErrorResult;
+export type ExecuteResult<T> = EventResult<T> | ApiErrorResult | InternalErrorResult;
 
 export interface EventResultOptions {
   performance?: PerformanceTelemetryContext;
@@ -74,17 +85,18 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
 
 export const plainResult = (status: number, headers: Headers, body: Uint8Array): PlainResult => ({ type: 'plain', status, headers, body });
 
-export const readUpstreamError = async (response: Response): Promise<UpstreamErrorResult> => ({
-  type: 'upstream-error',
+export const readUpstreamApiError = async (response: Response): Promise<ApiErrorResult> => ({
+  type: 'api-error',
+  source: 'upstream',
   status: response.status,
   headers: new Headers(response.headers),
   body: new Uint8Array(await response.arrayBuffer()),
 });
 
-export const upstreamErrorToResponse = (error: UpstreamErrorResult): Response =>
+export const apiErrorToResponse = (error: ApiErrorResult): Response =>
   new Response(error.body.slice().buffer, {
     status: error.status,
     headers: new Headers(error.headers),
   });
 
-export const decodeUpstreamErrorBody = (error: UpstreamErrorResult): string => new TextDecoder().decode(error.body);
+export const decodeApiErrorBody = (error: ApiErrorResult): string => new TextDecoder().decode(error.body);

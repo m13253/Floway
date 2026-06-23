@@ -42,11 +42,11 @@ interface ResponseSnapshot {
 
 // Two disjoint outcome slots the mid-flight hooks stamp: a success-path
 // identity (set by `success()`, leaves the record with full upstream +
-// model + token attribution) and an error-path message (set by
-// `upstreamError` / `internalError` / `error`, leaves the record with no
-// success attribution). `plain()` records neither — used by respond paths
-// where the gateway forwarded an upstream response verbatim without
-// resolving its own identity.
+// model + token attribution) and an error-path message (set by `apiError` /
+// `internalError` / `error`, leaves the record with no success
+// attribution). `plain()` records neither — used by respond paths where the
+// gateway forwarded an upstream response verbatim without resolving its own
+// identity.
 interface DumpSuccessIdentity {
   upstreamId: string;
   model: string;
@@ -97,8 +97,8 @@ export class DumpAccumulator {
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
-  upstreamError(status: number): void {
-    this.errorMessage = `upstream error ${status}`;
+  apiError(source: 'upstream' | 'gateway', status: number): void {
+    this.errorMessage = `${source} error ${status}`;
   }
 
   internalError(message: string): void {

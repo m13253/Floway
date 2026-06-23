@@ -5,13 +5,16 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 // OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
-// stored-item miss must byte-match OpenAI's own "not found" body.
+// stored-item miss must byte-match OpenAI's own "not found" body. The
+// envelope is gateway-synthesized — `source: 'gateway'` so the dump labels
+// it as such.
 const openAiErrorResult = (
   status: number,
   message: string,
   extra?: { param: string; code: string | null },
 ): ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
-  type: 'upstream-error',
+  type: 'api-error',
+  source: 'gateway',
   status,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(JSON.stringify({

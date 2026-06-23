@@ -9,7 +9,7 @@ import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { upstreamErrorToResponse } from '@floway-dev/provider';
+import { apiErrorToResponse } from '@floway-dev/provider';
 
 type MessagesUsageLike = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 
@@ -24,10 +24,10 @@ export const respondMessages = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result.status);
-    return { success: false, response: upstreamErrorToResponse(result) };
+    ctx.dump?.apiError(result.source, result.status);
+    return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {

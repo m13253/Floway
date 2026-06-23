@@ -61,7 +61,8 @@ describe('traverseTranslation', () => {
 
   test('result inner — outer returns the result unchanged', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 404,
       headers: new Headers(),
       body: new Uint8Array(),

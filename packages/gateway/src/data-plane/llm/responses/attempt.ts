@@ -18,7 +18,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamError, type ExecuteResult } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ExecuteResult } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptGenerateArgs {
@@ -158,7 +158,8 @@ const rewriteOrRenderFailure = async (
     if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {
-        type: 'upstream-error',
+        type: 'api-error',
+        source: 'gateway',
         status: 404,
         headers: new Headers({ 'content-type': 'application/json' }),
         body: new TextEncoder().encode(JSON.stringify({
@@ -243,7 +244,7 @@ const callResponsesCompactAsExecuteResult = async (
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
-    return { ...(await readUpstreamError(providerResult.response)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response)), performance: context };
   }
   ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
   return eventResult(

@@ -874,7 +874,8 @@ export const rewriteMessagesWebSearchEventsToNative = async function* (
 };
 
 const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
-  type: 'upstream-error' as const,
+  type: 'api-error' as const,
+  source: 'gateway' as const,
   status: 400,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(

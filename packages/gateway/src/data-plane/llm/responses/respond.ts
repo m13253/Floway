@@ -9,7 +9,7 @@ import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/proto
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type ResponsesStreamEvent, responsesResultFromStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { upstreamErrorToResponse } from '@floway-dev/provider';
+import { apiErrorToResponse } from '@floway-dev/provider';
 
 // Renders an upstream Responses result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
@@ -22,10 +22,10 @@ export const respondResponses = async (
   wantsStream: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result.status);
-    return { success: false, response: upstreamErrorToResponse(result) };
+    ctx.dump?.apiError(result.source, result.status);
+    return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {

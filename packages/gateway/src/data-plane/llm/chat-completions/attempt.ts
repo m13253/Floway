@@ -68,7 +68,7 @@ const rewriteOrRenderChatCompletionsFailure = async (
   payload: ChatCompletionsPayload,
   store: StatefulResponsesStore,
   candidate: ProviderCandidate,
-): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'upstream-error' } }> => {
+): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
       payload.messages as readonly ChatCompletionsMessage[],
@@ -83,7 +83,8 @@ const rewriteOrRenderChatCompletionsFailure = async (
     if (failure.kind !== 'item-not-found') throw error;
     return {
       failure: {
-        type: 'upstream-error',
+        type: 'api-error',
+        source: 'gateway',
         status: 400,
         headers: new Headers({ 'content-type': 'application/json' }),
         body: new TextEncoder().encode(JSON.stringify({

@@ -45,9 +45,10 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
 
 // Surfaces a pre-stream throw as a Gemini-RPC envelope. A
 // `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body through `respondGemini`'s `upstream-error` path so it gets
-// wrapped in the Google-RPC envelope (status, code, message). Other
-// failures collapse to the Gemini internal-error envelope.
+// that body through `respondGemini`'s `api-error` path with
+// `source: 'upstream'` so it gets wrapped in the Google-RPC envelope
+// (status, code, message). Other failures collapse to the Gemini
+// internal-error envelope.
 const respondWithGeminiError = async (
   c: AuthedContext,
   error: unknown,
@@ -56,13 +57,14 @@ const respondWithGeminiError = async (
 ): Promise<Response> => {
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
-    const upstreamErrorResult = {
-      type: 'upstream-error' as const,
+    const apiErrorResult = {
+      type: 'api-error' as const,
+      source: 'upstream' as const,
       status,
       headers: new Headers(headers),
       body: new TextEncoder().encode(body),
     };
-    const { response } = await respondGemini(c, upstreamErrorResult, wantsStream, ctx);
+    const { response } = await respondGemini(c, apiErrorResult, wantsStream, ctx);
     return (ctx.dump?.finalize(response) ?? response);
   }
   return geminiInternalRpcErrorResponse(500, error);

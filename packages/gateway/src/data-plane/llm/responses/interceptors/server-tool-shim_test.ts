@@ -989,8 +989,8 @@ test('non-empty allowed_domains with every entry malformed is rejected as 400 in
   const script = scriptedRun([messageTurn('never reached', 0)]);
 
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assertEquals(result.type, 'upstream-error');
-  assert(result.type === 'upstream-error');
+  assertEquals(result.type, 'api-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   // Upstream is never invoked when the gate rejects.
   assertEquals(script.callCount(), 0);
@@ -1021,8 +1021,8 @@ test('non-empty blocked_domains with every entry malformed is rejected as 400 in
   const script = scriptedRun([messageTurn('never reached', 0)]);
 
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assertEquals(result.type, 'upstream-error');
-  assert(result.type === 'upstream-error');
+  assertEquals(result.type, 'api-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1054,7 +1054,7 @@ test('domain lists with any malformed entry alongside valid entries are rejected
   const script = scriptedRun([messageTurn('never reached', 0)]);
 
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1084,7 +1084,7 @@ test('multiple hosted web_search entries: filter CONTENT is validated on each (n
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1129,7 +1129,7 @@ test('allowed_domains containing a non-string entry rejects with 400 (no 502 cra
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1153,7 +1153,7 @@ test('blocked_domains containing an object entry rejects with 400', async () => 
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1195,7 +1195,7 @@ const runShimWithDomainEntry = async (
 for (const field of ['allowed_domains', 'blocked_domains'] as const) {
   test(`${field} entry with https:// prefix rejects with 400 invalid domain`, async () => {
     const { result, backend, script } = await runShimWithDomainEntry(field, 'https://quora.com/');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     assertEquals(script.callCount(), 0);
     assertEquals(backend.calls.length, 0);
@@ -1207,7 +1207,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
 
   test(`${field} entry with http:// prefix rejects with 400`, async () => {
     const { result } = await runShimWithDomainEntry(field, 'http://example.com');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
@@ -1216,7 +1216,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
 
   test(`${field} entry with a path rejects with 400`, async () => {
     const { result } = await runShimWithDomainEntry(field, 'example.com/some/path');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
@@ -1225,7 +1225,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
 
   test(`${field} entry with a port rejects with 400`, async () => {
     const { result } = await runShimWithDomainEntry(field, 'example.com:8080');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
@@ -1233,13 +1233,13 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
 
   test(`${field} entry with a query string rejects with 400`, async () => {
     const { result } = await runShimWithDomainEntry(field, 'example.com?q=1');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
   });
 
   test(`${field} empty-string entry rejects with 400`, async () => {
     const { result } = await runShimWithDomainEntry(field, '');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
@@ -1247,13 +1247,13 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
 
   test(`${field} whitespace-only entry rejects with 400 (no surface expansion via .trim())`, async () => {
     const { result } = await runShimWithDomainEntry(field, '   ');
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
   });
 
   test(`${field} non-string entry rejects with 400 (typed-but-not-string)`, async () => {
     const { result } = await runShimWithDomainEntry(field, null);
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
@@ -1273,7 +1273,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     });
     const script = scriptedRun([messageTurn('never reached', 0)]);
     const result = await shim(inv, makeGatewayCtx(), script.run);
-    assert(result.type === 'upstream-error');
+    assert(result.type === 'api-error');
     assertEquals(result.status, 400);
     assertEquals(script.callCount(), 0);
     assertEquals(backend.calls.length, 0);
@@ -1306,7 +1306,7 @@ test('mixed list with one prefixed entry names the offending index (no silent dr
   // silently NOT blocked. Reject at the boundary so the violating
   // index is named.
   const { result } = await runShimMixedList('blocked_domains', ['reddit.com', 'https://quora.com/']);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
   assertEquals(body.error.param, 'tools');
@@ -1351,7 +1351,7 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1409,7 +1409,7 @@ test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards 
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
   const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'upstream-error');
+  assert(result.type === 'api-error');
   assertEquals(result.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
@@ -1763,7 +1763,8 @@ test('synthesized response.failed (upstream error mid-stream) quotes the upstrea
       return { type: 'events', events: iterable, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 503,
       headers: new Headers({ 'content-type': 'application/json' }),
       body: new TextEncoder().encode('{"error":"down"}'),
@@ -2444,7 +2445,8 @@ test('snapshot pass-through: synthesized response.failed (mid-stream upstream er
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 503,
       headers: new Headers({ 'content-type': 'application/json' }),
       body: new TextEncoder().encode('{"error":"down"}'),
@@ -2510,7 +2512,8 @@ test('snapshot pass-through: snapshot fields like completed_at flow through verb
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 503,
       headers: new Headers({ 'content-type': 'application/json' }),
       body: new TextEncoder().encode('{"error":"down"}'),
@@ -3631,7 +3634,8 @@ test('mid-stream upstream error yields response.failed and closes the SSE stream
       };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 503,
       headers: new Headers({ 'content-type': 'application/json' }),
       body: new TextEncoder().encode('{"error":"upstream temporarily unavailable"}'),
@@ -3676,7 +3680,8 @@ test('mid-stream 429 pass-through: code reflects upstream HTTP status (no spec-e
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 429,
       headers: new Headers({ 'content-type': 'text/plain' }),
       body: new TextEncoder().encode('rate limited'),
@@ -3709,7 +3714,8 @@ test('mid-stream 400 with non-OpenAI body falls back to upstream_400 code (no sp
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 400,
       headers: new Headers({ 'content-type': 'text/plain' }),
       body: new TextEncoder().encode('bad request'),
@@ -3746,7 +3752,8 @@ test('mid-stream upstream error with OpenAI-shaped JSON body forwards code/type/
       return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
     }
     return {
-      type: 'upstream-error',
+      type: 'api-error',
+      source: 'upstream',
       status: 429,
       headers: new Headers({ 'content-type': 'application/json' }),
       body: new TextEncoder().encode(JSON.stringify({

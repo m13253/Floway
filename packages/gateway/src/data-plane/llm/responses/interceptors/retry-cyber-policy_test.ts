@@ -161,7 +161,8 @@ const performanceFor = (modelKey: string) => ({
 });
 
 const upstreamCyberPolicyError = (message: string): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({
-  type: 'upstream-error',
+  type: 'api-error',
+  source: 'upstream',
   status: 400,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(
@@ -176,7 +177,8 @@ const upstreamCyberPolicyError = (message: string): ExecuteResult<ProtocolFrame<
 });
 
 const upstreamServerError = (message: string): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({
-  type: 'upstream-error',
+  type: 'api-error',
+  source: 'upstream',
   status: 500,
   headers: new Headers({ 'content-type': 'application/json' }),
   body: new TextEncoder().encode(
@@ -493,8 +495,8 @@ test('withCyberPolicyRetried returns the final cyber policy failure after exhaus
   });
 
   assertEquals(attempts, 11);
-  assertEquals(result.type, 'upstream-error');
-  if (result.type !== 'upstream-error') {
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') {
     throw new Error('expected upstream-error result');
   }
   assertEquals(JSON.parse(new TextDecoder().decode(result.body)).error.message, 'blocked 11');

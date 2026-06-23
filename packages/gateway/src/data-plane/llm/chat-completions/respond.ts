@@ -9,7 +9,7 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
-import { upstreamErrorToResponse } from '@floway-dev/provider';
+import { apiErrorToResponse } from '@floway-dev/provider';
 
 export const respondChatCompletions = async (
   c: Context,
@@ -18,10 +18,10 @@ export const respondChatCompletions = async (
   includeUsageChunk: boolean,
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     recordPerformance(ctx, result.performance, true);
-    ctx.dump?.upstreamError(result.status);
-    return { success: false, response: upstreamErrorToResponse(result) };
+    ctx.dump?.apiError(result.source, result.status);
+    return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {

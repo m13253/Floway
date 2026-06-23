@@ -231,7 +231,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   // An upstream error from the first candidate IS the final answer — the
   // gateway does not retry on a different upstream just because the first one
   // produced an HTTP error.
-  expectType(result, 'upstream-error');
+  expectType(result, 'api-error');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 0);
 });
@@ -271,7 +271,7 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
     headers: new Headers(),
   });
 
-  const upstreamError = expectType(result, 'upstream-error');
+  const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.status, 404);
   const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 404);
@@ -316,6 +316,6 @@ test('countTokens renders a Google RPC NOT_FOUND when no Messages-capable candid
     headers: new Headers(),
   });
 
-  const upstreamError = expectType(result, 'upstream-error');
+  const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.status, 404);
 });

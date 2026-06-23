@@ -23,7 +23,7 @@ const valueHasCyberPolicyCode = (value: unknown): boolean => {
 };
 
 const isCyberPolicyUpstreamError = (result: ResponsesResultFrames): boolean => {
-  if (result.type !== 'upstream-error') return false;
+  if (result.type !== 'api-error' || result.source !== 'upstream') return false;
   try {
     return valueHasCyberPolicyCode(JSON.parse(new TextDecoder().decode(result.body)));
   } catch {
@@ -44,9 +44,9 @@ const isDownstreamAborted = (ctx: GatewayCtx): boolean => ctx.abortSignal?.abort
 // error handler surfaces it verbatim instead of having this middleware
 // invent a `response.failed` envelope around it.
 const unexpectedRetryFailureError = (result: FailureResult): Error => {
-  if (result.type === 'upstream-error') {
+  if (result.type === 'api-error') {
     const body = new TextDecoder().decode(result.body);
-    return new Error(`cyber-policy retry produced HTTP ${result.status}: ${body || '<empty body>'}`);
+    return new Error(`cyber-policy retry produced HTTP ${result.status} (${result.source}): ${body || '<empty body>'}`);
   }
   return new Error(`cyber-policy retry produced internal error: ${result.error.message}`, { cause: result.error });
 };
