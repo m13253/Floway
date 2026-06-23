@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 
-import { statusBadgeClass, statusLabel } from './badge.ts';
+import { statusIcon } from './badge.ts';
 import HeaderTable from './HeaderTable.vue';
 import { renderMultipart } from './multipart.ts';
 import { authFetch } from '../../api/client.ts';
@@ -309,12 +309,10 @@ const copyBtnClass = (section: string) => `${copyBtn} ${copyState.value === `err
       <section class="border-t border-white/[0.06]">
         <header :class="sectionHeader">
           <span class="text-xs font-medium uppercase tracking-widest text-gray-500">Response</span>
-          <span
-            class="ml-2 inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold"
-            :class="statusBadgeClass(record.response.status, record.meta.error)"
-          >
-            {{ statusLabel(record.response.status) }}
-          </span>
+          <i
+            :class="`${statusIcon(record.response.status, record.meta.error).iconClass} ${statusIcon(record.response.status, record.meta.error).colorClass} ml-2 size-4`"
+            :title="statusIcon(record.response.status, record.meta.error).tooltip"
+          />
           <span v-if="record.meta.error" class="ml-2 min-w-0 truncate text-[11px] text-accent-rose" :title="record.meta.error">{{ record.meta.error }}</span>
           <button v-if="record.response.headers.length > 0" type="button" :class="`ml-auto ${copyBtnClass('res-headers')}`" @click="copy(responseHeadersCopy, 'res-headers')">
             {{ copyLabelFor('res-headers') }}

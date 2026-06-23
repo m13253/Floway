@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
-import { rowTintClass, statusBadgeClass, statusLabel } from './badge.ts';
+import { rowTintClass, statusIcon } from './badge.ts';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -152,12 +152,10 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           @keydown.down.prevent="moveSelection($event, 1)"
         >
           <div class="flex items-center gap-2 text-xs">
-            <span
-              class="inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold leading-none"
-              :class="statusBadgeClass(record.status, record.error)"
-            >
-              {{ statusLabel(record.status) }}
-            </span>
+            <i
+              :class="`${statusIcon(record.status, record.error).iconClass} ${statusIcon(record.status, record.error).colorClass} size-3.5`"
+              :title="statusIcon(record.status, record.error).tooltip"
+            />
             <span
               class="min-w-0 truncate text-gray-300"
               :class="record.model ? 'font-mono' : ''"
