@@ -5,7 +5,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { SearchConfig } from '../../api/types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import SecretInput from '../shared/SecretInput.vue';
-import { Button, Input } from '@floway-dev/ui';
+import { Button, Input, Select } from '@floway-dev/ui';
 
 interface SearchTestResult {
   ok: boolean;
@@ -15,43 +15,45 @@ interface SearchTestResult {
   error?: { code: string; message: string };
 }
 
-// Single source of truth for the provider list. Each entry knows its
-// human label, the per-provider config slot, and a `set` writer that
-// returns a fresh SearchConfig with that slot's apiKey replaced.
+// Single source of truth for the provider list. `apiKey` reads the
+// per-provider config slot; `set` writes a new apiKey back into that slot.
+// Both are absent for the `disabled` option, which has no credential field.
 interface ProviderOption {
-  id: SearchConfig['provider'];
+  value: SearchConfig['provider'];
   label: string;
   description: string;
-  // `apiKey` reads from the config slot; `set` writes a new apiKey back
-  // into the right slot. Both ignored for the `disabled` option.
   apiKey?: (config: SearchConfig) => string;
   set?: (config: SearchConfig, apiKey: string) => SearchConfig;
 }
 
+// Presented as a dropdown rather than radio cards so adding a fifth
+// provider stays a one-line entry; the existing per-option description
+// slot in the shared Select also keeps the explanation inside the
+// popover instead of permanently consuming vertical space.
 const PROVIDER_OPTIONS: ProviderOption[] = [
   {
-    id: 'disabled',
+    value: 'disabled',
     label: 'Disabled',
-    description: 'No upstream web search provider',
+    description: 'No upstream web search provider.',
   },
   {
-    id: 'tavily',
+    value: 'tavily',
     label: 'Tavily',
-    description: 'Gateway-managed Tavily API key',
+    description: 'Gateway-managed Tavily API key.',
     apiKey: config => config.tavily.apiKey,
     set: (config, apiKey) => ({ ...config, tavily: { apiKey } }),
   },
   {
-    id: 'microsoft-grounding',
+    value: 'microsoft-grounding',
     label: 'Microsoft Grounding',
-    description: 'Gateway-managed Microsoft Grounding key',
+    description: 'Gateway-managed Microsoft Grounding key.',
     apiKey: config => config.microsoftGrounding.apiKey,
     set: (config, apiKey) => ({ ...config, microsoftGrounding: { apiKey } }),
   },
   {
-    id: 'jina',
+    value: 'jina',
     label: 'Jina',
-    description: 'Gateway-managed Jina API key (s.jina.ai + r.jina.ai)',
+    description: 'Gateway-managed Jina API key (s.jina.ai + r.jina.ai).',
     apiKey: config => config.jina.apiKey,
     set: (config, apiKey) => ({ ...config, jina: { apiKey } }),
   },
@@ -71,7 +73,7 @@ const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<SearchTestResult | null>(null);
 
-const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.id === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
+const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.value === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
 
 const setProvider = (provider: SearchConfig['provider']) => {
   draft.value = { ...draft.value, provider };
@@ -136,34 +138,21 @@ const test = async () => {
 
     <p v-if="error" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ error }}</p>
 
-    <div class="space-y-5">
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
       <div>
-        <p class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3">Search Provider</p>
-        <div class="grid grid-cols-1 gap-3">
-          <label
-            v-for="option in PROVIDER_OPTIONS"
-            :key="option.id"
-            class="flex items-center gap-3 rounded-xl border p-4 transition-all cursor-pointer"
-            :class="draft.provider === option.id ? 'border-accent-cyan/50 bg-accent-cyan/5' : 'border-white/10 hover:border-white/20'"
-          >
-            <input
-              type="radio"
-              name="search-provider"
-              :value="option.id"
-              class="accent-accent-cyan"
-              :checked="draft.provider === option.id"
-              @change="setProvider(option.id)"
-            >
-            <div>
-              <p class="text-sm font-medium text-white">{{ option.label }}</p>
-              <p class="text-xs text-gray-500">{{ option.description }}</p>
-            </div>
-          </label>
-        </div>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">Search Provider</label>
+        <Select
+          :model-value="draft.provider"
+          :options="PROVIDER_OPTIONS"
+          @update:model-value="v => v !== undefined && setProvider(v)"
+        >
+          <template #description="{ option }">
+            <p class="text-[11px] text-gray-500">{{ option.description }}</p>
+          </template>
+        </Select>
       </div>
-
       <div>
-        <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">{{ searchCredentialLabel }}</label>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">{{ searchCredentialLabel }}</label>
         <SecretInput
           v-if="activeOption.apiKey"
           :placeholder="`${activeOption.label} API key`"
@@ -179,46 +168,46 @@ const test = async () => {
           class="w-full"
         />
       </div>
+    </div>
 
-      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <Button :loading="saving" @click="save">Save Search Config</Button>
-        <Button variant="secondary" :loading="testing" :disabled="draft.provider === 'disabled'" @click="test">Test Search</Button>
-        <p v-if="draft.provider === 'disabled'" class="text-xs text-gray-500">Search testing is disabled until a provider is selected.</p>
+    <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <Button :loading="saving" @click="save">Save Search Config</Button>
+      <Button variant="secondary" :loading="testing" :disabled="draft.provider === 'disabled'" @click="test">Test Search</Button>
+      <p v-if="draft.provider === 'disabled'" class="text-xs text-gray-500">Search testing is disabled until a provider is selected.</p>
+    </div>
+
+    <div v-if="testResult" class="mt-5 bg-surface-900 rounded-xl border border-white/5 p-4">
+      <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+          <p class="text-sm font-medium text-white">Search Test Result</p>
+          <p class="text-xs text-gray-500">Provider: <span>{{ testResult.provider }}</span> · Query: <span>{{ testResult.query }}</span></p>
+        </div>
+        <span
+          class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full"
+          :class="testResult.ok ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-red-500/10 text-red-400'"
+        >{{ testResult.ok ? 'OK' : 'Error' }}</span>
       </div>
 
-      <div v-if="testResult" class="bg-surface-900 rounded-xl border border-white/5 p-4">
-        <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div class="min-w-0">
-            <p class="text-sm font-medium text-white">Search Test Result</p>
-            <p class="text-xs text-gray-500">Provider: <span>{{ testResult.provider }}</span> · Query: <span>{{ testResult.query }}</span></p>
-          </div>
-          <span
-            class="text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full"
-            :class="testResult.ok ? 'bg-accent-emerald/10 text-accent-emerald' : 'bg-red-500/10 text-red-400'"
-          >{{ testResult.ok ? 'OK' : 'Error' }}</span>
-        </div>
-
-        <div v-if="testResult.ok" class="space-y-3">
-          <div
-            v-for="result in testResult.results ?? []"
-            :key="result.url + result.title"
-            class="rounded-lg border border-white/5 bg-surface-800 p-3"
-          >
-            <div class="flex items-start justify-between gap-3 mb-1">
-              <div>
-                <a :href="result.url" target="_blank" class="text-sm font-medium text-accent-cyan hover:underline break-words">{{ result.title }}</a>
-                <p class="text-[11px] text-gray-500 break-all">{{ result.url }}</p>
-              </div>
-              <span v-if="result.pageAge" class="text-[10px] text-gray-600 uppercase tracking-widest">{{ result.pageAge }}</span>
+      <div v-if="testResult.ok" class="space-y-3">
+        <div
+          v-for="result in testResult.results ?? []"
+          :key="result.url + result.title"
+          class="rounded-lg border border-white/5 bg-surface-800 p-3"
+        >
+          <div class="flex items-start justify-between gap-3 mb-1">
+            <div>
+              <a :href="result.url" target="_blank" class="text-sm font-medium text-accent-cyan hover:underline break-words">{{ result.title }}</a>
+              <p class="text-[11px] text-gray-500 break-all">{{ result.url }}</p>
             </div>
-            <p class="text-sm text-gray-300 leading-relaxed">{{ result.previewText }}</p>
+            <span v-if="result.pageAge" class="text-[10px] text-gray-600 uppercase tracking-widest">{{ result.pageAge }}</span>
           </div>
+          <p class="text-sm text-gray-300 leading-relaxed">{{ result.previewText }}</p>
         </div>
+      </div>
 
-        <div v-else class="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-          <p class="text-sm text-red-300 font-medium">{{ testResult.error?.code }}</p>
-          <p class="text-sm text-gray-300 mt-1">{{ testResult.error?.message }}</p>
-        </div>
+      <div v-else class="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+        <p class="text-sm text-red-300 font-medium">{{ testResult.error?.code }}</p>
+        <p class="text-sm text-gray-300 mt-1">{{ testResult.error?.message }}</p>
       </div>
     </div>
   </div>
