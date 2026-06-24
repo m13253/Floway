@@ -188,19 +188,6 @@ const collectProviderModels = async (
   return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
 };
 
-const modelWithProviderInstances = (model: ResolvedModel, providers: ReadonlySet<ModelProviderInstance>): ResolvedModel => {
-  const providerInstances = [...providers];
-  const bindings = model.providers.filter(binding => providerInstances.some(instance => instance.upstream === binding.upstream && instance.provider === binding.provider));
-  const endpoints = bindings.reduce<ModelEndpoints>((acc, binding) => unionEndpoints(acc, binding.upstreamModel.endpoints), {});
-
-  return {
-    ...model,
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-    providers: bindings,
-  };
-};
-
 // Public-facing model-id ordering, applied in getModels() to every list that
 // crosses a gateway boundary (data-plane /v1/models, /models, /v1beta/models
 // and the control-plane /api/models that backs the dashboard models page).
@@ -308,29 +295,6 @@ export const restrictProvidersByPrefix = (
   return { providers: filtered, modelId };
 };
 
-const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId: ReadonlyMap<string, ResolvedModel>, modelId: string): ResolvedModel | undefined => {
-  let resolved: ResolvedModel | undefined;
-  const providersForAlias = new Set<ModelProviderInstance>();
-
-  for (const instance of providers) {
-    const aliasTarget = instance.resolveRequestedModelId?.(modelId);
-    if (!aliasTarget || aliasTarget === modelId) continue;
-
-    const model = byId.get(aliasTarget);
-    if (!model) continue;
-    if (resolved && resolved.id !== model.id) continue;
-
-    const providerHasModel = model.providers.some(binding => binding.upstream === instance.upstream && binding.provider === instance.provider);
-    if (!providerHasModel) continue;
-
-    resolved = model;
-    providersForAlias.add(instance);
-  }
-
-  if (!resolved) return undefined;
-  return modelWithProviderInstances(resolved, providersForAlias);
-};
-
 export const resolveModelForRequest = async (
   modelId: string,
   upstreamFilter: readonly string[] | null,
@@ -342,25 +306,64 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  // Apply the prefix policy before the catalog walk so a prefixed request
-  // never inflates the per-upstream catalog cost and the per-provider alias
-  // hook only sees the stripped, upstream-facing id.
+  // Apply the prefix policy before the per-upstream walk so a prefixed
+  // request only reaches its owning upstream, and the per-provider catalog
+  // lookup only ever sees the stripped, upstream-facing id.
   const { providers: scopedProviders, modelId: scopedId } = restrictProvidersByPrefix(modelId, providers);
 
-  const { models, failedUpstreams } = await collectProviderModels(scopedProviders, fetcherForUpstream, scheduler);
-  const byId = new Map(models.map(model => [model.id, model]));
+  // Per-provider catalog lookup, same shape as enumerateProviderCandidates:
+  // each upstream's catalog is resolved against the bare id via
+  // resolveModelForProvider — which uses the upstream's `getProvidedModels`
+  // entries as-is, regardless of the upstream's `listed` policy. The earlier
+  // collectProviderModels-then-byId path coupled routing to the catalog
+  // listing surface and lost any upstream whose `listed` form did not
+  // include the bare id (e.g. `listed: ['prefixed']`).
+  const settled = await Promise.allSettled(scopedProviders.map(provider =>
+    resolveModelForProvider(provider, scopedId, fetcherForUpstream(provider.upstream), scheduler)
+      .then(resolved => ({ provider, resolved }))));
 
-  const exact = byId.get(scopedId);
-  if (exact) return { id: exact.id, model: exact, failedUpstreams };
+  const failedUpstreams: string[] = [];
+  const matches: ProviderModelResolution[] = [];
 
-  const alias = resolveProviderAlias(scopedProviders, byId, scopedId);
-  if (alias) return { id: alias.id, model: alias, failedUpstreams };
+  for (const [index, result] of settled.entries()) {
+    if (result.status === 'rejected') {
+      // Caller-driven cancellation must propagate; see the matching guard
+      // in `collectProviderModels` and `enumerateProviderCandidates`.
+      const error = result.reason;
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      failedUpstreams.push(scopedProviders[index].name);
+      continue;
+    }
+    const { resolved } = result.value;
+    if (!resolved) continue;
+    matches.push(resolved);
+  }
 
   // Treat a failing upstream as "no models from that upstream right now"
-  // rather than rethrowing its catalog error — other upstreams still
-  // route, and the failed list is handed back so the caller's failure
-  // body can name the affected upstreams.
-  return { id: scopedId, failedUpstreams };
+  // rather than rethrowing its catalog error — other upstreams still route,
+  // and the failed list is handed back so the caller's failure body can name
+  // the affected upstreams.
+  if (matches.length === 0) return { id: scopedId, failedUpstreams };
+
+  // First-wins on the resolved id when per-provider aliases disagree; the
+  // remaining providers that resolved to the same id contribute their
+  // bindings and endpoint capabilities.
+  const winningId = matches[0].id;
+  const winners = matches.filter(m => m.id === winningId);
+  const endpoints = winners.reduce<ModelEndpoints>(
+    (acc, { model }) => unionEndpoints(acc, model.endpoints),
+    {},
+  );
+  const { providerData: _providerData, endpoints: _endpoints, ...internal } = winners[0].model;
+  const model: ResolvedModel = {
+    ...internal,
+    id: winningId,
+    endpoints,
+    kind: kindForEndpoints(endpoints),
+    providers: winners.map(({ binding }) => binding),
+  };
+
+  return { id: winningId, model, failedUpstreams };
 };
 
 const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({

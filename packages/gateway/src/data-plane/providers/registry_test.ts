@@ -652,7 +652,7 @@ describe('catalog listing under modelPrefix', () => {
     );
   });
 
-  test('listed=[prefixed] lists only the prefixed surface', async () => {
+  test('listed=[prefixed] lists only the prefixed surface and routes the prefixed request to the upstream', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -673,6 +673,57 @@ describe('catalog listing under modelPrefix', () => {
       async () => {
         const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
+
+        // Regression: with `listed: ['prefixed']` the catalog walk emits only
+        // the prefixed surface, so a byId-based routing lookup against the
+        // stripped bare id would miss. Routing must instead consult each
+        // scoped upstream's own catalog, where the bare id is always present.
+        const resolved = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(resolved.id, 'gpt-4o');
+        assertEquals(resolved.model?.providers.map(({ upstream }) => upstream), ['up_prefixed']);
+
+        // The bare-id request must NOT route to a prefix-only-addressable
+        // upstream, regardless of routing path.
+        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(bare.model, undefined);
+      },
+    );
+  });
+
+  test('addressable=[unprefixed, prefixed] + listed=[prefixed] routes both surface forms', async () => {
+    // The upstream is bare-id-addressable but only the prefixed form appears
+    // in /v1/models. Routing must still resolve a bare-id request via the
+    // upstream's own catalog (addressable=['unprefixed', 'prefixed'] keeps it
+    // in the candidate set), and a prefixed request via the prefix-strip +
+    // per-provider catalog lookup.
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_dual_addressable',
+      sortOrder: 1,
+      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+    }));
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
+
+        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(bare.id, 'gpt-4o');
+        assertEquals(bare.model?.providers.map(({ upstream }) => upstream), ['up_dual_addressable']);
+
+        const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(prefixed.id, 'gpt-4o');
+        assertEquals(prefixed.model?.providers.map(({ upstream }) => upstream), ['up_dual_addressable']);
       },
     );
   });
