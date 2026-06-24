@@ -231,8 +231,10 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   let modelPrefix;
   try {
-    // normalizeModelPrefix accepts null/undefined and returns null, matching
-    // the create-default for an omitted field.
+    // The Zod schema validates `prefix` regex + length and `addressable.nonempty()`,
+    // but it does NOT clamp `listed ⊆ addressable` or canonicalise form order —
+    // those live in `normalizeModelPrefix`. The try/catch stays as defense in
+    // depth: anything Zod missed surfaces as a 400 instead of a 500.
     modelPrefix = normalizeModelPrefix(body.model_prefix);
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);

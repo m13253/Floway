@@ -5,13 +5,18 @@
 // surface the two AddressableForm flags and enforce `listed ⊆ addressable`
 // the same way the control-plane normalize step does on save.
 
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 
 import type { AddressableForm, ModelPrefixConfig } from '../../api/types.ts';
 import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 import { Input } from '@floway-dev/ui';
 
 const model = defineModel<ModelPrefixConfig | null>({ required: true });
+
+// Mirror the inline `prefixInvalid` computed so the parent page can gate its
+// save call before round-tripping a known-malformed value through the Zod
+// schema for a 400.
+const emit = defineEmits<{ 'update:invalid': [invalid: boolean] }>();
 
 // Canonical order matches normalizeModelPrefix in @floway-dev/provider so the
 // payload we send is byte-identical to what the backend would synthesize.
@@ -48,6 +53,8 @@ const prefixInvalid = computed(() => {
   if (v === '') return false;
   return !MODEL_PREFIX_REGEX.test(v) || v.length > MODEL_PREFIX_MAX_LENGTH;
 });
+
+watch(prefixInvalid, invalid => emit('update:invalid', invalid), { immediate: true });
 
 const toggleAddressable = (form: AddressableForm) => {
   if (!model.value) return;

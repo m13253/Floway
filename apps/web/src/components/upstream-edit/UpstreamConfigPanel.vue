@@ -58,6 +58,7 @@ defineEmits<{
   imported: [record: UpstreamRecord];
   error: [message: string];
   'claude-code-quota-refreshed': [upstream: UpstreamRecord];
+  'update:model-prefix-invalid': [invalid: boolean];
 }>();
 
 // Per-provider narrowed views of (mode, record) so each child panel receives
@@ -225,7 +226,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       </section>
 
       <section class="shrink-0">
-        <ModelPrefixEditor v-model="modelPrefix" />
+        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
       </section>
 
       <section v-if="modelsCache" class="shrink-0">

@@ -277,10 +277,16 @@ interface ProviderModelResolution {
 // considered, so a request like `or/gpt-4o` never reaches a Copilot upstream
 // that lists `gpt-4o` natively.
 //
-// When no prefix matches, the request is a bare-id call: upstreams that
-// declared the bare form unaddressable (addressable = ['prefixed'] only) drop
-// out of the candidate set so they cannot serve it. Upstreams with no prefix
-// config remain candidates unconditionally.
+// Restrict the candidate set by the per-upstream prefix policy and strip a
+// matched prefix off the modelId before per-provider resolution. The walk runs
+// in `listModelProviders` order (which is `sort_order` from the repo), so an
+// overlap like (`or/`, `or/sub/`) is decided by sort order, NOT by longest
+// match — the operator picks the precedence via `sort_order`.
+//
+// When no configured prefix matches, the request is a bare-id call: upstreams
+// that declared the bare form unaddressable (addressable = ['prefixed'] only)
+// drop out of the candidate set so they cannot serve it. Upstreams with no
+// prefix config remain candidates unconditionally.
 export const restrictProvidersByPrefix = (
   modelId: string,
   providers: readonly ModelProviderInstance[],

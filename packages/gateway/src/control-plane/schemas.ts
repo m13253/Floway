@@ -237,7 +237,7 @@ const proxyFallbackListSchema = z.array(z.object({
 const addressableFormSchema = z.enum(['unprefixed', 'prefixed']);
 
 export const modelPrefixSchema = z.object({
-  prefix: z.string().max(MODEL_PREFIX_MAX_LENGTH).regex(MODEL_PREFIX_REGEX, 'must end with / and use [A-Za-z0-9._-/] only'),
+  prefix: z.string().max(MODEL_PREFIX_MAX_LENGTH).regex(MODEL_PREFIX_REGEX, 'must end with / and use letters, digits, dot, dash, underscore, or slash'),
   addressable: z.array(addressableFormSchema).nonempty(),
   listed: z.array(addressableFormSchema),
 }).nullable();

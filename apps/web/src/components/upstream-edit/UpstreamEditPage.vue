@@ -88,6 +88,9 @@ const flagOverrides = ref<Record<string, boolean>>({});
 const disabledPublicModelIds = ref<string[]>([]);
 const proxyFallbackList = ref<ProxyFallbackEntry[]>([]);
 const modelPrefix = ref<ModelPrefixConfig | null>(null);
+// Mirrors ModelPrefixEditor's prefixInvalid computed so save() can short-
+// circuit before round-tripping a known-malformed prefix through Zod.
+const modelPrefixInvalid = ref(false);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
 const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
@@ -360,6 +363,7 @@ const save = async () => {
   saveError.value = null;
   const trimmedName = name.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
+  if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
 
   saving.value = true;
   try {
@@ -553,6 +557,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:disabled-ids="disabledPublicModelIds"
         v-model:proxy-fallback-list="proxyFallbackList"
         v-model:model-prefix="modelPrefix"
+        @update:model-prefix-invalid="v => modelPrefixInvalid = v"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"
