@@ -296,7 +296,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     },
     getPricingForModelKey: pricingForCopilotModelKey,
     // Copilot's catalog never declares endpoints.completions, so this
-    // stub is unreachable; the throw surfaces a routing bug.
+    // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),
     callChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });

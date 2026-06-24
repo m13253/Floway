@@ -57,7 +57,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'embeddings',
+    sourceApi: '/embeddings',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.embeddings !== undefined,
     call: async (binding, opts) => {
@@ -65,7 +65,6 @@ export const embeddings = async (c: Context): Promise<Response> => {
       return await binding.provider.callEmbeddings(binding.upstreamModel, body, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromEmbeddingsBody },
-    noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
 };

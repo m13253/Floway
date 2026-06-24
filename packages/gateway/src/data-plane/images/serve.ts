@@ -56,7 +56,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'images_generations',
+    sourceApi: '/images/generations',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
     call: (binding, opts) => {
@@ -64,7 +64,6 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
       return binding.provider.callImagesGenerations(binding.upstreamModel, body, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
-    noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
 };
@@ -98,7 +97,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'images_edits',
+    sourceApi: '/images/edits',
     model: modelRaw,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
     call: (binding, opts) => {
@@ -115,7 +114,6 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       return binding.provider.callImagesEdits(binding.upstreamModel, passthrough, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
-    noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
 };

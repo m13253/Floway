@@ -71,8 +71,8 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
     config: {
       ...(baseRecord.config as Record<string, unknown>),
       pathOverrides: {
-        messages: '/api/v1/messages',
-        responses: '/api/v1/responses',
+        '/messages': '/api/v1/messages',
+        '/responses': '/api/v1/responses',
       },
     },
   });

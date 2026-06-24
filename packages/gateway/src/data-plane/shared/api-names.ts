@@ -3,8 +3,9 @@
 // `PassthroughServeApiName` is the set of API names served by the
 // passthroughServe helper (see ./passthrough-serve.ts) rather than the
 // LLM source/target executor. It groups by transport shape (the body /
-// frames are forwarded verbatim, possibly with a usage-extraction
-// step), not by whether the endpoint is "LLM" — `/v1/completions` is
-// an LLM endpoint that lives here because there is nothing to
-// translate to or from.
-export type PassthroughServeApiName = 'completions' | 'embeddings' | 'images_generations' | 'images_edits';
+// frames are forwarded verbatim, possibly with a usage-extraction step),
+// not by whether the endpoint is "LLM" — `/completions` is an LLM endpoint
+// that lives here because there is nothing to translate to or from. The
+// value is the public URL fragment, so it can be used directly in error
+// messages and route comparisons without a lookup table.
+export type PassthroughServeApiName = '/completions' | '/embeddings' | '/images/generations' | '/images/edits';

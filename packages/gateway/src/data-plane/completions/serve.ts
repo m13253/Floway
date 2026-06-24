@@ -99,7 +99,7 @@ export const completions = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'completions',
+    sourceApi: '/completions',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.completions !== undefined,
     call: (binding, opts) =>
@@ -114,7 +114,6 @@ export const completions = async (c: Context): Promise<Response> => {
             return tokenUsageFromCompletionsUsage(usage, tier);
           },
         },
-    noBindingMessage: modelId => `Model ${modelId} does not support the /completions endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
 };

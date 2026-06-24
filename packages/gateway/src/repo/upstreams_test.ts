@@ -462,6 +462,74 @@ test('migration 0042 renames bearerToken to apiKey and backfills authStyle on le
   }
 });
 
+test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/fragment form', async () => {
+  const db = await createMigratedSqlJsDatabase();
+  try {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(f => f >= '0010_unified_upstreams.sql' && f < '0044_custom_pathoverrides_slash_keys.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
+    // Seed three rows: a custom upstream carrying every legacy underscore key,
+    // a custom upstream with no pathOverrides at all (must stay untouched),
+    // and a non-custom row that the migration must skip.
+    db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
+            VALUES
+              ('up_overrides', 'custom', 'With Overrides', 1, 0, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
+                json_object('baseUrl', 'https://a.example', 'authStyle', 'bearer', 'apiKey', 'sk-a',
+                  'pathOverrides', json_object(
+                    'completions', '/p/completions',
+                    'chat_completions', '/p/chat/completions',
+                    'responses', '/p/responses',
+                    'messages', '/p/messages',
+                    'embeddings', '/p/embeddings',
+                    'images_generations', '/p/images/generations',
+                    'images_edits', '/p/images/edits'
+                  )
+                ), '[]', '[]', '[]'),
+              ('up_blank', 'custom', 'No Overrides', 1, 1, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
+                json_object('baseUrl', 'https://b.example', 'authStyle', 'bearer', 'apiKey', 'sk-b'),
+                '[]', '[]', '[]'),
+              ('up_azure', 'azure', 'Azure', 1, 2, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
+                json_object('endpoint', 'https://az.example', 'apiKey', 'az-key',
+                  'pathOverrides', json_object('chat_completions', '/should/stay')
+                ), '[]', '[]', '[]')`);
+
+    applySqlJsFile(db, '0044_custom_pathoverrides_slash_keys.sql');
+
+    const overrides = sqlJsRows<{ overrides: string }>(
+      db,
+      `SELECT json_extract(config_json, '$.pathOverrides') AS overrides FROM upstreams WHERE id = 'up_overrides'`,
+    );
+    assertEquals(JSON.parse(overrides[0].overrides), {
+      '/completions': '/p/completions',
+      '/chat/completions': '/p/chat/completions',
+      '/responses': '/p/responses',
+      '/messages': '/p/messages',
+      '/embeddings': '/p/embeddings',
+      '/images/generations': '/p/images/generations',
+      '/images/edits': '/p/images/edits',
+    });
+
+    // A row without pathOverrides is left alone — the field stays absent
+    // rather than getting an empty `{}` shell.
+    const blank = sqlJsRows<{ overrides: unknown }>(
+      db,
+      `SELECT json_extract(config_json, '$.pathOverrides') AS overrides FROM upstreams WHERE id = 'up_blank'`,
+    );
+    assertEquals(blank[0].overrides, null);
+
+    // Non-custom rows are out of scope; an azure row's stale snake_case key
+    // is intentionally preserved (no other migration touches it).
+    const azure = sqlJsRows<{ overrides: string }>(
+      db,
+      `SELECT json_extract(config_json, '$.pathOverrides') AS overrides FROM upstreams WHERE id = 'up_azure'`,
+    );
+    assertEquals(JSON.parse(azure[0].overrides), { chat_completions: '/should/stay' });
+  } finally {
+    db.close();
+  }
+});
+
 type FakeUpstreamRow = {
   id: string;
   provider: string;

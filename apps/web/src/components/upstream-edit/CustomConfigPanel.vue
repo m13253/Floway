@@ -152,7 +152,7 @@ const setAuthStyle = (style: CustomAuthStyle) => {
           <span class="mb-1 block truncate font-mono text-[10px] text-gray-500">{{ key }}</span>
           <Input
             :model-value="draft.pathOverrides[key]"
-            :placeholder="`/v1/${key.replace('_', '/')}`"
+            :placeholder="`/v1${key}`"
             size="sm"
             class="font-mono"
             @update:model-value="v => draft = { ...draft, pathOverrides: { ...draft.pathOverrides, [key]: v } }"

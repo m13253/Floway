@@ -1,19 +1,27 @@
 import type { ModelEndpoints, UpstreamModelConfig } from '../../api/types.ts';
 
-export const PATH_KEYS = ['completions', 'chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits'] as const;
+export const PATH_KEYS = [
+  '/completions',
+  '/chat/completions',
+  '/responses',
+  '/messages',
+  '/embeddings',
+  '/images/generations',
+  '/images/edits',
+] as const;
 export type PathKey = typeof PATH_KEYS[number];
 
 export const emptyPathOverrides = (): Record<PathKey, string> => ({
-  completions: '',
-  chat_completions: '',
-  responses: '',
-  messages: '',
-  embeddings: '',
-  images_generations: '',
-  images_edits: '',
+  '/completions': '',
+  '/chat/completions': '',
+  '/responses': '',
+  '/messages': '',
+  '/embeddings': '',
+  '/images/generations': '',
+  '/images/edits': '',
 });
 
-export const seedPathOverrides = (saved: Record<string, string> | null | undefined): Record<PathKey, string> => {
+export const seedPathOverrides = (saved: Record<string, string> | undefined): Record<PathKey, string> => {
   const out = emptyPathOverrides();
   if (!saved) return out;
   for (const k of PATH_KEYS) {

@@ -61,10 +61,6 @@ const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
   }
 };
 
-// Uniform error envelope for this endpoint family.
-export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
-  c.json({ error: { message, type: 'api_error' } }, status);
-
 const recordUpstreamPerformance = (
   scheduler: BackgroundScheduler,
   context: PerformanceTelemetryContext,
@@ -115,13 +111,14 @@ interface PassthroughServeContext {
   // callback forwards it verbatim to the chosen provider call method.
   readonly call: (binding: ProviderModelRecord, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
-  // Returned as the 400 body when no provider binding matched. Phrased
-  // per-endpoint so the error tells the client which capability is missing.
-  readonly noBindingMessage: (modelId: string) => string;
 }
 
+// Uniform error envelope for this endpoint family.
+export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
+  c.json({ error: { message, type: 'api_error' } }, status);
+
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling, noBindingMessage } = input;
+  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling } = input;
   const requestStartedAt = performance.now();
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
@@ -197,9 +194,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
       }
       stageForwardedResponseHeaders(c, response);
-      // Capture the SSE-narrowed handler outside the streamSSE callback so
-      // TypeScript keeps the narrowing across the async closure boundary.
-      const sseResponseHandling = responseHandling;
       return streamSSE(c, async stream => {
         let completion: StreamCompletion = 'error';
         let streamError: unknown;
@@ -210,30 +204,27 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         // Mirrors SourceStreamState.failedAfter on the LLM endpoints.
         let terminalFrameSeen = false;
         try {
-          // Inline frame pipeline: parse upstream bytes → push every
-          // frame into the dump (pre-transform, so forensics see
-          // upstream truth even when the caller drops a frame from the
-          // client-facing stream) → run the caller's transformFrame →
-          // serialize back to SseFrames.
           const frames = (async function* () {
             const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
             for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
               const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+              // Dump pre-transform, so forensics see upstream truth even
+              // when the caller drops a frame from the client-facing stream.
               ctx.dump?.frame(inputFrame);
               if (inputFrame.type === 'done') terminalFrameSeen = true;
-              const outputFrame = sseResponseHandling.transformFrame(inputFrame);
+              const outputFrame = responseHandling.transformFrame(inputFrame);
               if (outputFrame === null) continue;
               yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
             }
           })();
           completion = await writeSSEFrames(stream, frames, {
             keepAlive: { frame: sseCommentFrame('keepalive') },
-            ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+            downstreamAbortController: ctx.downstreamAbortController,
           });
         } catch (e) {
           streamError = e;
         } finally {
-          const usage = sseResponseHandling.settleUsage();
+          const usage = responseHandling.settleUsage();
           const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
           if (failed) {
             ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
@@ -253,7 +244,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     ctx.dump?.error('gateway');
-    return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(modelId), failedUpstreams), 400);
+    return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
