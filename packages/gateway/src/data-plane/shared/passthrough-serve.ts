@@ -27,9 +27,8 @@ import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelPricing } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ProviderCallResult, ProviderModelRecord, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream JSON response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -113,16 +112,10 @@ export interface PassthroughServeContext {
   readonly noBindingMessage: (model: string) => string;
 }
 
-// Telemetry identity for a passthrough call. `model` is the post-prefix-strip
-// upstream-facing id — usage and performance keys on the canonical upstream
-// model so a prefixed and bare-id surface of the same model roll up together.
-// Mirrors the LLM-side contract in `telemetryModelIdentity` (attempt-helpers).
-const passthroughTelemetryIdentity = (binding: ProviderModelRecord, canonicalId: string, modelKey: string): {
-  model: string;
-  upstream: string;
-  modelKey: string;
-  cost: ModelPricing | null;
-} => ({
+// Telemetry identity for a passthrough call. Usage and performance key on the
+// canonical post-prefix-strip upstream-facing id so a prefixed and bare-id
+// surface of the same model roll up together.
+const passthroughTelemetryIdentity = (binding: ProviderModelRecord, canonicalId: string, modelKey: string): TelemetryModelIdentity => ({
   model: canonicalId,
   upstream: binding.upstream,
   modelKey,
@@ -136,10 +129,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    // `canonicalId` is the upstream-facing id `resolveModelForRequest` stripped
-    // the prefix off; the inbound `model` is the surface form the client sent.
-    // The split shows up below: telemetry keys on `canonicalId`, user-facing
-    // error bodies echo `model`.
+    // Telemetry keys on `canonicalId` (post-prefix-strip); user-facing error
+    // bodies echo the inbound `model`.
     const { id: canonicalId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
       ctx.dump?.error('gateway');

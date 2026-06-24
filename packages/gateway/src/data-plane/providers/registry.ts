@@ -110,6 +110,33 @@ const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: Ups
   supportsResponsesItemReference: instance.supportsResponsesItemReference,
 });
 
+// Insert or union-merge one surface form into the catalog map. When multiple
+// providers expose the same public model id, the first provider's metadata
+// remains the public /models metadata; subsequent providers contribute their
+// endpoints (and provider binding) via union. Runtime execution still uses the
+// selected provider's own UpstreamModel, so capability-sensitive calls do not
+// depend on this merged view being perfectly representative.
+const mergeIntoCatalog = (
+  byId: Map<string, ResolvedModel>,
+  instance: ModelProviderInstance,
+  surfacedModel: UpstreamModel,
+  publicId: string,
+): void => {
+  const record = providerModelRecord(instance, surfacedModel);
+  const existing = byId.get(publicId);
+  if (!existing) {
+    byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
+    return;
+  }
+  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+  byId.set(publicId, {
+    ...existing,
+    endpoints,
+    kind: kindForEndpoints(endpoints),
+    providers: [...existing.providers, record],
+  });
+};
+
 const collectProviderModels = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -181,33 +208,6 @@ const collectProviderModels = async (
   }
 
   return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
-};
-
-// Insert or union-merge one surface form into the catalog map. When multiple
-// providers expose the same public model id, the first provider's metadata
-// remains the public /models metadata; subsequent providers contribute their
-// endpoints (and provider binding) via union. Runtime execution still uses the
-// selected provider's own UpstreamModel, so capability-sensitive calls do not
-// depend on this merged view being perfectly representative.
-const mergeIntoCatalog = (
-  byId: Map<string, ResolvedModel>,
-  instance: ModelProviderInstance,
-  surfacedModel: UpstreamModel,
-  publicId: string,
-): void => {
-  const record = providerModelRecord(instance, surfacedModel);
-  const existing = byId.get(publicId);
-  if (!existing) {
-    byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
-    return;
-  }
-  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
-  byId.set(publicId, {
-    ...existing,
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-    providers: [...existing.providers, record],
-  });
 };
 
 // Public-facing model-id ordering, applied in getModels() to every list that

@@ -233,7 +233,8 @@ const proxyFallbackListSchema = z.array(z.object({
 // Per-upstream model name prefix policy. `null` clears the policy (the upstream
 // publishes and accepts bare ids only). The handler then funnels the shape
 // through `normalizeModelPrefix` so the persisted form matches what the
-// runtime expects — order canonicalised, listed clamped to addressable.
+// runtime expects — order canonicalised, and `listed` entries outside
+// `addressable` are rejected as a contract violation.
 const addressableFormSchema = z.enum(['unprefixed', 'prefixed']);
 
 const modelPrefixSchema = z.object({
