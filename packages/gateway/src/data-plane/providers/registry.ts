@@ -297,13 +297,7 @@ export interface ModelInterpretation {
 // the upstream registry can interpret it as. A request matches an upstream
 // when the inbound id literally equals one of the public-id surfaces the
 // upstream advertises (bare and/or prefixed, per `modelPrefix.addressable`).
-//
-// One upstream can produce up to two interpretations: a `[unprefixed]`-
-// addressable upstream contributes a single bare lookup; a `[prefixed]`-only
-// addressable upstream contributes a single stripped lookup (and only when
-// the inbound id starts with `prefix`); a `[unprefixed, prefixed]`-
-// addressable upstream contributes both when the prefix matches. The
-// unprefixed interpretation is always pushed first when both apply.
+// The unprefixed interpretation is always pushed first when both apply.
 export const enumerateModelInterpretations = (
   modelId: string,
   providers: readonly ModelProviderInstance[],
