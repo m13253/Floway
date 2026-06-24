@@ -30,7 +30,7 @@ import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, parseFlagOverridesWire } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -170,6 +170,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         flagOverrides: parseFlagOverridesWire(item.flag_overrides),
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
+        modelPrefix: normalizeModelPrefix(item.model_prefix),
         config: item.config,
         state: normalizeUpstreamState(provider, item.state),
       };

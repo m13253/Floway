@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@floway-dev/protocols": "workspace:*",
+    "@floway-dev/provider": "workspace:*",
     "@floway-dev/proxy": "workspace:*",
     "@floway-dev/ui": "workspace:*",
     "@vueuse/core": "^14.1.0",

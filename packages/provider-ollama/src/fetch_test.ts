@@ -30,6 +30,7 @@ const baseRecord: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 };
 
 test('typed transports hit the fixed Ollama endpoint paths', async () => {

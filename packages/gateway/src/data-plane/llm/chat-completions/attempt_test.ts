@@ -86,7 +86,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
     binding: {
       upstream, upstreamName: upstream, providerKind: 'custom',

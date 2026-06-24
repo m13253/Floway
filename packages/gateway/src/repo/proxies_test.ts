@@ -30,6 +30,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList,
+  modelPrefix: null,
 });
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {

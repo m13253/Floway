@@ -138,6 +138,7 @@ const makeCandidate = (overrides: {
       providerKind,
       name: upstream,
       disabledPublicModelIds: [],
+      modelPrefix: null,
       provider,
       supportsResponsesItemReference: true,
     },

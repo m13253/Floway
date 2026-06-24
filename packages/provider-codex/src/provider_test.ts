@@ -22,6 +22,7 @@ const baseRecord: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 };
 
 const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({

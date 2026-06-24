@@ -17,6 +17,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   ...overrides,
 });
 
@@ -246,6 +247,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.list(), Error, 'Malformed upstream config JSON for up_bad_config');
@@ -266,6 +268,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     flag_overrides: '{bad json',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_fixes'), Error, 'Malformed upstream flag_overrides JSON for up_bad_fixes');
@@ -286,6 +289,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     flag_overrides: '[]',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(
@@ -310,6 +314,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     flag_overrides: '{"x": 1}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(
@@ -317,6 +322,73 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     Error,
     'Upstream up_nonbool_fixes flag_overrides["x"] must be a boolean, got number',
   );
+});
+
+test('SQL upstream repo rejects malformed stored model_prefix_json', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  db.rows.push({
+    id: 'up_bad_prefix_json',
+    provider: 'custom',
+    name: 'Bad Prefix JSON',
+    enabled: 1,
+    sort_order: 0,
+    created_at: '2026-05-21T10:00:00.000Z',
+    updated_at: '2026-05-21T10:00:00.000Z',
+    config_json: '{}',
+    state_json: null,
+    flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
+    proxy_fallback_list_json: '[]',
+    model_prefix_json: '{not json',
+  });
+
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_json'), Error, 'Malformed upstream model_prefix_json for up_bad_prefix_json');
+});
+
+test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  db.rows.push({
+    id: 'up_bad_prefix_shape',
+    provider: 'custom',
+    name: 'Bad Prefix Shape',
+    enabled: 1,
+    sort_order: 0,
+    created_at: '2026-05-21T10:00:00.000Z',
+    updated_at: '2026-05-21T10:00:00.000Z',
+    config_json: '{}',
+    state_json: null,
+    flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
+    proxy_fallback_list_json: '[]',
+    // Prefix missing trailing slash — passes JSON.parse but fails the regex.
+    model_prefix_json: '{"prefix":"or","addressable":["unprefixed"],"listed":[]}',
+  });
+
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_shape'), Error, 'Invalid upstream model_prefix_json shape for up_bad_prefix_shape');
+});
+
+test('SQL upstream repo round-trips a non-null model_prefix', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  const repo = new SqlRepo(db).upstreams;
+  const now = new Date().toISOString();
+  const record: UpstreamRecord = {
+    id: 'up_prefix_rt',
+    provider: 'custom',
+    name: 'Prefix Round-Trip',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { chatCompletions: {} }, modelsFetch: { enabled: true } },
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+  };
+  await repo.save(record);
+  const reloaded = await repo.getById('up_prefix_rt');
+  assertEquals(reloaded?.modelPrefix, { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] });
 });
 
 test('migration 0010 creates unified upstreams and rewrites legacy upstream identities', async () => {
@@ -543,6 +615,7 @@ type FakeUpstreamRow = {
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
+  model_prefix_json: string | null;
 };
 
 class FakeUpstreamsSqlPreparedStatement {
@@ -612,7 +685,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
     const row = {
@@ -628,6 +701,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,
+      model_prefix_json: modelPrefixJson,
     };
     if (existingIndex >= 0) {
       this.rows[existingIndex] = row;

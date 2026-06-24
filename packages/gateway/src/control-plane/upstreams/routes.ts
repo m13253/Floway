@@ -20,8 +20,10 @@ import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../sha
 import {
   directFetcher,
   getFlagCatalog,
+  normalizeModelPrefix,
   ProviderModelsUnavailableError,
   type Fetcher,
+  type ModelPrefixConfig,
   type ProxyFallbackEntry,
   type UpstreamProviderKind,
   type UpstreamRecord,
@@ -157,6 +159,19 @@ const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, pat
   return { ok: true, value: next };
 };
 
+// Zod validates `prefix` regex/length and `addressable.nonempty()`, but the
+// `listed ⊆ addressable` clamp and form-order canonicalisation live in
+// `normalizeModelPrefix`. Wrap it in the same ValidationResult shape the
+// sibling normalizers (normalizeConfig, mergeConfigPatch) use so the route
+// handlers stay uniform.
+const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefixConfig | null> => {
+  try {
+    return { ok: true, value: normalizeModelPrefix(input) };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+};
+
 const newId = (): string => shortId('up');
 
 const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
@@ -237,6 +252,10 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
 
+  const modelPrefixResult = normalizeModelPrefixField(body.model_prefix);
+  if (!modelPrefixResult.ok) return c.json({ error: modelPrefixResult.error }, 400);
+  const modelPrefix = modelPrefixResult.value;
+
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
   const upstream: UpstreamRecord = {
@@ -250,6 +269,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
+    modelPrefix,
     config: body.config,
     state: null,
   };
@@ -298,6 +318,11 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     const fallbackCheck = await validateProxyFallbackList(normalized);
     if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
     next = { ...next, proxyFallbackList: normalized };
+  }
+  if (body.model_prefix !== undefined) {
+    const result = normalizeModelPrefixField(body.model_prefix);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    next = { ...next, modelPrefix: result.value };
   }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
@@ -354,6 +379,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: body.config,
     state: null,
   };
@@ -504,6 +530,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           // list — the override above already routes the poll itself
           // correctly without clobbering a prior persisted choice.
           proxyFallbackList: proxyFallbackList !== undefined ? normalizeProxyFallbackList(proxyFallbackList) : [],
+          modelPrefix: null,
           config,
           state: nextState,
         };
@@ -604,6 +631,7 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     // Persist the in-flight override so subsequent data-plane calls route
     // through the same chain without an extra edit step.
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -819,6 +847,7 @@ export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBod
     // Persist the in-flight override so subsequent data-plane calls route
     // through the same chain without an extra edit step.
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -901,6 +930,7 @@ export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCod
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };

@@ -38,6 +38,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -382,6 +383,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
@@ -428,6 +430,7 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',

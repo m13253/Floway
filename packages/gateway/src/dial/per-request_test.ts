@@ -28,6 +28,7 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList,
+  modelPrefix: null,
   config: COPILOT_CONFIG,
   state: null,
 });

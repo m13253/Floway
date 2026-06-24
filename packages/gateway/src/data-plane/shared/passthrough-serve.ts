@@ -124,28 +124,39 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
-    if (!resolved) {
+    // Each match is one (upstream, upstream-catalog id) pair that interprets
+    // the inbound public id. Iteration order follows configured sort_order
+    // across upstreams, with the unprefixed interpretation pushed before the
+    // prefixed one within a single upstream. The first match whose binding
+    // satisfies the endpoint capability wins.
+    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    if (matches.length === 0) {
       ctx.dump?.error('gateway');
-      return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} is not available on any configured upstream.`, failedUpstreams), 404);
+      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
-    for (const binding of resolved.providers) {
-      if (!bindingServesEndpoint(binding)) continue;
+    for (const match of matches) {
+      if (!bindingServesEndpoint(match.binding)) continue;
 
       const recorder = createUpstreamLatencyRecorder();
-      const { response, modelKey } = await call(binding, {
-        fetcher: fetcherForUpstream(binding.upstream),
+      const { response, modelKey } = await call(match.binding, {
+        fetcher: fetcherForUpstream(match.binding.upstream),
         recordUpstreamLatency: recorder.record,
         waitUntil: ctx.backgroundScheduler,
         headers: inboundHeadersForUpstream(c),
       });
       const upstreamDurationMs = recorder.durationMs();
+      // Telemetry keys on `match.id` (the upstream's bare catalog id);
+      // user-facing error bodies echo the inbound `model`.
+      const identity = {
+        model: match.id,
+        upstream: match.binding.upstream,
+        modelKey,
+        cost: match.binding.provider.getPricingForModelKey(modelKey),
+      };
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
-        model: modelId,
-        upstream: binding.upstream,
-        modelKey,
+        ...identity,
         stream: responseHandling.format === 'sse',
         runtimeLocation: ctx.runtimeLocation,
       };
@@ -154,12 +165,11 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.error('upstream', binding.upstream);
+        ctx.dump?.error('upstream', match.binding.upstream);
         return forwardUpstreamResponse(response);
       }
 
       recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
-      const modelIdentity = { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) };
 
       if (responseHandling.format === 'json') {
         // A 2xx body that fails to parse must not 502 a client whose
@@ -173,9 +183,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
           parsed = undefined;
         }
         const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
-        ctx.dump?.success(modelIdentity, usage);
+        ctx.dump?.success(identity, usage);
         if (usage) {
-          scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
+          scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
         }
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
         return forwardUpstreamResponse(response);
@@ -229,14 +239,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
           if (failed) {
             ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
           } else {
-            ctx.dump?.success(modelIdentity, usage);
+            ctx.dump?.success(identity, usage);
           }
           // Record any accumulated usage regardless of the failed flag —
           // tokens already metered upstream should bill even when the
           // downstream half of the round-trip turned out badly. The LLM
           // streaming endpoints follow the same rule.
           if (usage) {
-            scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
+            scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
           }
           recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
         }
@@ -244,7 +254,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     ctx.dump?.error('gateway');
-    return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+    return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);

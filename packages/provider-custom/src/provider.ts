@@ -211,6 +211,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     providerKind: 'custom',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
+    modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: true,
   };

@@ -15,6 +15,7 @@ const upstreamRecord = () => ({
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',

@@ -64,6 +64,7 @@ export const stubProviderCandidate = (overrides: { targetApi?: LlmTargetApi; bin
     providerKind: 'custom',
     name: 'Test Upstream',
     disabledPublicModelIds: [],
+    modelPrefix: null,
     provider: stubProvider(),
     supportsResponsesItemReference: false,
   };

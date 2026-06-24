@@ -104,6 +104,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     providerKind: 'claude-code',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
+    modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: false,
     resolveRequestedModelId: claudeCodeResolveRequestedModelId,

@@ -1,3 +1,4 @@
+import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
@@ -36,6 +37,11 @@ export interface UpstreamRecord {
   // editable. Entries may reference ids no longer present in the live model list.
   disabledPublicModelIds: string[];
   proxyFallbackList: ProxyFallbackEntry[];
+  // Per-upstream model name prefix policy. `null` keeps the bare-id behavior
+  // — the upstream's models are addressed and listed by bare upstream id only.
+  // When set, the registry interprets `addressable` and `listed` to expose /
+  // accept either form (or both).
+  modelPrefix: ModelPrefixConfig | null;
 }
 
 // Model identity attached to every provider result at the provider boundary

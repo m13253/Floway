@@ -100,6 +100,41 @@ const resolvedFromUpstreamModel = (upstreamModel: UpstreamModel, record: Provide
   };
 };
 
+const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
+  upstream: instance.upstream,
+  upstreamName: instance.name,
+  providerKind: instance.providerKind,
+  provider: instance.provider,
+  upstreamModel,
+  enabledFlags: upstreamModel.enabledFlags,
+  supportsResponsesItemReference: instance.supportsResponsesItemReference,
+});
+
+// When multiple upstreams expose the same public model id, the first wins
+// for /models metadata and later ones union-merge their endpoints + provider
+// binding. Runtime execution still uses each provider's own UpstreamModel, so
+// capability-sensitive calls do not depend on this merged view.
+const mergeIntoCatalog = (
+  byId: Map<string, ResolvedModel>,
+  instance: ModelProviderInstance,
+  surfacedModel: UpstreamModel,
+  publicId: string,
+): void => {
+  const record = providerModelRecord(instance, surfacedModel);
+  const existing = byId.get(publicId);
+  if (!existing) {
+    byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
+    return;
+  }
+  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+  byId.set(publicId, {
+    ...existing,
+    endpoints,
+    kind: kindForEndpoints(endpoints),
+    providers: [...existing.providers, record],
+  });
+};
+
 const collectProviderModels = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -141,46 +176,37 @@ const collectProviderModels = async (
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,
     // so the same id can still surface from another upstream that allows it.
+    // The disable matches against the bare upstream id, so a disabled `gpt-4o`
+    // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
+    // contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
     for (const upstreamModel of providedModels) {
       if (!upstreamModel.id) continue;
       if (disabled.has(upstreamModel.id)) continue;
-      const record = providerModelRecord(instance, upstreamModel);
-      const existing = byId.get(upstreamModel.id);
-      if (!existing) {
-        byId.set(upstreamModel.id, resolvedFromUpstreamModel(upstreamModel, record));
-        continue;
-      }
 
-      // When multiple providers expose the same public model id, the first
-      // provider's metadata remains the public /models metadata. Runtime
-      // execution still uses the selected provider's own UpstreamModel, so
-      // capability-sensitive calls do not depend on this merged view being
-      // perfectly representative.
-      const endpoints = unionEndpoints(existing.endpoints, upstreamModel.endpoints);
-      byId.set(upstreamModel.id, {
-        ...existing,
-        endpoints,
-        kind: kindForEndpoints(endpoints),
-        providers: [...existing.providers, record],
-      });
+      // Each surface form the upstream chose to list becomes its own catalog
+      // entry. The unprefixed surface keeps the original UpstreamModel; the
+      // prefixed surface uses a shallow clone with the rewritten id and a
+      // synthesized display_name that prepends the upstream name (so the
+      // dashboard tells the operator at a glance which upstream a prefixed
+      // model came from). `providerData` (where the per-provider call reads
+      // the real upstream model id) is untouched by the clone.
+      const cfg = instance.modelPrefix;
+      if (cfg !== null) {
+        for (const form of cfg.listed) {
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
+          const surfacedModel: UpstreamModel = form === 'prefixed'
+            ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
+            : upstreamModel;
+          mergeIntoCatalog(byId, instance, surfacedModel, publicId);
+        }
+      } else {
+        mergeIntoCatalog(byId, instance, upstreamModel, upstreamModel.id);
+      }
     }
   }
 
   return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
-};
-
-const modelWithProviderInstances = (model: ResolvedModel, providers: ReadonlySet<ModelProviderInstance>): ResolvedModel => {
-  const providerInstances = [...providers];
-  const bindings = model.providers.filter(binding => providerInstances.some(instance => instance.upstream === binding.upstream && instance.provider === binding.provider));
-  const endpoints = bindings.reduce<ModelEndpoints>((acc, binding) => unionEndpoints(acc, binding.upstreamModel.endpoints), {});
-
-  return {
-    ...model,
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-    providers: bindings,
-  };
 };
 
 // Public-facing model-id ordering, applied in getModels() to every list that
@@ -244,8 +270,7 @@ export const getInternalModels = async (
   (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 interface ModelResolution {
-  id: string;
-  model?: ResolvedModel;
+  matches: readonly ProviderModelResolution[];
   // Upstream names whose catalog fetch rejected during this resolution.
   // Threaded out so the caller's failure renderer can mention them
   // parenthetically — same data the dashboard's `modelsCache.lastError`
@@ -254,33 +279,83 @@ interface ModelResolution {
   failedUpstreams: readonly string[];
 }
 
-interface ProviderModelResolution {
+export interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
   binding: ProviderModelRecord;
 }
 
-const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId: ReadonlyMap<string, ResolvedModel>, modelId: string): ResolvedModel | undefined => {
-  let resolved: ResolvedModel | undefined;
-  const providersForAlias = new Set<ModelProviderInstance>();
+export interface ModelInterpretation {
+  provider: ModelProviderInstance;
+  // The bare id to query the upstream's catalog with. Equals the inbound
+  // model id for the unprefixed surface; equals `inbound.slice(prefix.length)`
+  // for the prefixed surface.
+  lookupId: string;
+}
 
-  for (const instance of providers) {
-    const aliasTarget = instance.resolveRequestedModelId?.(modelId);
-    if (!aliasTarget || aliasTarget === modelId) continue;
+// Expands one inbound model id into every (provider, catalog-lookup-id) pair
+// the upstream registry can interpret it as. A request matches an upstream
+// when the inbound id literally equals one of the public-id surfaces the
+// upstream advertises (bare and/or prefixed, per `modelPrefix.addressable`).
+// The unprefixed interpretation is always pushed first when both apply.
+export const enumerateModelInterpretations = (
+  modelId: string,
+  providers: readonly ModelProviderInstance[],
+): ModelInterpretation[] => {
+  const out: ModelInterpretation[] = [];
+  for (const provider of providers) {
+    const cfg = provider.modelPrefix;
+    if (cfg === null || cfg.addressable.includes('unprefixed')) {
+      out.push({ provider, lookupId: modelId });
+    }
+    if (cfg !== null && cfg.addressable.includes('prefixed') && modelId.startsWith(cfg.prefix)) {
+      out.push({ provider, lookupId: modelId.slice(cfg.prefix.length) });
+    }
+  }
+  return out;
+};
 
-    const model = byId.get(aliasTarget);
-    if (!model) continue;
-    if (resolved && resolved.id !== model.id) continue;
+// Fan out per-interpretation against the SWR cache and collect the resolved
+// matches plus a deduped list of upstreams whose catalog fetch rejected.
+// Shared by `resolveModelForRequest` and `enumerateProviderCandidates`; the
+// per-caller divergence (passthrough vs LLM-candidate shape) happens after
+// this returns. Cancellation (`AbortError`) propagates so the per-request
+// abort signal cannot be masked by a slow upstream's rejection.
+export const collectInterpretationOutcomes = async (
+  interpretations: readonly ModelInterpretation[],
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<{
+  resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  failedUpstreams: string[];
+}> => {
+  const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
+    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
+      .then(resolved => ({ provider, resolved }))));
 
-    const providerHasModel = model.providers.some(binding => binding.upstream === instance.upstream && binding.provider === instance.provider);
-    if (!providerHasModel) continue;
+  const failedUpstreams: string[] = [];
+  const failedSeen = new Set<string>();
+  const resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
 
-    resolved = model;
-    providersForAlias.add(instance);
+  for (const [index, result] of settled.entries()) {
+    if (result.status === 'rejected') {
+      const error = result.reason;
+      if (error instanceof Error && error.name === 'AbortError') throw error;
+      // A single upstream may produce multiple interpretations; surface its
+      // failure once.
+      const name = interpretations[index].provider.name;
+      if (!failedSeen.has(name)) {
+        failedSeen.add(name);
+        failedUpstreams.push(name);
+      }
+      continue;
+    }
+    const { provider, resolved } = result.value;
+    if (!resolved) continue;
+    resolutions.push({ provider, resolved });
   }
 
-  if (!resolved) return undefined;
-  return modelWithProviderInstances(resolved, providersForAlias);
+  return { resolutions, failedUpstreams };
 };
 
 export const resolveModelForRequest = async (
@@ -294,31 +369,10 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  const { models, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
-  const byId = new Map(models.map(model => [model.id, model]));
-
-  const exact = byId.get(modelId);
-  if (exact) return { id: exact.id, model: exact, failedUpstreams };
-
-  const alias = resolveProviderAlias(providers, byId, modelId);
-  if (alias) return { id: alias.id, model: alias, failedUpstreams };
-
-  // Treat a failing upstream as "no models from that upstream right now"
-  // rather than rethrowing its catalog error — other upstreams still
-  // route, and the failed list is handed back so the caller's failure
-  // body can name the affected upstreams.
-  return { id: modelId, failedUpstreams };
+  const interpretations = enumerateModelInterpretations(modelId, providers);
+  const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
+  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };
-
-const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
-  upstream: instance.upstream,
-  upstreamName: instance.name,
-  providerKind: instance.providerKind,
-  provider: instance.provider,
-  upstreamModel,
-  enabledFlags: upstreamModel.enabledFlags,
-  supportsResponsesItemReference: instance.supportsResponsesItemReference,
-});
 
 export const resolveModelForProvider = async (
   instance: ModelProviderInstance,

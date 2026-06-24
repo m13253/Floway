@@ -17,6 +17,7 @@ const custom: UpstreamRecord = {
   flagOverrides: { 'vendor-deepseek': true },
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     baseUrl: 'https://api.example.com',
     authStyle: 'bearer',
@@ -161,6 +162,7 @@ const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): Upstr
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
@@ -176,6 +178,7 @@ const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRe
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com' }] },
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);

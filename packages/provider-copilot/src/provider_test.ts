@@ -24,6 +24,7 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     ...rest,
     config: overrideConfig ?? {
       githubToken: `ghu_${crypto.randomUUID().replace(/-/g, '')}`,

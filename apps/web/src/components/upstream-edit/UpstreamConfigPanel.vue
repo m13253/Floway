@@ -8,10 +8,11 @@ import CopilotConfigPanel from './CopilotConfigPanel.vue';
 import type { AzureDraft, CustomDraft, OllamaDraft } from './customConfig.ts';
 import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
+import ModelPrefixEditor from './ModelPrefixEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { CopilotQuotaSnapshot, FlagDef, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
@@ -23,6 +24,7 @@ const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
+const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
 
 type CommonConfigPanelProps = {
   provider: UpstreamProviderKind;
@@ -56,6 +58,7 @@ defineEmits<{
   imported: [record: UpstreamRecord];
   error: [message: string];
   'claude-code-quota-refreshed': [upstream: UpstreamRecord];
+  'update:model-prefix-invalid': [invalid: boolean];
 }>();
 
 // Per-provider narrowed views of (mode, record) so each child panel receives
@@ -220,6 +223,10 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           @quota-refreshed="u => $emit('claude-code-quota-refreshed', u)"
           @error="m => $emit('error', m)"
         />
+      </section>
+
+      <section class="shrink-0">
+        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
       </section>
 
       <section v-if="modelsCache" class="shrink-0">

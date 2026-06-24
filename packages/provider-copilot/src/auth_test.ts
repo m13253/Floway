@@ -23,6 +23,7 @@ const installRepoAndClearCache = async () => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({

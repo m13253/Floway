@@ -67,6 +67,7 @@ const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: A
       providerKind: 'custom',
       name: 'up_test',
       disabledPublicModelIds: [],
+      modelPrefix: null,
       provider,
       supportsResponsesItemReference: true,
     },
@@ -96,6 +97,7 @@ const makeCompactCandidate = (callResponsesCompact: (...args: unknown[]) => Prom
       providerKind: 'custom',
       name: 'up_test',
       disabledPublicModelIds: [],
+      modelPrefix: null,
       provider,
       supportsResponsesItemReference: true,
     },
@@ -358,7 +360,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_test', providerKind: 'custom', name: 'up_test',
-      disabledPublicModelIds: [], provider: messagesProvider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, provider: messagesProvider, supportsResponsesItemReference: true,
     },
     binding: {
       upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',

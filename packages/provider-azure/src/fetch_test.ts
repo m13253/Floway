@@ -36,6 +36,7 @@ const baseRecord: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 };
 
 test('OpenAI v1 transports apply api-key auth and the canonical paths', async () => {

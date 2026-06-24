@@ -36,6 +36,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 });
 
 const baseAccount: ClaudeCodeUpstreamState['accounts'][number] = {

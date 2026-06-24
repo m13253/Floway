@@ -7,8 +7,10 @@ import type {
   ModelKind,
   ModelPricing,
 } from '@floway-dev/protocols/common';
+import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { AddressableForm, ModelPrefixConfig };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
@@ -249,6 +251,12 @@ interface UpstreamRecordBase {
   // `RUNTIME_LOCATION` env var). Empty/missing whitelist means "active in
   // all locations". Empty top-level list means "always direct".
   proxy_fallback_list: ProxyFallbackEntry[];
+  // Per-upstream model name prefix. When set, this upstream's models can be
+  // addressed in two forms (`unprefixed` and `prefixed`) and listed in either
+  // — see `@floway-dev/provider/model-prefix` for the field semantics. Null
+  // means "no prefix configured; the upstream advertises and accepts only
+  // the bare upstream id."
+  model_prefix: ModelPrefixConfig | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
