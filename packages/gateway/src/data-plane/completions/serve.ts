@@ -90,7 +90,7 @@ export const completions = async (c: Context): Promise<Response> => {
     const eventRoot = frame.event as { service_tier?: string | null; usage?: unknown };
     if (eventRoot.service_tier !== undefined) streamingServiceTier = eventRoot.service_tier;
     if (!isOpenAIUsageOnlyEventShape(frame.event)) return frame;
-    if (eventRoot.usage !== undefined) streamingUsageBlock = eventRoot.usage;
+    streamingUsageBlock = eventRoot.usage;
     return request.clientWantsUsageChunk ? frame : null;
   };
   const settleUsage = (): TokenUsage | null =>
