@@ -710,6 +710,10 @@ describe('catalog listing under modelPrefix', () => {
       async () => {
         const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
+        // Prefixed surface gets a synthesized display_name prepending the
+        // upstream's display name so the dashboard tells the operator at a
+        // glance which upstream a prefixed entry came from.
+        assertEquals(catalog[0]?.display_name, 'Custom Provider: gpt-4o');
 
         // Regression: with `listed: ['prefixed']` the catalog walk emits only
         // the prefixed surface, so a byId-based routing lookup against the

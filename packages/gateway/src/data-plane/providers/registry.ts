@@ -186,16 +186,17 @@ const collectProviderModels = async (
 
       // Each surface form the upstream chose to list becomes its own catalog
       // entry. The unprefixed surface keeps the original UpstreamModel; the
-      // prefixed surface uses a shallow clone with the rewritten id so the
-      // provider binding still forwards the bare id upstream — `providerData`
-      // (where the per-provider call reads the real upstream model id) is
-      // untouched by the clone.
+      // prefixed surface uses a shallow clone with the rewritten id and a
+      // synthesized display_name that prepends the upstream name (so the
+      // dashboard tells the operator at a glance which upstream a prefixed
+      // model came from). `providerData` (where the per-provider call reads
+      // the real upstream model id) is untouched by the clone.
       const cfg = instance.modelPrefix;
       if (cfg) {
         for (const form of cfg.listed) {
           const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
           const surfacedModel: UpstreamModel = form === 'prefixed'
-            ? { ...upstreamModel, id: publicId }
+            ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
             : upstreamModel;
           mergeIntoCatalog(byId, instance, surfacedModel, publicId);
         }

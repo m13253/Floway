@@ -42,8 +42,14 @@ const sortCodex = (a: string, b: string) => {
 const isChat = (m: ControlPlaneModel) => m.kind === 'chat';
 const dedupe = (arr: string[]) => [...new Set(arr)];
 
-const claudeIds = computed(() => dedupe(props.models.filter(m => m.id.startsWith('claude-') && isChat(m)).map(m => m.id)));
-const codexIds = computed(() => dedupe(props.models.filter(m => (m.id.startsWith('gpt-') || m.id.startsWith('codex-')) && isChat(m)).map(m => m.id)));
+// Regex (rather than startsWith) so prefixed surfaces — e.g. `vendor/claude-…`
+// or `vendor/gpt-5-…` from upstreams configured with a model-name prefix —
+// land in the right bucket too.
+const CLAUDE_RE = /(^|\/)claude-/;
+const CODEX_RE = /(^|\/)gpt-5/;
+
+const claudeIds = computed(() => dedupe(props.models.filter(m => CLAUDE_RE.test(m.id) && isChat(m)).map(m => m.id)));
+const codexIds = computed(() => dedupe(props.models.filter(m => CODEX_RE.test(m.id) && isChat(m)).map(m => m.id)));
 
 const claudeModelsBig = computed(() => [...claudeIds.value].sort(sortClaudeBig));
 const claudeModelsSonnet = computed(() => [...claudeIds.value].sort(sortClaudeSonnet));
@@ -69,7 +75,7 @@ watchEffect(() => {
 const contextById = computed(() => {
   const map = new Map<string, number>();
   for (const m of props.models) {
-    if (!m.id.startsWith('claude-') || !isChat(m)) continue;
+    if (!CLAUDE_RE.test(m.id) || !isChat(m)) continue;
     const lim = m.limits;
     const ctx = lim?.max_context_window_tokens ?? ((lim?.max_prompt_tokens ?? 0) + (lim?.max_output_tokens ?? 0));
     map.set(m.id, ctx);
