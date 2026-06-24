@@ -31,6 +31,10 @@ const write = (draft: ModelPrefixConfig) => {
 
 const prefixText = computed<string>({
   get: () => model.value?.prefix ?? '',
+  // First-time enable: when the model transitions from null to a non-empty
+  // prefix, default both forms addressable and the unprefixed form listed so
+  // the upstream stays catalog-visible. Subsequent edits preserve whatever
+  // forms the user picked (see toggleAddressable / toggleListed).
   set: text => write({
     prefix: text,
     addressable: model.value?.addressable ?? ['unprefixed'],

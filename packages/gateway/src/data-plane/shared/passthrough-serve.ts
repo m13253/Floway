@@ -122,7 +122,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
       ctx.dump?.error('gateway');
-      return passthroughApiError(c, appendFailedUpstreams(`Model ${modelId} is not available on any configured upstream.`, failedUpstreams), 404);
+      // Echo the client-supplied id verbatim — `modelId` here is the
+      // post-prefix-strip form `resolveModelForRequest` resolves against the
+      // upstream catalog, which would surprise a caller who sent the prefixed
+      // form (`or/gpt-4o` → `Model gpt-4o is not available…` reads as a
+      // contradiction).
+      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
     for (const binding of resolved.providers) {
@@ -178,7 +183,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     ctx.dump?.error('gateway');
-    return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(modelId), failedUpstreams), 400);
+    // Same reasoning as the 404 above — surface the id the client sent so the
+    // no-binding message stays consistent with their request.
+    return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(model), failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
