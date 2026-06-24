@@ -119,4 +119,3 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 // boundary work begins, mirroring Anthropic's contract that Fast Mode is
 // never silently downgraded.
 export const copilotModelSupportsFastMode = (rawModels: readonly CopilotRawModel[]): boolean => rawModels.some(supportsFastMode);
-
