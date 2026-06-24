@@ -959,6 +959,7 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
   let messagesHit = false;
+  let recordedLatency = false;
 
   await withMockedFetch(
     async request => {
@@ -979,11 +980,22 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
 
+      // Spy the recordUpstreamLatency contract: data plane throws a 502
+      // internal-error if the provider returns without ever wrapping a
+      // promise through this hook. The 400 short-circuit is the one path
+      // that never reaches the upstream, so its contract compliance must
+      // be asserted directly.
+      const opts = noopUpstreamCallOptions();
+      opts.recordUpstreamLatency = <T>(promise: Promise<T>): Promise<T> => {
+        recordedLatency = true;
+        return promise;
+      };
+
       const result = await provider.callMessages(
         model,
         { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
         undefined,
-        noopUpstreamCallOptions(),
+        opts,
       );
 
       if (result.ok) throw new Error('expected 400 error, got ok stream');
@@ -997,6 +1009,7 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
   );
 
   assertEquals(messagesHit, false);
+  assertEquals(recordedLatency, true);
 });
 
 test('Copilot provider passes unknown speed values to the upstream verbatim so the upstream owns rejecting them', async () => {

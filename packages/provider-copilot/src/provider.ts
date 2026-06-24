@@ -374,6 +374,12 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       if (body.speed === 'fast') {
         const providerData = model.providerData as CopilotProviderData;
         if (!copilotModelSupportsFastMode(providerData.rawModels)) {
+          // The provider contract requires at least one
+          // `opts.recordUpstreamLatency` wrap per call; the gateway throws
+          // on a missing wrap. We never reached the upstream on this branch,
+          // so register a zero-latency marker — the telemetry row faithfully
+          // reads "we did not call anyone".
+          await opts.recordUpstreamLatency(Promise.resolve());
           return {
             ok: false,
             response: Response.json(
