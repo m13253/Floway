@@ -15,6 +15,48 @@ interface SearchTestResult {
   error?: { code: string; message: string };
 }
 
+// Single source of truth for the provider list. Each entry knows its
+// human label, the per-provider config slot, and a `set` writer that
+// returns a fresh SearchConfig with that slot's apiKey replaced.
+interface ProviderOption {
+  id: SearchConfig['provider'];
+  label: string;
+  description: string;
+  // `apiKey` reads from the config slot; `set` writes a new apiKey back
+  // into the right slot. Both ignored for the `disabled` option.
+  apiKey?: (config: SearchConfig) => string;
+  set?: (config: SearchConfig, apiKey: string) => SearchConfig;
+}
+
+const PROVIDER_OPTIONS: ProviderOption[] = [
+  {
+    id: 'disabled',
+    label: 'Disabled',
+    description: 'No upstream web search provider',
+  },
+  {
+    id: 'tavily',
+    label: 'Tavily',
+    description: 'Gateway-managed Tavily API key',
+    apiKey: config => config.tavily.apiKey,
+    set: (config, apiKey) => ({ ...config, tavily: { apiKey } }),
+  },
+  {
+    id: 'microsoft-grounding',
+    label: 'Microsoft Grounding',
+    description: 'Gateway-managed Microsoft Grounding key',
+    apiKey: config => config.microsoftGrounding.apiKey,
+    set: (config, apiKey) => ({ ...config, microsoftGrounding: { apiKey } }),
+  },
+  {
+    id: 'jina',
+    label: 'Jina',
+    description: 'Gateway-managed Jina API key (s.jina.ai + r.jina.ai)',
+    apiKey: config => config.jina.apiKey,
+    set: (config, apiKey) => ({ ...config, jina: { apiKey } }),
+  },
+];
+
 const props = defineProps<{
   initialConfig: SearchConfig;
   initialError?: string | null;
@@ -29,32 +71,20 @@ const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<SearchTestResult | null>(null);
 
+const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.id === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
+
 const setProvider = (provider: SearchConfig['provider']) => {
   draft.value = { ...draft.value, provider };
 };
 
-const searchCredentialLabel = computed(() => {
-  switch (draft.value.provider) {
-  case 'tavily': return 'Tavily API key';
-  case 'microsoft-grounding': return 'Microsoft Grounding API key';
-  case 'disabled':
-  default: return 'Credential';
-  }
-});
+const searchCredentialLabel = computed(() => activeOption.value.apiKey ? `${activeOption.value.label} API key` : 'Credential');
 
-const searchCredentialValue = computed(() => {
-  switch (draft.value.provider) {
-  case 'tavily': return draft.value.tavily.apiKey;
-  case 'microsoft-grounding': return draft.value.microsoftGrounding.apiKey;
-  default: return '';
-  }
-});
+const searchCredentialValue = computed(() => activeOption.value.apiKey?.(draft.value) ?? '');
 
 const setSearchCredentialValue = (v: string) => {
-  if (draft.value.provider === 'tavily') {
-    draft.value = { ...draft.value, tavily: { apiKey: v } };
-  } else if (draft.value.provider === 'microsoft-grounding') {
-    draft.value = { ...draft.value, microsoftGrounding: { apiKey: v } };
+  const option = activeOption.value;
+  if (option.set) {
+    draft.value = option.set(draft.value, v);
   }
 };
 
@@ -111,56 +141,22 @@ const test = async () => {
         <p class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3">Search Provider</p>
         <div class="grid grid-cols-1 gap-3">
           <label
+            v-for="option in PROVIDER_OPTIONS"
+            :key="option.id"
             class="flex items-center gap-3 rounded-xl border p-4 transition-all cursor-pointer"
-            :class="draft.provider === 'disabled' ? 'border-accent-cyan/50 bg-accent-cyan/5' : 'border-white/10 hover:border-white/20'"
+            :class="draft.provider === option.id ? 'border-accent-cyan/50 bg-accent-cyan/5' : 'border-white/10 hover:border-white/20'"
           >
             <input
               type="radio"
               name="search-provider"
-              value="disabled"
+              :value="option.id"
               class="accent-accent-cyan"
-              :checked="draft.provider === 'disabled'"
-              @change="setProvider('disabled')"
+              :checked="draft.provider === option.id"
+              @change="setProvider(option.id)"
             >
             <div>
-              <p class="text-sm font-medium text-white">Disabled</p>
-              <p class="text-xs text-gray-500">No upstream web search provider</p>
-            </div>
-          </label>
-
-          <label
-            class="flex items-center gap-3 rounded-xl border p-4 transition-all cursor-pointer"
-            :class="draft.provider === 'tavily' ? 'border-accent-cyan/50 bg-accent-cyan/5' : 'border-white/10 hover:border-white/20'"
-          >
-            <input
-              type="radio"
-              name="search-provider"
-              value="tavily"
-              class="accent-accent-cyan"
-              :checked="draft.provider === 'tavily'"
-              @change="setProvider('tavily')"
-            >
-            <div>
-              <p class="text-sm font-medium text-white">Tavily</p>
-              <p class="text-xs text-gray-500">Gateway-managed Tavily API key</p>
-            </div>
-          </label>
-
-          <label
-            class="flex items-center gap-3 rounded-xl border p-4 transition-all cursor-pointer"
-            :class="draft.provider === 'microsoft-grounding' ? 'border-accent-cyan/50 bg-accent-cyan/5' : 'border-white/10 hover:border-white/20'"
-          >
-            <input
-              type="radio"
-              name="search-provider"
-              value="microsoft-grounding"
-              class="accent-accent-cyan"
-              :checked="draft.provider === 'microsoft-grounding'"
-              @change="setProvider('microsoft-grounding')"
-            >
-            <div>
-              <p class="text-sm font-medium text-white">Microsoft Grounding</p>
-              <p class="text-xs text-gray-500">Gateway-managed Microsoft Grounding key</p>
+              <p class="text-sm font-medium text-white">{{ option.label }}</p>
+              <p class="text-xs text-gray-500">{{ option.description }}</p>
             </div>
           </label>
         </div>
@@ -169,8 +165,8 @@ const test = async () => {
       <div>
         <label class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2">{{ searchCredentialLabel }}</label>
         <SecretInput
-          v-if="draft.provider !== 'disabled'"
-          :placeholder="draft.provider === 'tavily' ? 'Tavily API key' : 'Microsoft Grounding API key'"
+          v-if="activeOption.apiKey"
+          :placeholder="`${activeOption.label} API key`"
           :model-value="searchCredentialValue"
           class="w-full"
           @update:model-value="setSearchCredentialValue"
