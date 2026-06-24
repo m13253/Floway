@@ -123,6 +123,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     state: null,
   });
   await repo.upstreams.save(buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
@@ -336,6 +337,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     flagOverrides: {},
     disabledPublicModelIds: over.disabledPublicModelIds,
     proxyFallbackList: [],
+    modelPrefix: null,
   });
 
   // up_a disables a solo model and a shared one (by public id, including a
@@ -396,6 +398,7 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
     flagOverrides: {},
     disabledPublicModelIds: ['disabled-model'],
     proxyFallbackList: [],
+    modelPrefix: null,
     state: null,
   });
 

@@ -17,6 +17,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   ...overrides,
 });
 
@@ -246,6 +247,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     flag_overrides: '{}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.list(), Error, 'Malformed upstream config JSON for up_bad_config');
@@ -266,6 +268,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     flag_overrides: '{bad json',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_fixes'), Error, 'Malformed upstream flag_overrides JSON for up_bad_fixes');
@@ -286,6 +289,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     flag_overrides: '[]',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(
@@ -310,6 +314,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     flag_overrides: '{"x": 1}',
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
   });
 
   await assertRejects(
@@ -433,6 +438,7 @@ type FakeUpstreamRow = {
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
+  model_prefix_json: string | null;
 };
 
 class FakeUpstreamsSqlPreparedStatement {
@@ -502,7 +508,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
     const row = {
@@ -518,6 +524,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       flag_overrides: flagOverrides,
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,
+      model_prefix_json: modelPrefixJson,
     };
     if (existingIndex >= 0) {
       this.rows[existingIndex] = row;

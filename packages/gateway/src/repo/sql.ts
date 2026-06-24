@@ -39,7 +39,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1128,14 +1128,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -1146,7 +1146,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -1157,7 +1157,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            state_json = excluded.state_json,
            flag_overrides = excluded.flag_overrides,
            disabled_public_model_ids = excluded.disabled_public_model_ids,
-           proxy_fallback_list_json = excluded.proxy_fallback_list_json`,
+           proxy_fallback_list_json = excluded.proxy_fallback_list_json,
+           model_prefix_json = excluded.model_prefix_json`,
       )
       .bind(
         upstream.id,
@@ -1172,6 +1173,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
+        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
       )
       .run();
   }
@@ -1211,6 +1213,7 @@ interface UpstreamRow {
   flag_overrides: string;
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
+  model_prefix_json: string | null;
 }
 
 const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
@@ -1242,6 +1245,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
+    modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
   };
 };
 
@@ -1324,6 +1328,19 @@ const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] 
     entries.push(colos === undefined ? { id: entry.id } : { id: entry.id, colos });
   }
   return normalizeProxyFallbackList(entries);
+};
+
+// Stored as a nullable JSON object. The normalizer at the control-plane edge
+// already validates shape and canonicalises form order, so the parsed object
+// here is trusted; this helper only handles the JSON.parse and the NULL
+// passthrough.
+const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | null => {
+  if (json === null) return null;
+  try {
+    return JSON.parse(json) as ModelPrefixConfig;
+  } catch (cause) {
+    throw new Error(`Malformed upstream model_prefix_json for ${id}`, { cause });
+  }
 };
 
 class SqlProxyRepo implements ProxyRepo {

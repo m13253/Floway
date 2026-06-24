@@ -196,6 +196,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -241,6 +242,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: { baseUrl: 'https://a.example.com', bearerToken: 'x', endpoints: { chatCompletions: {} } },
     state: null,
   };
@@ -300,6 +302,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
@@ -359,6 +362,7 @@ test('POST /api/upstreams/fetch-models rejects calls that supply a saved upstrea
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: { ...customConfig, bearerToken: 'sk-stored-secret' },
     state: null,
   });
@@ -490,6 +494,7 @@ test('GET /api/upstreams/:id/models?refresh=true forces a fresh upstream fetch',
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: { ...customConfig, bearerToken: 'sk-refresh' },
     state: null,
   });

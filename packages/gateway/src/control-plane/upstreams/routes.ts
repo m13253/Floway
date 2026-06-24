@@ -19,6 +19,7 @@ import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../sha
 import {
   directFetcher,
   getFlagCatalog,
+  normalizeModelPrefix,
   ProviderModelsUnavailableError,
   type Fetcher,
   type ProxyFallbackEntry,
@@ -228,6 +229,15 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
 
+  let modelPrefix;
+  try {
+    // normalizeModelPrefix accepts null/undefined and returns null, matching
+    // the create-default for an omitted field.
+    modelPrefix = normalizeModelPrefix(body.model_prefix);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
   const upstream: UpstreamRecord = {
@@ -241,6 +251,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     flagOverrides: body.flag_overrides ?? {},
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
+    modelPrefix,
     config: body.config,
     state: null,
   };
@@ -289,6 +300,13 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     const fallbackCheck = await validateProxyFallbackList(normalized);
     if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
     next = { ...next, proxyFallbackList: normalized };
+  }
+  if (body.model_prefix !== undefined) {
+    try {
+      next = { ...next, modelPrefix: normalizeModelPrefix(body.model_prefix) };
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 400);
+    }
   }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
@@ -345,6 +363,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: body.config,
     state: null,
   };
@@ -495,6 +514,7 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
           // list — the override above already routes the poll itself
           // correctly without clobbering a prior persisted choice.
           proxyFallbackList: proxyFallbackList !== undefined ? normalizeProxyFallbackList(proxyFallbackList) : [],
+          modelPrefix: null,
           config,
           state: nextState,
         };
@@ -595,6 +615,7 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
     // Persist the in-flight override so subsequent data-plane calls route
     // through the same chain without an extra edit step.
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -810,6 +831,7 @@ export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBod
     // Persist the in-flight override so subsequent data-plane calls route
     // through the same chain without an extra edit step.
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };
@@ -892,6 +914,7 @@ export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCod
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
     config: ingestion.config,
     state: ingestion.state,
   };

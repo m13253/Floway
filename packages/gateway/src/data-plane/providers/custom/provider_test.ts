@@ -17,6 +17,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',

@@ -23,6 +23,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-test',

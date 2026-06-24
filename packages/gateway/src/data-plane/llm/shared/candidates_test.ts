@@ -31,6 +31,7 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 });
 
 const pickMessages = (e: ModelEndpoints): LlmTargetApi | null =>

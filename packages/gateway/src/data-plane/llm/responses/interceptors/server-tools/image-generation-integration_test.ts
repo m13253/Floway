@@ -168,6 +168,7 @@ beforeEach(async () => {
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
+    modelPrefix: null,
     config: {
       baseUrl: 'https://unused.example.com',
       bearerToken: 'unused',

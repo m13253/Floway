@@ -21,6 +21,7 @@ const baseRecord: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 };
 
 test('assertCustomUpstreamRecord parses modelsFetch and models', () => {

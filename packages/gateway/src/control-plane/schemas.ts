@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
+import { MODEL_PREFIX_REGEX, OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -230,6 +230,18 @@ const proxyFallbackListSchema = z.array(z.object({
   colos: z.array(z.string().min(1)).min(1).optional(),
 }));
 
+// Per-upstream model name prefix policy. `null` clears the policy (the upstream
+// publishes and accepts bare ids only). The handler then funnels the shape
+// through `normalizeModelPrefix` so the persisted form matches what the
+// runtime expects — order canonicalised, listed clamped to addressable.
+const addressableFormSchema = z.enum(['unprefixed', 'prefixed']);
+
+export const modelPrefixSchema = z.object({
+  prefix: z.string().regex(MODEL_PREFIX_REGEX, 'must end with / and use [A-Za-z0-9._-/] only'),
+  addressable: z.array(addressableFormSchema).nonempty(),
+  listed: z.array(addressableFormSchema),
+}).nullable();
+
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
@@ -237,6 +249,7 @@ const upstreamBaseFields = {
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
+  model_prefix: modelPrefixSchema.optional(),
 };
 
 // Create accepts a discriminated union on `provider` for per-provider config
@@ -276,6 +289,7 @@ export const updateUpstreamBody = z.object({
   flag_overrides: flagOverridesSchema.optional(),
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
+  model_prefix: modelPrefixSchema.optional(),
   config: z.unknown().optional(),
 });
 

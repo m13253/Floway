@@ -82,6 +82,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   flagOverrides: { 'messages-web-search-shim': true },
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     baseUrl: 'https://custom.example.com',
     bearerToken: 'sk-custom',
@@ -102,6 +103,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     githubToken: 'ghu-alice',
     user: {
@@ -125,6 +127,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
@@ -156,6 +159,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
   config: {
     accounts: [{
       email: 'alice@example.com',

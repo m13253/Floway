@@ -27,6 +27,7 @@ const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
+  modelPrefix: null,
 });
 
 const baseAccount = {
