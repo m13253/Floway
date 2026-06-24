@@ -192,7 +192,7 @@ const collectProviderModels = async (
       // model came from). `providerData` (where the per-provider call reads
       // the real upstream model id) is untouched by the clone.
       const cfg = instance.modelPrefix;
-      if (cfg) {
+      if (cfg !== null) {
         for (const form of cfg.listed) {
           const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
           const surfacedModel: UpstreamModel = form === 'prefixed'
