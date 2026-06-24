@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { demoteNonFirstSystemToUser } from './demote-non-first-system-to-user.ts';
+import { demoteInterleavedSystemToUser } from './demote-interleaved-system-to-user.ts';
 import type { MessagesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -32,7 +32,7 @@ const invocation = (payload: MessagesPayload, { flagOn = true }: InvocationOptio
     targetApi: 'messages',
     binding: {
       upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }),
-      enabledFlags: flagOn ? new Set(['demote-non-first-system-to-user']) : new Set(),
+      enabledFlags: flagOn ? new Set(['demote-interleaved-system-to-user']) : new Set(),
     },
   }),
   headers: new Headers(),
@@ -49,7 +49,7 @@ test('leaves the payload untouched when the flag is off', async () => {
     { flagOn: false },
   );
 
-  await demoteNonFirstSystemToUser(input, stubCtx, okEvents);
+  await demoteInterleavedSystemToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, messages);
 });
@@ -66,7 +66,7 @@ test('demotes every inline system message because payload.system is the first-po
     ],
   });
 
-  await demoteNonFirstSystemToUser(input, stubCtx, okEvents);
+  await demoteInterleavedSystemToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, [
     { role: 'user', content: 'leading inline sys' },
@@ -89,7 +89,7 @@ test('preserves array content verbatim when demoting', async () => {
     ],
   });
 
-  await demoteNonFirstSystemToUser(input, stubCtx, okEvents);
+  await demoteInterleavedSystemToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, [
     { role: 'user', content: 'hi' },
@@ -100,7 +100,7 @@ test('preserves array content verbatim when demoting', async () => {
 test('is a no-op for an empty messages array', async () => {
   const input = invocation({ model: 'm', max_tokens: 1, messages: [] });
 
-  await demoteNonFirstSystemToUser(input, stubCtx, okEvents);
+  await demoteInterleavedSystemToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, []);
 });
@@ -113,7 +113,7 @@ test('leaves a payload without any inline system messages untouched', async () =
   ];
   const input = invocation({ model: 'm', max_tokens: 1, messages: messages.map(m => ({ ...m })) });
 
-  await demoteNonFirstSystemToUser(input, stubCtx, okEvents);
+  await demoteInterleavedSystemToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, messages);
 });

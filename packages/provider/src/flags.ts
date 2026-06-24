@@ -79,8 +79,8 @@ export const OPTIONAL_FLAGS = [
     defaultFor: [],
   },
   {
-    id: 'demote-non-first-system-to-user',
-    label: 'Demote non-first system messages to user',
+    id: 'demote-interleaved-system-to-user',
+    label: 'Demote interleaved system messages to user',
     description: "Pick this when the upstream rejects `role: 'system'` after the first non-system message (e.g. DeepSeek-R1). The leading contiguous run of system messages is preserved; any later inline system message has its role rewritten to `user`, with content kept verbatim. For Anthropic Messages — where `payload.system` is conceptually the only first-position system slot — every inline `role: 'system'` message is demoted unconditionally.",
     defaultFor: [],
   },

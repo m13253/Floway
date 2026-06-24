@@ -5,8 +5,8 @@ import type { ChatCompletionsInterceptor } from './types.ts';
 // `system` messages is the only valid system position; once we cross into
 // any non-system role, every later `role: 'system'` is rewritten to
 // `role: 'user'` with content preserved.
-export const withNonFirstSystemDemotedToUser: ChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-non-first-system-to-user')) return run();
+export const withInterleavedSystemDemotedToUser: ChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
+  if (!ctx.candidate.binding.enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;
   let crossedLeadingRun = false;

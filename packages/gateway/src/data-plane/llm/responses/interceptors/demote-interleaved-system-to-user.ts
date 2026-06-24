@@ -9,8 +9,8 @@ import type { ResponsesInterceptor } from './types.ts';
 // developer message or any non-message item — every later
 // `role: 'system'` message item is rewritten to `role: 'user'` with its
 // content kept verbatim.
-export const withNonFirstSystemDemotedToUser: ResponsesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-non-first-system-to-user')) return run();
+export const withInterleavedSystemDemotedToUser: ResponsesInterceptor = (ctx, _gatewayCtx, run) => {
+  if (!ctx.candidate.binding.enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { input } = ctx.payload;
   if (typeof input === 'string') return run();

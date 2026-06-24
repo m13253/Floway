@@ -4,9 +4,9 @@ import type { MessagesInterceptor } from './types.ts';
 // after the first non-system message. Anthropic Messages carries the
 // conceptually-first system slot on the top-level `payload.system` field;
 // any inline message with `role: 'system'` is therefore by definition
-// non-first, and gets demoted to `role: 'user'` with content preserved.
-export const demoteNonFirstSystemToUser: MessagesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-non-first-system-to-user')) return run();
+// interleaved, and gets demoted to `role: 'user'` with content preserved.
+export const demoteInterleavedSystemToUser: MessagesInterceptor = (ctx, _gatewayCtx, run) => {
+  if (!ctx.candidate.binding.enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;
   for (let i = 0; i < messages.length; i++) {

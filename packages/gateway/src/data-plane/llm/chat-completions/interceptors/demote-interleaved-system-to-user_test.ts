@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { withNonFirstSystemDemotedToUser } from './demote-non-first-system-to-user.ts';
+import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-to-user.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -22,7 +22,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 
 const invocation = (
   payload: ChatCompletionsPayload,
-  enabledFlags: ReadonlySet<string> = new Set(['demote-non-first-system-to-user']),
+  enabledFlags: ReadonlySet<string> = new Set(['demote-interleaved-system-to-user']),
 ): ChatCompletionsInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
@@ -37,7 +37,7 @@ test('leaves the payload untouched when the flag is not set', async () => {
   ];
   const input = invocation({ model: 'm', messages: messages.map(m => ({ ...m })) }, new Set());
 
-  await withNonFirstSystemDemotedToUser(input, stubCtx, okEvents);
+  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, messages);
 });
@@ -50,7 +50,7 @@ test('keeps the leading contiguous system run intact when no non-system follows'
   ];
   const input = invocation({ model: 'm', messages: messages.map(m => ({ ...m })) });
 
-  await withNonFirstSystemDemotedToUser(input, stubCtx, okEvents);
+  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, messages);
 });
@@ -68,7 +68,7 @@ test('preserves the leading system run and demotes every later system message to
     ],
   });
 
-  await withNonFirstSystemDemotedToUser(input, stubCtx, okEvents);
+  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, [
     { role: 'system', content: 'sys-a' },
@@ -93,7 +93,7 @@ test('preserves multi-part content verbatim when demoting', async () => {
     ],
   });
 
-  await withNonFirstSystemDemotedToUser(input, stubCtx, okEvents);
+  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, [
     { role: 'user', content: 'hi' },
@@ -104,7 +104,7 @@ test('preserves multi-part content verbatim when demoting', async () => {
 test('is a no-op for an empty messages array', async () => {
   const input = invocation({ model: 'm', messages: [] });
 
-  await withNonFirstSystemDemotedToUser(input, stubCtx, okEvents);
+  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.messages, []);
 });
