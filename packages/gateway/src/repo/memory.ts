@@ -556,7 +556,7 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
   flagOverrides: normalizeFlagOverrides(upstream.flagOverrides),
   disabledPublicModelIds: normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds),
   proxyFallbackList: normalizeProxyFallbackList(upstream.proxyFallbackList),
-  modelPrefix: upstream.modelPrefix === null ? null : structuredClone(upstream.modelPrefix),
+  modelPrefix: structuredClone(upstream.modelPrefix),
 });
 
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {

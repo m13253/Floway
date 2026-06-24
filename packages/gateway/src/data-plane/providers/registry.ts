@@ -110,12 +110,10 @@ const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: Ups
   supportsResponsesItemReference: instance.supportsResponsesItemReference,
 });
 
-// Insert or union-merge one surface form into the catalog map. When multiple
-// providers expose the same public model id, the first provider's metadata
-// remains the public /models metadata; subsequent providers contribute their
-// endpoints (and provider binding) via union. Runtime execution still uses the
-// selected provider's own UpstreamModel, so capability-sensitive calls do not
-// depend on this merged view being perfectly representative.
+// When multiple upstreams expose the same public model id, the first wins
+// for /models metadata and later ones union-merge their endpoints + provider
+// binding. Runtime execution still uses each provider's own UpstreamModel, so
+// capability-sensitive calls do not depend on this merged view.
 const mergeIntoCatalog = (
   byId: Map<string, ResolvedModel>,
   instance: ModelProviderInstance,
@@ -303,14 +301,8 @@ export interface ModelInterpretation {
 // addressable upstream contributes a single bare lookup; a `[prefixed]`-only
 // addressable upstream contributes a single stripped lookup (and only when
 // the inbound id starts with `prefix`); a `[unprefixed, prefixed]`-
-// addressable upstream contributes both when the prefix matches. FORM_ORDER
-// puts the bare-lookup interpretation first.
-//
-// Three upstreams that happen to advertise the same public id via different
-// constructions (e.g. one with `prefix=aa/` whose catalog has `bb/gpt-5`,
-// one with `prefix=aa/bb/` whose catalog has `gpt-5`, one with no prefix
-// whose catalog has `aa/bb/gpt-5`) all produce a distinct interpretation
-// here and all become candidates downstream.
+// addressable upstream contributes both when the prefix matches. The
+// unprefixed interpretation is always pushed first when both apply.
 export const enumerateModelInterpretations = (
   modelId: string,
   providers: readonly ModelProviderInstance[],
@@ -328,34 +320,30 @@ export const enumerateModelInterpretations = (
   return out;
 };
 
-export const resolveModelForRequest = async (
-  modelId: string,
-  upstreamFilter: readonly string[] | null,
+// Fan out per-interpretation against the SWR cache and collect the resolved
+// matches plus a deduped list of upstreams whose catalog fetch rejected.
+// Shared by `resolveModelForRequest` and `enumerateProviderCandidates`; the
+// per-caller divergence (passthrough vs LLM-candidate shape) happens after
+// this returns. Cancellation (`AbortError`) propagates so the per-request
+// abort signal cannot be masked by a slow upstream's rejection.
+export const collectInterpretationOutcomes = async (
+  interpretations: readonly ModelInterpretation[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<ModelResolution> => {
-  const providers = await listModelProviders(upstreamFilter);
-  if (providers.length === 0) {
-    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
-  }
-
-  // Each interpretation is a (provider, lookup-id) pair the inbound id can
-  // address. Per-provider catalog lookup uses the lookup id directly against
-  // `getProvidedModels`, decoupling routing from the upstream's `listed`
-  // policy.
-  const interpretations = enumerateModelInterpretations(modelId, providers);
+): Promise<{
+  resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  failedUpstreams: string[];
+}> => {
   const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
     resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
       .then(resolved => ({ provider, resolved }))));
 
   const failedUpstreams: string[] = [];
   const failedSeen = new Set<string>();
-  const matches: ProviderModelResolution[] = [];
+  const resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate — do not bury it in
-      // `failedUpstreams`.
       const error = result.reason;
       if (error instanceof Error && error.name === 'AbortError') throw error;
       // A single upstream may produce multiple interpretations; surface its
@@ -367,12 +355,28 @@ export const resolveModelForRequest = async (
       }
       continue;
     }
-    const { resolved } = result.value;
+    const { provider, resolved } = result.value;
     if (!resolved) continue;
-    matches.push(resolved);
+    resolutions.push({ provider, resolved });
   }
 
-  return { matches, failedUpstreams };
+  return { resolutions, failedUpstreams };
+};
+
+export const resolveModelForRequest = async (
+  modelId: string,
+  upstreamFilter: readonly string[] | null,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<ModelResolution> => {
+  const providers = await listModelProviders(upstreamFilter);
+  if (providers.length === 0) {
+    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
+  }
+
+  const interpretations = enumerateModelInterpretations(modelId, providers);
+  const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
+  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };
 
 export const resolveModelForProvider = async (

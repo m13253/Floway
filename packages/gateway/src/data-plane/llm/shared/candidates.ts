@@ -1,5 +1,5 @@
 import { createPerRequestFetcher } from '../../../dial/per-request.ts';
-import { enumerateModelInterpretations, listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
+import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
@@ -35,50 +35,19 @@ export const enumerateProviderCandidates = async ({
   // id can address an upstream — bare form for `[unprefixed]`-addressable
   // upstreams, stripped form for `[prefixed]`-addressable upstreams when the
   // inbound starts with the configured prefix. A dual-addressable upstream
-  // contributes both when applicable.
+  // contributes both when applicable. The fan-out is shared with
+  // `resolveModelForRequest`; first-viable-wins ordering follows
+  // sort_order × FORM_ORDER.
   const interpretations = enumerateModelInterpretations(model, providers);
-
-  // Fan out per-interpretation and recover each rejection as a "this
-  // upstream has no models for this request" result rather than propagating
-  // the first failure: one upstream past HARD whose force re-fetch fails
-  // must not poison routing for other upstreams. The cache layer already
-  // memoizes in-flight fetches per upstream so the parallel walk does not
-  // multiply upstream round trips. Results are kept in input order so
-  // candidate priority (first viable candidate wins) matches the configured
-  // provider order, with the unprefixed interpretation preceding the
-  // prefixed one within a dual-addressable upstream.
-  const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
-    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
-      .then(resolved => ({ provider, resolved }))));
+  const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
 
   const candidates: ProviderCandidate[] = [];
-  const failedUpstreams: string[] = [];
-  const failedSeen = new Set<string>();
   let sawModel = false;
 
-  for (const [index, result] of settled.entries()) {
-    const provider = interpretations[index].provider;
-    if (result.status === 'rejected') {
-      const error = result.reason;
-      // Caller-driven cancellation must propagate — do not bury it in
-      // `failedUpstreams`.
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      // A single upstream may produce multiple interpretations; surface its
-      // failure once.
-      if (!failedSeen.has(provider.name)) {
-        failedSeen.add(provider.name);
-        failedUpstreams.push(provider.name);
-      }
-      continue;
-    }
-
-    const { resolved } = result.value;
-    if (!resolved) continue;
+  for (const { provider, resolved } of resolutions) {
     sawModel = true;
-
     const targetApi = pickTarget(resolved.binding.upstreamModel.endpoints);
     if (!targetApi) continue;
-
     candidates.push({ provider, binding: resolved.binding, targetApi, fetcher: fetcherForUpstream(provider.upstream) });
   }
 

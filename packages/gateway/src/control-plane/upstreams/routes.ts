@@ -23,6 +23,7 @@ import {
   normalizeModelPrefix,
   ProviderModelsUnavailableError,
   type Fetcher,
+  type ModelPrefixConfig,
   type ProxyFallbackEntry,
   type UpstreamProviderKind,
   type UpstreamRecord,
@@ -114,6 +115,19 @@ const providerDataUpstreamModelId = (data: unknown): string | undefined => {
 // record before it hits the repo. Request-time zod schemas only validate JSON
 // shape; these helpers enforce the URL / endpoint-mix / path-override rules
 // that the provider packages own.
+// Zod validates `prefix` regex/length and `addressable.nonempty()`, but the
+// `listed ⊆ addressable` clamp and form-order canonicalisation live in
+// `normalizeModelPrefix`. Wrap it in the same ValidationResult shape the
+// sibling normalizers (normalizeConfig, mergeConfigPatch) use so the route
+// handlers stay uniform.
+const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefixConfig | null> => {
+  try {
+    return { ok: true, value: normalizeModelPrefix(input) };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+};
+
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
@@ -238,16 +252,9 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
 
-  let modelPrefix;
-  try {
-    // The Zod schema validates `prefix` regex + length and `addressable.nonempty()`,
-    // but it does NOT clamp `listed ⊆ addressable` or canonicalise form order —
-    // those live in `normalizeModelPrefix`. The try/catch stays as defense in
-    // depth: anything Zod missed surfaces as a 400 instead of a 500.
-    modelPrefix = normalizeModelPrefix(body.model_prefix);
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 400);
-  }
+  const modelPrefixResult = normalizeModelPrefixField(body.model_prefix);
+  if (!modelPrefixResult.ok) return c.json({ error: modelPrefixResult.error }, 400);
+  const modelPrefix = modelPrefixResult.value;
 
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
@@ -313,11 +320,9 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     next = { ...next, proxyFallbackList: normalized };
   }
   if (body.model_prefix !== undefined) {
-    try {
-      next = { ...next, modelPrefix: normalizeModelPrefix(body.model_prefix) };
-    } catch (err) {
-      return c.json({ error: errorMessage(err) }, 400);
-    }
+    const result = normalizeModelPrefixField(body.model_prefix);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    next = { ...next, modelPrefix: result.value };
   }
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);

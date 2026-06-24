@@ -37,10 +37,10 @@ export interface UpstreamRecord {
   // editable. Entries may reference ids no longer present in the live model list.
   disabledPublicModelIds: string[];
   proxyFallbackList: ProxyFallbackEntry[];
-  // Per-upstream model name prefix policy. NULL keeps today's behavior — the
-  // upstream's models are addressed and listed by bare id only. When set, the
-  // registry interprets `addressable` and `listed` to expose / accept either
-  // form (or both).
+  // Per-upstream model name prefix policy. `null` keeps the bare-id behavior
+  // — the upstream's models are addressed and listed by bare upstream id only.
+  // When set, the registry interprets `addressable` and `listed` to expose /
+  // accept either form (or both).
   modelPrefix: ModelPrefixConfig | null;
 }
 

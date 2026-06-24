@@ -88,8 +88,6 @@ const flagOverrides = ref<Record<string, boolean>>({});
 const disabledPublicModelIds = ref<string[]>([]);
 const proxyFallbackList = ref<ProxyFallbackEntry[]>([]);
 const modelPrefix = ref<ModelPrefixConfig | null>(null);
-// Mirrors ModelPrefixEditor's prefixInvalid computed so save() can short-
-// circuit before round-tripping a known-malformed prefix through Zod.
 const modelPrefixInvalid = ref(false);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());

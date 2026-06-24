@@ -17,16 +17,20 @@ const model = defineModel<ModelPrefixConfig | null>({ required: true });
 // round-tripping a known-malformed value through Zod for a 400.
 const emit = defineEmits<{ 'update:invalid': [invalid: boolean] }>();
 
-// Canonical order matches normalizeModelPrefix in @floway-dev/provider so the
-// payload we send is byte-identical to what the backend would synthesize.
-const FORM_ORDER: readonly AddressableForm[] = ['unprefixed', 'prefixed'];
+// Canonical ordered form table — drives both the v-for label rendering and
+// the byte-identical payload normalize step (the literal order here matches
+// normalizeModelPrefix in @floway-dev/provider).
+const FORMS: readonly { id: AddressableForm; label: string }[] = [
+  { id: 'unprefixed', label: 'Unprefixed' },
+  { id: 'prefixed', label: 'Prefixed' },
+];
 
 const write = (draft: ModelPrefixConfig) => {
   if (draft.prefix === '') { model.value = null; return; }
   const aSet = new Set(draft.addressable);
-  const addressableSorted = FORM_ORDER.filter(f => aSet.has(f));
   const lSet = new Set(draft.listed);
-  const listedSorted = FORM_ORDER.filter(f => aSet.has(f) && lSet.has(f));
+  const addressableSorted = FORMS.flatMap(f => aSet.has(f.id) ? [f.id] : []);
+  const listedSorted = FORMS.flatMap(f => aSet.has(f.id) && lSet.has(f.id) ? [f.id] : []);
   model.value = { prefix: draft.prefix, addressable: addressableSorted, listed: listedSorted };
 };
 
@@ -63,7 +67,7 @@ const toggleAddressable = (form: AddressableForm) => {
   } else {
     current.add(form);
   }
-  write({ ...model.value, addressable: [...current], listed: [...model.value.listed] });
+  write({ ...model.value, addressable: [...current], listed: [...current].filter(f => model.value!.listed.includes(f)) });
 };
 
 const toggleListed = (form: AddressableForm) => {
@@ -74,11 +78,6 @@ const toggleListed = (form: AddressableForm) => {
   else current.add(form);
   write({ ...model.value, addressable: [...model.value.addressable], listed: [...current] });
 };
-
-const forms: { id: AddressableForm; label: string }[] = [
-  { id: 'unprefixed', label: 'Unprefixed' },
-  { id: 'prefixed', label: 'Prefixed' },
-];
 </script>
 
 <template>
@@ -106,7 +105,7 @@ const forms: { id: AddressableForm; label: string }[] = [
           </div>
           <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">
             <label
-              v-for="form in forms"
+              v-for="form in FORMS"
               :key="`addr-${form.id}`"
               class="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
               :class="model.addressable.includes(form.id)
@@ -131,7 +130,7 @@ const forms: { id: AddressableForm; label: string }[] = [
           </div>
           <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">
             <label
-              v-for="form in forms"
+              v-for="form in FORMS"
               :key="`list-${form.id}`"
               class="flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
               :class="[

@@ -29,7 +29,7 @@ import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { ProviderCallResult, ProviderModelRecord, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream JSON response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -113,13 +113,6 @@ export interface PassthroughServeContext {
   readonly noBindingMessage: (model: string) => string;
 }
 
-const passthroughTelemetryIdentity = (binding: ProviderModelRecord, canonicalId: string, modelKey: string): TelemetryModelIdentity => ({
-  model: canonicalId,
-  upstream: binding.upstream,
-  modelKey,
-  cost: binding.provider.getPricingForModelKey(modelKey),
-});
-
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = input;
   const requestStartedAt = performance.now();
@@ -150,7 +143,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       const upstreamDurationMs = recorder.durationMs();
       // Telemetry keys on `match.id` (the upstream's bare catalog id);
       // user-facing error bodies echo the inbound `model`.
-      const identity = passthroughTelemetryIdentity(match.binding, match.id, modelKey);
+      const identity = {
+        model: match.id,
+        upstream: match.binding.upstream,
+        modelKey,
+        cost: match.binding.provider.getPricingForModelKey(modelKey),
+      };
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
         ...identity,
