@@ -1,4 +1,5 @@
 import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
+import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -28,6 +29,10 @@ export interface ModelProviderInstance {
   name: string;
   // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];
+  // Per-upstream model name prefix policy mirrored from the source upstream
+  // record so registry helpers — routing and listing — read it from the
+  // instance instead of re-fetching the row. NULL keeps the bare-id behavior.
+  modelPrefix: ModelPrefixConfig | null;
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
   resolveRequestedModelId?(modelId: string): string | undefined;

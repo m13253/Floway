@@ -20,7 +20,7 @@ const candidate = (upstream: string): ProviderCandidate => {
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], provider: modelProvider,
+      disabledPublicModelIds: [], modelPrefix: null, provider: modelProvider,
       supportsResponsesItemReference: true,
     },
     binding: {

@@ -107,6 +107,7 @@ const makeCandidate = (overrides: {
       providerKind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
+      modelPrefix: null,
       provider,
       supportsResponsesItemReference: true,
     },
@@ -437,7 +438,7 @@ test('generate falls through translate-out to messages target', async () => {
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_m', providerKind: 'custom', name: 'up_m',
-      disabledPublicModelIds: [], provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
     binding: {
       upstream: 'up_m', upstreamName: 'up_m', providerKind: 'custom',
@@ -492,7 +493,7 @@ test('generate falls through translate-out to chat-completions target', async ()
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_c', providerKind: 'custom', name: 'up_c',
-      disabledPublicModelIds: [], provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
     binding: {
       upstream: 'up_c', upstreamName: 'up_c', providerKind: 'custom',

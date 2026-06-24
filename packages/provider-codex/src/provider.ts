@@ -170,6 +170,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     providerKind: 'codex',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
+    modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: false,
   };

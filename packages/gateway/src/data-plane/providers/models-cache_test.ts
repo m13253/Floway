@@ -16,6 +16,7 @@ const stubInstance = (
   providerKind: 'custom',
   name: upstreamId,
   disabledPublicModelIds: [],
+  modelPrefix: null,
   supportsResponsesItemReference: false,
   provider: stubProvider({ getProvidedModels: fetchFn }),
 });

@@ -170,6 +170,7 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     providerKind: 'ollama',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
+    modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: true,
   };

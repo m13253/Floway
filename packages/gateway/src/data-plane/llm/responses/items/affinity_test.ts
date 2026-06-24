@@ -25,6 +25,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       providerKind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
+      modelPrefix: null,
       provider: modelProvider,
       supportsResponsesItemReference,
     },
