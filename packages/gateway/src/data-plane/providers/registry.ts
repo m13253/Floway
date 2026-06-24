@@ -266,25 +266,20 @@ interface ProviderModelResolution {
 }
 
 // Routing primitive that scopes a candidate set to the upstream whose prefix
-// matches the inbound model id. Returns the (possibly shorter) provider list
+// matches the inbound model id, and strips the matched prefix off `modelId`
+// before per-provider resolution. Returns the (possibly shorter) provider list
 // and the bare model id the upstream actually receives.
 //
-// The walk is first-wins: the first upstream whose `modelPrefix.prefix` is a
-// literal string prefix of `modelId` AND whose addressable forms include the
-// prefixed surface captures the request, and the prefix is stripped. The
-// candidate set collapses to that single upstream — sibling upstreams that
-// happen to expose the same bare id under a different prefix are not
-// considered, so a request like `or/gpt-4o` never reaches a Copilot upstream
-// that lists `gpt-4o` natively.
-//
-// Restrict the candidate set by the per-upstream prefix policy and strip a
-// matched prefix off the modelId before per-provider resolution. The walk runs
-// in `listModelProviders` order (which is `sort_order` from the repo), so an
-// overlap like (`or/`, `or/sub/`) is decided by sort order, NOT by longest
-// match — the operator picks the precedence via `sort_order`.
+// The walk is first-wins in `listModelProviders` order (which is `sort_order`
+// from the repo): the first upstream whose `modelPrefix.prefix` is a literal
+// string prefix of `modelId` AND whose addressable forms include the prefixed
+// surface captures the request, and sibling upstreams are not considered — so
+// `or/gpt-4o` never reaches a Copilot upstream that lists `gpt-4o` natively,
+// and an overlap like (`or/`, `or/sub/`) is decided by sort order (NOT longest
+// match).
 //
 // When no configured prefix matches, the request is a bare-id call: upstreams
-// that declared the bare form unaddressable (addressable = ['prefixed'] only)
+// that declared the bare form unaddressable (`addressable = ['prefixed']` only)
 // drop out of the candidate set so they cannot serve it. Upstreams with no
 // prefix config remain candidates unconditionally.
 export const restrictProvidersByPrefix = (

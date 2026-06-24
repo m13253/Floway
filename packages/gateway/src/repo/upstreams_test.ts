@@ -324,6 +324,73 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
   );
 });
 
+test('SQL upstream repo rejects malformed stored model_prefix_json', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  db.rows.push({
+    id: 'up_bad_prefix_json',
+    provider: 'custom',
+    name: 'Bad Prefix JSON',
+    enabled: 1,
+    sort_order: 0,
+    created_at: '2026-05-21T10:00:00.000Z',
+    updated_at: '2026-05-21T10:00:00.000Z',
+    config_json: '{}',
+    state_json: null,
+    flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
+    proxy_fallback_list_json: '[]',
+    model_prefix_json: '{not json',
+  });
+
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_json'), Error, 'Malformed upstream model_prefix_json for up_bad_prefix_json');
+});
+
+test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  db.rows.push({
+    id: 'up_bad_prefix_shape',
+    provider: 'custom',
+    name: 'Bad Prefix Shape',
+    enabled: 1,
+    sort_order: 0,
+    created_at: '2026-05-21T10:00:00.000Z',
+    updated_at: '2026-05-21T10:00:00.000Z',
+    config_json: '{}',
+    state_json: null,
+    flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
+    proxy_fallback_list_json: '[]',
+    // Prefix missing trailing slash — passes JSON.parse but fails the regex.
+    model_prefix_json: '{"prefix":"or","addressable":["unprefixed"],"listed":[]}',
+  });
+
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_shape'), Error, 'Invalid upstream model_prefix_json shape for up_bad_prefix_shape');
+});
+
+test('SQL upstream repo round-trips a non-null model_prefix', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  const repo = new SqlRepo(db).upstreams;
+  const now = new Date().toISOString();
+  const record: UpstreamRecord = {
+    id: 'up_prefix_rt',
+    provider: 'custom',
+    name: 'Prefix Round-Trip',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { chatCompletions: {} }, modelsFetch: { enabled: true } },
+    state: null,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+  };
+  await repo.save(record);
+  const reloaded = await repo.getById('up_prefix_rt');
+  assertEquals(reloaded?.modelPrefix, { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] });
+});
+
 test('migration 0010 creates unified upstreams and rewrites legacy upstream identities', async () => {
   const db = await createMigratedSqlJsDatabase();
   try {
