@@ -36,8 +36,9 @@ export const enumerateProviderCandidates = async ({
   // upstreams, stripped form for `[prefixed]`-addressable upstreams when the
   // inbound starts with the configured prefix. A dual-addressable upstream
   // contributes both when applicable. The fan-out is shared with
-  // `resolveModelForRequest`; first-viable-wins ordering follows
-  // sort_order × FORM_ORDER.
+  // `resolveModelForRequest`; first-viable-wins ordering follows configured
+  // sort_order across upstreams, with the unprefixed interpretation pushed
+  // before the prefixed one within a single upstream.
   const interpretations = enumerateModelInterpretations(model, providers);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
 

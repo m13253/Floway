@@ -121,9 +121,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
     // Each match is one (upstream, upstream-catalog id) pair that interprets
-    // the inbound public id. Iteration order follows sort_order × FORM_ORDER
-    // (unprefixed before prefixed within a dual-addressable upstream). The
-    // first match whose binding satisfies the endpoint capability wins.
+    // the inbound public id. Iteration order follows configured sort_order
+    // across upstreams, with the unprefixed interpretation pushed before the
+    // prefixed one within a single upstream. The first match whose binding
+    // satisfies the endpoint capability wins.
     const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');

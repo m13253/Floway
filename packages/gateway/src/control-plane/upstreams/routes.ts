@@ -115,19 +115,6 @@ const providerDataUpstreamModelId = (data: unknown): string | undefined => {
 // record before it hits the repo. Request-time zod schemas only validate JSON
 // shape; these helpers enforce the URL / endpoint-mix / path-override rules
 // that the provider packages own.
-// Zod validates `prefix` regex/length and `addressable.nonempty()`, but the
-// `listed ⊆ addressable` clamp and form-order canonicalisation live in
-// `normalizeModelPrefix`. Wrap it in the same ValidationResult shape the
-// sibling normalizers (normalizeConfig, mergeConfigPatch) use so the route
-// handlers stay uniform.
-const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefixConfig | null> => {
-  try {
-    return { ok: true, value: normalizeModelPrefix(input) };
-  } catch (err) {
-    return { ok: false, error: errorMessage(err) };
-  }
-};
-
 const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.provider === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
@@ -170,6 +157,19 @@ const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, pat
     if (next.authStyle === 'none') delete next.apiKey;
   }
   return { ok: true, value: next };
+};
+
+// Zod validates `prefix` regex/length and `addressable.nonempty()`, but the
+// `listed ⊆ addressable` clamp and form-order canonicalisation live in
+// `normalizeModelPrefix`. Wrap it in the same ValidationResult shape the
+// sibling normalizers (normalizeConfig, mergeConfigPatch) use so the route
+// handlers stay uniform.
+const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefixConfig | null> => {
+  try {
+    return { ok: true, value: normalizeModelPrefix(input) };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
 };
 
 const newId = (): string => shortId('up');
