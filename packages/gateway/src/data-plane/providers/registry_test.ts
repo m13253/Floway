@@ -1,11 +1,11 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
-import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
+import { compareModelIds, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest, restrictProvidersByPrefix } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 
@@ -577,4 +577,49 @@ test('resolveModelForRequest: healthy upstream still resolves alongside a reject
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
   );
+});
+
+const fakeProvider = (over: Partial<ModelProviderInstance>): ModelProviderInstance => ({
+  upstream: 'u',
+  providerKind: 'custom',
+  name: 'fake',
+  disabledPublicModelIds: [],
+  modelPrefix: null,
+  provider: stubProvider(),
+  supportsResponsesItemReference: false,
+  ...over,
+});
+
+describe('restrictProvidersByPrefix', () => {
+  const A = fakeProvider({ upstream: 'A', name: 'a', modelPrefix: null });
+  const B = fakeProvider({
+    upstream: 'B', name: 'b',
+    modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+  });
+  const C = fakeProvider({
+    upstream: 'C', name: 'c',
+    modelPrefix: { prefix: 'cx/', addressable: ['prefixed'], listed: ['prefixed'] },
+  });
+
+  test('strips the prefix and restricts to the first matching upstream', () => {
+    const out = restrictProvidersByPrefix('or/gpt-4o', [A, B, C]);
+    assertEquals(out.providers, [B]);
+    assertEquals(out.modelId, 'gpt-4o');
+  });
+
+  test('drops upstreams whose addressable excludes the bare form when no prefix matches', () => {
+    const out = restrictProvidersByPrefix('gpt-4o', [A, B, C]);
+    assertEquals(out.providers, [A, B]);
+    assertEquals(out.modelId, 'gpt-4o');
+  });
+
+  test('picks the first matching upstream on prefix collisions', () => {
+    const D = fakeProvider({
+      upstream: 'D', name: 'd',
+      modelPrefix: { prefix: 'or/', addressable: ['prefixed'], listed: ['prefixed'] },
+    });
+    const out = restrictProvidersByPrefix('or/gpt-4o', [B, D]);
+    assertEquals(out.providers, [B]);
+    assertEquals(out.modelId, 'gpt-4o');
+  });
 });

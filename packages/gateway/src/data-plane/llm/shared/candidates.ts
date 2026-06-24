@@ -1,5 +1,5 @@
 import { createPerRequestFetcher } from '../../../dial/per-request.ts';
-import { listModelProviders, resolveModelForProvider } from '../../providers/registry.ts';
+import { listModelProviders, resolveModelForProvider, restrictProvidersByPrefix } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
@@ -31,6 +31,12 @@ export const enumerateProviderCandidates = async ({
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
 
+  // Same prefix policy the catalog and `resolveModelForRequest` apply: scope
+  // the candidate set to the matched upstream (or drop prefix-only upstreams
+  // when the inbound id is bare) before the per-provider walk so each
+  // upstream sees only the id it advertises.
+  const { providers: scoped, modelId: scopedModel } = restrictProvidersByPrefix(model, providers);
+
   // Fan out per-upstream and recover each rejection as a "this upstream
   // has no models for this request" result rather than propagating the
   // first failure: one upstream past HARD whose force re-fetch fails
@@ -39,8 +45,8 @@ export const enumerateProviderCandidates = async ({
   // walk does not multiply upstream round trips. Results are kept in
   // input order so candidate priority (first viable candidate wins)
   // matches the configured provider order.
-  const settled = await Promise.allSettled(providers.map(provider =>
-    resolveModelForProvider(provider, model, fetcherForUpstream(provider.upstream), scheduler)
+  const settled = await Promise.allSettled(scoped.map(provider =>
+    resolveModelForProvider(provider, scopedModel, fetcherForUpstream(provider.upstream), scheduler)
       .then(resolved => ({ provider, resolved }))));
 
   const candidates: ProviderCandidate[] = [];
@@ -48,7 +54,7 @@ export const enumerateProviderCandidates = async ({
   let sawModel = false;
 
   for (const [index, result] of settled.entries()) {
-    const provider = providers[index];
+    const provider = scoped[index];
     if (result.status === 'rejected') {
       const error = result.reason;
       // Caller-driven cancellation must propagate; see the matching

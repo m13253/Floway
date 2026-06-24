@@ -2,7 +2,7 @@ import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { AddressableForm, InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -260,6 +260,36 @@ interface ProviderModelResolution {
   binding: ProviderModelRecord;
 }
 
+// Routing primitive that scopes a candidate set to the upstream whose prefix
+// matches the inbound model id. Returns the (possibly shorter) provider list
+// and the bare model id the upstream actually receives.
+//
+// The walk is first-wins: the first upstream whose `modelPrefix.prefix` is a
+// literal string prefix of `modelId` AND whose addressable forms include the
+// prefixed surface captures the request, and the prefix is stripped. The
+// candidate set collapses to that single upstream — sibling upstreams that
+// happen to expose the same bare id under a different prefix are not
+// considered, so a request like `or/gpt-4o` never reaches a Copilot upstream
+// that lists `gpt-4o` natively.
+//
+// When no prefix matches, the request is a bare-id call: upstreams that
+// declared the bare form unaddressable (addressable = ['prefixed'] only) drop
+// out of the candidate set so they cannot serve it. Upstreams with no prefix
+// config remain candidates unconditionally.
+export const restrictProvidersByPrefix = (
+  modelId: string,
+  providers: readonly ModelProviderInstance[],
+): { providers: readonly ModelProviderInstance[]; modelId: string } => {
+  for (const instance of providers) {
+    const cfg = instance.modelPrefix;
+    if (!cfg || !cfg.addressable.includes('prefixed')) continue;
+    if (!modelId.startsWith(cfg.prefix)) continue;
+    return { providers: [instance], modelId: modelId.slice(cfg.prefix.length) };
+  }
+  const filtered = providers.filter(p => !p.modelPrefix || p.modelPrefix.addressable.includes('unprefixed'));
+  return { providers: filtered, modelId };
+};
+
 const resolveProviderAlias = (providers: readonly ModelProviderInstance[], byId: ReadonlyMap<string, ResolvedModel>, modelId: string): ResolvedModel | undefined => {
   let resolved: ResolvedModel | undefined;
   const providersForAlias = new Set<ModelProviderInstance>();
@@ -294,20 +324,25 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  const { models, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
+  // Apply the prefix policy before the catalog walk so a prefixed request
+  // never inflates the per-upstream catalog cost and the per-provider alias
+  // hook only sees the stripped, upstream-facing id.
+  const { providers: scopedProviders, modelId: scopedId } = restrictProvidersByPrefix(modelId, providers);
+
+  const { models, failedUpstreams } = await collectProviderModels(scopedProviders, fetcherForUpstream, scheduler);
   const byId = new Map(models.map(model => [model.id, model]));
 
-  const exact = byId.get(modelId);
+  const exact = byId.get(scopedId);
   if (exact) return { id: exact.id, model: exact, failedUpstreams };
 
-  const alias = resolveProviderAlias(providers, byId, modelId);
+  const alias = resolveProviderAlias(scopedProviders, byId, scopedId);
   if (alias) return { id: alias.id, model: alias, failedUpstreams };
 
   // Treat a failing upstream as "no models from that upstream right now"
   // rather than rethrowing its catalog error — other upstreams still
   // route, and the failed list is handed back so the caller's failure
   // body can name the affected upstreams.
-  return { id: modelId, failedUpstreams };
+  return { id: scopedId, failedUpstreams };
 };
 
 const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
