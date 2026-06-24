@@ -1,4 +1,4 @@
-const CLAUDE_VARIANT_SUFFIX = /-(?:high|xhigh|1m(?:-internal)?)$/;
+const CLAUDE_VARIANT_SUFFIX = /-(?:high|xhigh|1m(?:-internal)?|fast)$/;
 const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
 
 export const copilotRawModelId = (id: string): string => {
