@@ -16,11 +16,15 @@ export interface ModelPrefixConfig {
   listed: AddressableForm[];
 }
 
-// Matches a prefix string that is itself a non-empty token (no leading slash,
-// no empty trailing segment) and ends with exactly one trailing slash. The
-// trailing slash is part of the prefix so that simple string concatenation
-// produces the addressable id without any join policy.
-export const MODEL_PREFIX_REGEX = /^[a-zA-Z0-9._-]([a-zA-Z0-9._/-]*[a-zA-Z0-9._-])?\/$/;
+// Matches a prefix string built from path segments of valid id characters,
+// separated by single slashes, and terminated by exactly one trailing slash.
+// Examples:
+//   `openrouter/`        — one segment
+//   `vendor/sub/region/` — three segments
+// Empty segments (`vendor//`, `a//b/`) are barred because no model id of any
+// upstream we care about uses them, and matching them as a prefix would
+// silently consume an unintended portion of an inbound id.
+export const MODEL_PREFIX_REGEX = /^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*\/$/;
 
 // Caps the operator-controlled prefix length. The data plane runs
 // `modelId.startsWith(prefix)` on every prefixed-addressable upstream per
@@ -32,8 +36,20 @@ export const MODEL_PREFIX_MAX_LENGTH = 64;
 
 const FORM_ORDER: readonly AddressableForm[] = ['unprefixed', 'prefixed'];
 
-const canonical = (forms: readonly AddressableForm[]): AddressableForm[] => {
-  const set = new Set(forms);
+// Validate every element is a known AddressableForm, then return a canonical
+// (deduped, ordered) array. Silently dropping unknown members would mask a
+// malformed import payload — `addressable: ['foo']` would normalize to `[]`
+// and surface as `addressable must be non-empty`, which hides the real fault.
+const canonicalForms = (input: unknown, fieldName: string): AddressableForm[] => {
+  if (!Array.isArray(input)) {
+    throw new Error(`modelPrefix.${fieldName} must be an array`);
+  }
+  for (const item of input) {
+    if (item !== 'unprefixed' && item !== 'prefixed') {
+      throw new Error(`modelPrefix.${fieldName} entry must be 'unprefixed' or 'prefixed', got ${JSON.stringify(item)}`);
+    }
+  }
+  const set = new Set(input as AddressableForm[]);
   return FORM_ORDER.filter(f => set.has(f));
 };
 
@@ -48,11 +64,8 @@ export const normalizeModelPrefix = (input: unknown): ModelPrefixConfig | null =
   if (raw.prefix.length > MODEL_PREFIX_MAX_LENGTH) {
     throw new Error(`modelPrefix.prefix must be at most ${MODEL_PREFIX_MAX_LENGTH} characters`);
   }
-  if (!Array.isArray(raw.addressable) || !Array.isArray(raw.listed)) {
-    throw new Error('modelPrefix.addressable and modelPrefix.listed must be arrays');
-  }
-  const addressable = canonical(raw.addressable as readonly AddressableForm[]);
-  const listedCandidate = canonical(raw.listed as readonly AddressableForm[]);
+  const addressable = canonicalForms(raw.addressable, 'addressable');
+  const listedCandidate = canonicalForms(raw.listed, 'listed');
   if (addressable.length === 0) throw new Error('modelPrefix.addressable must be non-empty');
   const addressableSet = new Set(addressable);
   const listed = listedCandidate.filter(f => addressableSet.has(f));

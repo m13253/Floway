@@ -16,6 +16,7 @@ describe('MODEL_PREFIX_REGEX', () => {
     ['/'],                   // too short
     ['/vendor/'],            // leading slash
     ['vendor//'],            // empty trailing segment
+    ['a//b/'],               // empty interior segment
     ['my prefix/'],          // space
     ['vendor:/'],            // colon
     [''],                    // empty
@@ -57,5 +58,15 @@ describe('normalizeModelPrefix', () => {
     const long = `${'x'.repeat(64)}/`;
     expect(() => normalizeModelPrefix({ prefix: long, addressable: ['unprefixed'], listed: [] }))
       .toThrow(/64 characters/);
+  });
+
+  it('throws on unknown addressable form (no silent drop)', () => {
+    expect(() => normalizeModelPrefix({ prefix: 'or/', addressable: ['unprefixed', 'bogus'], listed: [] }))
+      .toThrow(/addressable.*'unprefixed' or 'prefixed'/);
+  });
+
+  it('throws on non-array addressable', () => {
+    expect(() => normalizeModelPrefix({ prefix: 'or/', addressable: 'unprefixed', listed: [] }))
+      .toThrow(/addressable must be an array/);
   });
 });

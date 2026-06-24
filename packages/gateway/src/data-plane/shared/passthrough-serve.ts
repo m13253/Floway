@@ -141,6 +141,11 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         headers: inboundHeadersForUpstream(c),
       });
       const upstreamDurationMs = recorder.durationMs();
+      // `modelId` is the upstream-facing bare id (post prefix-strip): usage
+      // and performance attribute against the canonical upstream model, the
+      // same contract LLM serves use via telemetryModelIdentity. The client-
+      // supplied surface form (`model`) is only echoed in user-facing error
+      // bodies, never in telemetry keys.
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
         model: modelId,

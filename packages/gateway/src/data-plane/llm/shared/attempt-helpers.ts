@@ -7,6 +7,12 @@ import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderStr
 // Telemetry identity for the chosen candidate plus the upstream-reported
 // model key. Pricing reads off the provider so the cost lookup respects any
 // provider-specific override.
+//
+// `model` is the upstream-facing bare id (`candidate.binding.upstreamModel.id`,
+// e.g. `gpt-4o`) regardless of which surface form the client called
+// (`or/gpt-4o` or `gpt-4o`). Usage and performance aggregates therefore key on
+// the canonical upstream id, and a dashboard slice over `model` rolls up both
+// surfaces of the same upstream model under one row.
 export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: string): TelemetryModelIdentity => ({
   model: candidate.binding.upstreamModel.id,
   upstream: candidate.binding.upstream,
