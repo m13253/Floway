@@ -1,4 +1,5 @@
 import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
+import { withNonFirstSystemDemotedToUser } from './demote-non-first-system-to-user.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
@@ -19,6 +20,15 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`. Emits the gateway's canonical
 //     "no reasoning" sentinel only; vendor wire form is the vendor's job.
+//   - withDemoteDeveloperToSystem: gated by `demote-developer-to-system`.
+//     Runs before withNonFirstSystemDemotedToUser so when both flags are on,
+//     a `developer` role first lands as `system`, then any system that ends
+//     up after the leading run is rewritten to `user` — the chain
+//     `developer → system → user` covers the strictest upstreams.
+//   - withNonFirstSystemDemotedToUser: gated by
+//     `demote-non-first-system-to-user`. Rewrites any `role: 'system'` that
+//     appears after the leading contiguous system run to `role: 'user'` so
+//     upstreams that reject mid-stream system messages still accept the body.
 //   - withVendor*ChatCompletionsNormalize: gated by `vendor-<X>`. Registered
 //     LAST so that on the outbound path each gets the final say on the wire
 //     body and on the inbound path each gets the first say on the upstream
@@ -31,6 +41,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withUsageNormalized,
   withReasoningDisabledOnForcedToolChoice,
   withDemoteDeveloperToSystem,
+  withNonFirstSystemDemotedToUser,
   withVendorDeepseekChatCompletionsNormalize,
   withVendorQwenChatCompletionsNormalize,
   withVendorKimiChatCompletionsNormalize,

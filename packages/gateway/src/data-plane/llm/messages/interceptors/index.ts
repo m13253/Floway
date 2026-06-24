@@ -1,3 +1,4 @@
+import { demoteNonFirstSystemToUser } from './demote-non-first-system-to-user.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesCountTokensInterceptor, MessagesInterceptor } from './types.ts';
@@ -20,10 +21,16 @@ import { withMessagesWebSearchShim } from './web-search-shim.ts';
 //     because Anthropic uses it for plan-tier billing.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
+//   - demoteNonFirstSystemToUser: gated by
+//     `demote-non-first-system-to-user`. Anthropic's top-level
+//     `payload.system` is conceptually the first-position system slot, so
+//     every inline `role: 'system'` message in `payload.messages` is by
+//     definition non-first and gets rewritten to `role: 'user'`.
 export const messagesInterceptors: readonly MessagesInterceptor[] = [
   withMessagesWebSearchShim,
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,
+  demoteNonFirstSystemToUser,
 ];
 
 // The shipped Messages interceptors all inspect post-`run()` event streams,
