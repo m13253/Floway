@@ -1,5 +1,5 @@
-import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
+import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';

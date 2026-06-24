@@ -623,3 +623,136 @@ describe('restrictProvidersByPrefix', () => {
     assertEquals(out.modelId, 'gpt-4o');
   });
 });
+
+// End-to-end listing checks for the prefix policy. The catalog walk goes
+// through getInternalModels, which threads custom upstreams' /v1/models
+// responses through fetchUpstreamModelsCached just like production does.
+describe('catalog listing under modelPrefix', () => {
+  test('null prefix lists bare ids only (today\'s behavior)', async () => {
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_plain',
+      sortOrder: 1,
+      config: { baseUrl: 'https://plain.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    }));
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'plain.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        assertEquals(catalog.map(m => m.id), ['gpt-4o']);
+      },
+    );
+  });
+
+  test('listed=[prefixed] lists only the prefixed surface', async () => {
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_prefixed',
+      sortOrder: 1,
+      config: { baseUrl: 'https://prefixed.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      modelPrefix: { prefix: 'or/', addressable: ['prefixed'], listed: ['prefixed'] },
+    }));
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'prefixed.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
+      },
+    );
+  });
+
+  test('listed=[unprefixed, prefixed] emits both surfaces, prefix-only collision is independent', async () => {
+    // up_plain has no prefix and lists `gpt-4o`. up_dual exposes both forms.
+    // The bare `gpt-4o` collides first-wins (up_plain stays the metadata
+    // owner); the `or/gpt-4o` surface is independent and belongs solely to
+    // up_dual.
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_plain',
+      sortOrder: 1,
+      config: { baseUrl: 'https://plain.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    }));
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_dual',
+      sortOrder: 2,
+      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
+    }));
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'plain.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
+        }
+        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-4o', 'or/gpt-4o']);
+
+        // Resolution still hits the right upstream for each surface.
+        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(bare.model?.providers.map(({ upstream }) => upstream), ['up_plain', 'up_dual']);
+
+        const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
+        assertEquals(prefixed.model?.providers.map(({ upstream }) => upstream), ['up_dual']);
+      },
+    );
+  });
+
+  test('disabledPublicModelIds hides both bare and prefixed forms from the originating upstream', async () => {
+    // up_dual exposes `gpt-4o` and `gpt-mini` under both forms, but the
+    // operator disabled `gpt-4o` on this upstream. Neither `gpt-4o` nor
+    // `or/gpt-4o` survives from up_dual; `gpt-mini` and `or/gpt-mini` stay.
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_dual',
+      sortOrder: 1,
+      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
+      disabledPublicModelIds: ['gpt-4o'],
+    }));
+
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
+          return jsonResponse({
+            object: 'list',
+            data: [
+              { id: 'gpt-4o', supported_endpoints: ['/chat/completions'] },
+              { id: 'gpt-mini', supported_endpoints: ['/chat/completions'] },
+            ],
+          });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-mini', 'or/gpt-mini']);
+      },
+    );
+  });
+});

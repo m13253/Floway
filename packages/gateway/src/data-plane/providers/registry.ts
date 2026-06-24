@@ -141,29 +141,47 @@ const collectProviderModels = async (
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,
     // so the same id can still surface from another upstream that allows it.
+    // The disable matches against the bare upstream id, so a disabled `gpt-4o`
+    // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
+    // contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
     for (const upstreamModel of providedModels) {
       if (!upstreamModel.id) continue;
       if (disabled.has(upstreamModel.id)) continue;
-      const record = providerModelRecord(instance, upstreamModel);
-      const existing = byId.get(upstreamModel.id);
-      if (!existing) {
-        byId.set(upstreamModel.id, resolvedFromUpstreamModel(upstreamModel, record));
-        continue;
-      }
 
-      // When multiple providers expose the same public model id, the first
-      // provider's metadata remains the public /models metadata. Runtime
-      // execution still uses the selected provider's own UpstreamModel, so
-      // capability-sensitive calls do not depend on this merged view being
-      // perfectly representative.
-      const endpoints = unionEndpoints(existing.endpoints, upstreamModel.endpoints);
-      byId.set(upstreamModel.id, {
-        ...existing,
-        endpoints,
-        kind: kindForEndpoints(endpoints),
-        providers: [...existing.providers, record],
-      });
+      // Each surface form the upstream chose to list becomes its own catalog
+      // entry. The unprefixed surface keeps the original UpstreamModel; the
+      // prefixed surface uses a shallow clone with the rewritten id so the
+      // provider binding still forwards the bare id upstream — `providerData`
+      // (where the per-provider call reads the real upstream model id) is
+      // untouched by the clone.
+      const cfg = instance.modelPrefix;
+      const forms: readonly AddressableForm[] = cfg ? cfg.listed : ['unprefixed'];
+      for (const form of forms) {
+        const publicId = form === 'prefixed' ? `${cfg!.prefix}${upstreamModel.id}` : upstreamModel.id;
+        const surfacedModel: UpstreamModel = form === 'prefixed'
+          ? { ...upstreamModel, id: publicId }
+          : upstreamModel;
+        const record = providerModelRecord(instance, surfacedModel);
+        const existing = byId.get(publicId);
+        if (!existing) {
+          byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
+          continue;
+        }
+
+        // When multiple providers expose the same public model id, the first
+        // provider's metadata remains the public /models metadata. Runtime
+        // execution still uses the selected provider's own UpstreamModel, so
+        // capability-sensitive calls do not depend on this merged view being
+        // perfectly representative.
+        const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+        byId.set(publicId, {
+          ...existing,
+          endpoints,
+          kind: kindForEndpoints(endpoints),
+          providers: [...existing.providers, record],
+        });
+      }
     }
   }
 
@@ -282,7 +300,7 @@ export const restrictProvidersByPrefix = (
 ): { providers: readonly ModelProviderInstance[]; modelId: string } => {
   for (const instance of providers) {
     const cfg = instance.modelPrefix;
-    if (!cfg || !cfg.addressable.includes('prefixed')) continue;
+    if (!cfg?.addressable.includes('prefixed')) continue;
     if (!modelId.startsWith(cfg.prefix)) continue;
     return { providers: [instance], modelId: modelId.slice(cfg.prefix.length) };
   }
