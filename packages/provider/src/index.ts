@@ -38,6 +38,9 @@ export type {
 } from './model.ts';
 export { ALL_PROVIDER_KINDS } from './model.ts';
 
+export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
+export { MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
+
 export type {
   ModelProvider,
   ModelProviderInstance,
