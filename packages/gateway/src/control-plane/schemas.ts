@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { MODEL_PREFIX_REGEX, OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
+import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -237,7 +237,7 @@ const proxyFallbackListSchema = z.array(z.object({
 const addressableFormSchema = z.enum(['unprefixed', 'prefixed']);
 
 export const modelPrefixSchema = z.object({
-  prefix: z.string().regex(MODEL_PREFIX_REGEX, 'must end with / and use [A-Za-z0-9._-/] only'),
+  prefix: z.string().max(MODEL_PREFIX_MAX_LENGTH).regex(MODEL_PREFIX_REGEX, 'must end with / and use [A-Za-z0-9._-/] only'),
   addressable: z.array(addressableFormSchema).nonempty(),
   listed: z.array(addressableFormSchema),
 }).nullable();

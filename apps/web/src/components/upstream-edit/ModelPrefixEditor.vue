@@ -8,7 +8,7 @@
 import { computed } from 'vue';
 
 import type { AddressableForm, ModelPrefixConfig } from '../../api/types.ts';
-import { MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
 import { Input } from '@floway-dev/ui';
 
 const model = defineModel<ModelPrefixConfig | null>({ required: true });
@@ -32,9 +32,10 @@ const write = (draft: ModelPrefixConfig) => {
 const prefixText = computed<string>({
   get: () => model.value?.prefix ?? '',
   // First-time enable: when the model transitions from null to a non-empty
-  // prefix, default both forms addressable and the unprefixed form listed so
-  // the upstream stays catalog-visible. Subsequent edits preserve whatever
-  // forms the user picked (see toggleAddressable / toggleListed).
+  // prefix, default to the unprefixed form (both addressable and listed) so
+  // the upstream stays catalog-visible and routing for existing bare-id
+  // clients is unchanged until the operator opts the prefixed form in via
+  // toggleAddressable / toggleListed.
   set: text => write({
     prefix: text,
     addressable: model.value?.addressable ?? ['unprefixed'],
@@ -44,7 +45,8 @@ const prefixText = computed<string>({
 
 const prefixInvalid = computed(() => {
   const v = prefixText.value;
-  return v !== '' && !MODEL_PREFIX_REGEX.test(v);
+  if (v === '') return false;
+  return !MODEL_PREFIX_REGEX.test(v) || v.length > MODEL_PREFIX_MAX_LENGTH;
 });
 
 const toggleAddressable = (form: AddressableForm) => {
@@ -89,7 +91,7 @@ const forms: { id: AddressableForm; label: string }[] = [
       class="mb-1.5 font-mono"
     />
     <p v-if="prefixInvalid" class="text-[11px] text-accent-rose">
-      Must end with <code class="font-mono">/</code> and contain only letters, digits, dots, hyphens, underscores, or slashes.
+      Must end with <code class="font-mono">/</code>, contain only letters, digits, dots, hyphens, underscores, or slashes, and be at most {{ MODEL_PREFIX_MAX_LENGTH }} characters.
     </p>
     <p v-else class="text-[11px] text-gray-600">
       Matched as a literal prefix on incoming model ids. Must end with <code class="font-mono">/</code>.

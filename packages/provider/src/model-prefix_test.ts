@@ -52,4 +52,10 @@ describe('normalizeModelPrefix', () => {
     expect(() => normalizeModelPrefix({ prefix: 'or', addressable: ['unprefixed'], listed: [] }))
       .toThrow(/prefix.*invalid/i);
   });
+
+  it('throws when prefix exceeds the length cap', () => {
+    const long = `${'x'.repeat(64)}/`;
+    expect(() => normalizeModelPrefix({ prefix: long, addressable: ['unprefixed'], listed: [] }))
+      .toThrow(/64 characters/);
+  });
 });

@@ -40,6 +40,7 @@ import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1330,16 +1331,23 @@ const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] 
   return normalizeProxyFallbackList(entries);
 };
 
-// Stored as a nullable JSON object. The normalizer at the control-plane edge
-// already validates shape and canonicalises form order, so the parsed object
-// here is trusted; this helper only handles the JSON.parse and the NULL
-// passthrough.
+// Stored as a nullable JSON object. The route layer normalises before write,
+// so the happy path is a straight JSON.parse; routing through
+// normalizeModelPrefix on read still defends against drift (manual DB edits,
+// migration bugs, a future bypass path) and keeps this parser in line with the
+// sibling shape-validating parsers above.
 const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | null => {
   if (json === null) return null;
+  let parsed: unknown;
   try {
-    return JSON.parse(json) as ModelPrefixConfig;
+    parsed = JSON.parse(json);
   } catch (cause) {
     throw new Error(`Malformed upstream model_prefix_json for ${id}`, { cause });
+  }
+  try {
+    return normalizeModelPrefix(parsed);
+  } catch (cause) {
+    throw new Error(`Invalid upstream model_prefix_json shape for ${id}`, { cause });
   }
 };
 

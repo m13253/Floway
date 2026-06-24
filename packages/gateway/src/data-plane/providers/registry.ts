@@ -291,6 +291,10 @@ export const restrictProvidersByPrefix = (
     if (!modelId.startsWith(cfg.prefix)) continue;
     return { providers: [instance], modelId: modelId.slice(cfg.prefix.length) };
   }
+  // No configured prefix matched. A model id can legitimately contain '/' as
+  // part of its bare upstream catalog id (e.g. Microsoft Foundry router model
+  // ids like 'accounts/msft/routers/x') — the fall-through hands the literal
+  // id to the per-provider lookup, which is what we want.
   const filtered = providers.filter(p => !p.modelPrefix || p.modelPrefix.addressable.includes('unprefixed'));
   return { providers: filtered, modelId };
 };

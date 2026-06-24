@@ -22,6 +22,14 @@ export interface ModelPrefixConfig {
 // produces the addressable id without any join policy.
 export const MODEL_PREFIX_REGEX = /^[a-zA-Z0-9._-]([a-zA-Z0-9._/-]*[a-zA-Z0-9._-])?\/$/;
 
+// Caps the operator-controlled prefix length. The data plane runs
+// `modelId.startsWith(prefix)` on every prefixed-addressable upstream per
+// request, so a degenerate kilobytes-long prefix would waste cycles for no
+// product benefit. 64 is generous for human-readable disambiguators
+// ("openrouter/", "vendor/sub/region/", etc.) and the boundary catches obvious
+// paste mistakes early.
+export const MODEL_PREFIX_MAX_LENGTH = 64;
+
 const FORM_ORDER: readonly AddressableForm[] = ['unprefixed', 'prefixed'];
 
 const canonical = (forms: readonly AddressableForm[]): AddressableForm[] => {
@@ -36,6 +44,9 @@ export const normalizeModelPrefix = (input: unknown): ModelPrefixConfig | null =
 
   if (typeof raw.prefix !== 'string' || !MODEL_PREFIX_REGEX.test(raw.prefix)) {
     throw new Error('modelPrefix.prefix is invalid');
+  }
+  if (raw.prefix.length > MODEL_PREFIX_MAX_LENGTH) {
+    throw new Error(`modelPrefix.prefix must be at most ${MODEL_PREFIX_MAX_LENGTH} characters`);
   }
   if (!Array.isArray(raw.addressable) || !Array.isArray(raw.listed)) {
     throw new Error('modelPrefix.addressable and modelPrefix.listed must be arrays');
