@@ -112,9 +112,6 @@ export interface PassthroughServeContext {
   readonly noBindingMessage: (model: string) => string;
 }
 
-// Telemetry identity for a passthrough call. Usage and performance key on the
-// canonical post-prefix-strip upstream-facing id so a prefixed and bare-id
-// surface of the same model roll up together.
 const passthroughTelemetryIdentity = (binding: ProviderModelRecord, canonicalId: string, modelKey: string): TelemetryModelIdentity => ({
   model: canonicalId,
   upstream: binding.upstream,
