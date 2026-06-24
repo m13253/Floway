@@ -27,6 +27,7 @@ import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -109,8 +110,24 @@ export interface PassthroughServeContext {
   readonly extractUsage: (usage: unknown) => TokenUsage | null;
   // Returned as the 400 body when no provider binding matched. Phrased
   // per-endpoint so the error tells the client which capability is missing.
-  readonly noBindingMessage: (modelId: string) => string;
+  readonly noBindingMessage: (model: string) => string;
 }
+
+// Telemetry identity for a passthrough call. `model` is the post-prefix-strip
+// upstream-facing id — usage and performance keys on the canonical upstream
+// model so a prefixed and bare-id surface of the same model roll up together.
+// Mirrors the LLM-side contract in `telemetryModelIdentity` (attempt-helpers).
+const passthroughTelemetryIdentity = (binding: ProviderModelRecord, canonicalId: string, modelKey: string): {
+  model: string;
+  upstream: string;
+  modelKey: string;
+  cost: ModelPricing | null;
+} => ({
+  model: canonicalId,
+  upstream: binding.upstream,
+  modelKey,
+  cost: binding.provider.getPricingForModelKey(modelKey),
+});
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = input;
@@ -119,14 +136,13 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    const { id: modelId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    // `canonicalId` is the upstream-facing id `resolveModelForRequest` stripped
+    // the prefix off; the inbound `model` is the surface form the client sent.
+    // The split shows up below: telemetry keys on `canonicalId`, user-facing
+    // error bodies echo `model`.
+    const { id: canonicalId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (!resolved) {
       ctx.dump?.error('gateway');
-      // Echo the client-supplied id verbatim — `modelId` here is the
-      // post-prefix-strip form `resolveModelForRequest` resolves against the
-      // upstream catalog, which would surprise a caller who sent the prefixed
-      // form (`or/gpt-4o` → `Model gpt-4o is not available…` reads as a
-      // contradiction).
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
@@ -141,16 +157,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         headers: inboundHeadersForUpstream(c),
       });
       const upstreamDurationMs = recorder.durationMs();
-      // `modelId` is the upstream-facing bare id (post prefix-strip): usage
-      // and performance attribute against the canonical upstream model, the
-      // same contract LLM serves use via telemetryModelIdentity. The client-
-      // supplied surface form (`model`) is only echoed in user-facing error
-      // bodies, never in telemetry keys.
+      const identity = passthroughTelemetryIdentity(binding, canonicalId, modelKey);
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
-        model: modelId,
-        upstream: binding.upstream,
-        modelKey,
+        ...identity,
         stream: false,
         runtimeLocation: ctx.runtimeLocation,
       };
@@ -167,29 +177,15 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       const parsed = await safeJsonClone(response, sourceApi);
       const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
       const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
-      ctx.dump?.success({ model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
+      ctx.dump?.success(identity, usage);
       if (usage) {
-        scheduleUsageRecord(
-          ctx.backgroundScheduler,
-          recordTokenUsage(
-            ctx.apiKeyId,
-            {
-              model: modelId,
-              upstream: binding.upstream,
-              modelKey,
-              cost: binding.provider.getPricingForModelKey(modelKey),
-            },
-            usage,
-          ),
-        );
+        scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
       }
       recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
       return forwardUpstreamResponse(response);
     }
 
     ctx.dump?.error('gateway');
-    // Same reasoning as the 404 above — surface the id the client sent so the
-    // no-binding message stays consistent with their request.
     return passthroughApiError(c, appendFailedUpstreams(noBindingMessage(model), failedUpstreams), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {

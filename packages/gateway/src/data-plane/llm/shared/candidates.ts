@@ -35,7 +35,7 @@ export const enumerateProviderCandidates = async ({
   // the candidate set to the matched upstream (or drop prefix-only upstreams
   // when the inbound id is bare) before the per-provider walk so each
   // upstream sees only the id it advertises.
-  const { providers: scoped, modelId: scopedModel } = restrictProvidersByPrefix(model, providers);
+  const { providers: scopedProviders, modelId: scopedId } = restrictProvidersByPrefix(model, providers);
 
   // Fan out per-upstream and recover each rejection as a "this upstream
   // has no models for this request" result rather than propagating the
@@ -45,8 +45,8 @@ export const enumerateProviderCandidates = async ({
   // walk does not multiply upstream round trips. Results are kept in
   // input order so candidate priority (first viable candidate wins)
   // matches the configured provider order.
-  const settled = await Promise.allSettled(scoped.map(provider =>
-    resolveModelForProvider(provider, scopedModel, fetcherForUpstream(provider.upstream), scheduler)
+  const settled = await Promise.allSettled(scopedProviders.map(provider =>
+    resolveModelForProvider(provider, scopedId, fetcherForUpstream(provider.upstream), scheduler)
       .then(resolved => ({ provider, resolved }))));
 
   const candidates: ProviderCandidate[] = [];
@@ -54,7 +54,7 @@ export const enumerateProviderCandidates = async ({
   let sawModel = false;
 
   for (const [index, result] of settled.entries()) {
-    const provider = scoped[index];
+    const provider = scopedProviders[index];
     if (result.status === 'rejected') {
       const error = result.reason;
       // Caller-driven cancellation must propagate; see the matching

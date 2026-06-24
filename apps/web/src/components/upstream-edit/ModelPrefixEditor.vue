@@ -13,17 +13,13 @@ import { Input } from '@floway-dev/ui';
 
 const model = defineModel<ModelPrefixConfig | null>({ required: true });
 
-// Mirror the inline `prefixInvalid` computed so the parent page can gate its
-// save call before round-tripping a known-malformed value through the Zod
-// schema for a 400.
+// Mirror prefixInvalid up so the parent's save() can short-circuit before
+// round-tripping a known-malformed value through Zod for a 400.
 const emit = defineEmits<{ 'update:invalid': [invalid: boolean] }>();
 
 // Canonical order matches normalizeModelPrefix in @floway-dev/provider so the
 // payload we send is byte-identical to what the backend would synthesize.
 const FORM_ORDER: readonly AddressableForm[] = ['unprefixed', 'prefixed'];
-
-const addressable = computed<AddressableForm[]>(() => model.value?.addressable ?? ['unprefixed']);
-const listed = computed<AddressableForm[]>(() => model.value?.listed ?? []);
 
 const write = (draft: ModelPrefixConfig) => {
   if (draft.prefix === '') { model.value = null; return; }
@@ -36,11 +32,10 @@ const write = (draft: ModelPrefixConfig) => {
 
 const prefixText = computed<string>({
   get: () => model.value?.prefix ?? '',
-  // First-time enable: when the model transitions from null to a non-empty
-  // prefix, default to the unprefixed form (both addressable and listed) so
-  // the upstream stays catalog-visible and routing for existing bare-id
-  // clients is unchanged until the operator opts the prefixed form in via
-  // toggleAddressable / toggleListed.
+  // First enable: when prefix transitions null → non-empty, default to the
+  // unprefixed form (addressable + listed) so bare-id routing is unchanged
+  // until the operator opts the prefixed form in via toggleAddressable /
+  // toggleListed.
   set: text => write({
     prefix: text,
     addressable: model.value?.addressable ?? ['unprefixed'],
@@ -80,8 +75,6 @@ const toggleListed = (form: AddressableForm) => {
   write({ ...model.value, addressable: [...model.value.addressable], listed: [...current] });
 };
 
-const sampleModel = 'gpt-4o';
-
 const forms: { id: AddressableForm; label: string }[] = [
   { id: 'unprefixed', label: 'Unprefixed' },
   { id: 'prefixed', label: 'Prefixed' },
@@ -116,15 +109,15 @@ const forms: { id: AddressableForm; label: string }[] = [
               v-for="form in forms"
               :key="`addr-${form.id}`"
               class="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
-              :class="addressable.includes(form.id)
+              :class="model.addressable.includes(form.id)
                 ? 'border-accent-cyan/40 bg-accent-cyan/15 text-accent-cyan'
                 : 'border-white/10 text-gray-500 hover:bg-white/5'"
             >
               <input
                 type="checkbox"
                 class="sr-only"
-                :checked="addressable.includes(form.id)"
-                :disabled="addressable.length === 1 && addressable[0] === form.id"
+                :checked="model.addressable.includes(form.id)"
+                :disabled="model.addressable.length === 1 && model.addressable[0] === form.id"
                 @change="toggleAddressable(form.id)"
               >
               <span>{{ form.label }}</span>
@@ -142,8 +135,8 @@ const forms: { id: AddressableForm; label: string }[] = [
               :key="`list-${form.id}`"
               class="flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
               :class="[
-                addressable.includes(form.id) ? 'cursor-pointer' : 'cursor-not-allowed opacity-40',
-                listed.includes(form.id) && addressable.includes(form.id)
+                model.addressable.includes(form.id) ? 'cursor-pointer' : 'cursor-not-allowed opacity-40',
+                model.listed.includes(form.id) && model.addressable.includes(form.id)
                   ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
                   : 'border-white/10 text-gray-500 hover:bg-white/5',
               ]"
@@ -151,8 +144,8 @@ const forms: { id: AddressableForm; label: string }[] = [
               <input
                 type="checkbox"
                 class="sr-only"
-                :checked="listed.includes(form.id) && addressable.includes(form.id)"
-                :disabled="!addressable.includes(form.id)"
+                :checked="model.listed.includes(form.id) && model.addressable.includes(form.id)"
+                :disabled="!model.addressable.includes(form.id)"
                 @change="toggleListed(form.id)"
               >
               <span>{{ form.label }}</span>
@@ -161,7 +154,7 @@ const forms: { id: AddressableForm; label: string }[] = [
         </div>
       </div>
       <p class="mt-2 text-[11px] text-gray-600">
-        Example: <code class="font-mono text-gray-400">{{ sampleModel }}</code>, <code class="font-mono text-gray-400">{{ model.prefix + sampleModel }}</code>
+        Example: <code class="font-mono text-gray-400">gpt-4o</code>, <code class="font-mono text-gray-400">{{ model.prefix + 'gpt-4o' }}</code>
       </p>
     </template>
   </div>

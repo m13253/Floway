@@ -1331,11 +1331,6 @@ const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] 
   return normalizeProxyFallbackList(entries);
 };
 
-// Stored as a nullable JSON object. The route layer normalises before write,
-// so the happy path is a straight JSON.parse; routing through
-// normalizeModelPrefix on read still defends against drift (manual DB edits,
-// migration bugs, a future bypass path) and keeps this parser in line with the
-// sibling shape-validating parsers above.
 const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | null => {
   if (json === null) return null;
   let parsed: unknown;

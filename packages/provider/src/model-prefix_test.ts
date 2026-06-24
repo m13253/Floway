@@ -29,13 +29,12 @@ describe('normalizeModelPrefix', () => {
     expect(normalizeModelPrefix(undefined)).toBeNull();
   });
 
-  it('normalises listed to subset of addressable', () => {
-    const out = normalizeModelPrefix({
+  it('throws when listed contains a form not in addressable', () => {
+    expect(() => normalizeModelPrefix({
       prefix: 'or/',
       addressable: ['unprefixed'],
       listed: ['unprefixed', 'prefixed'],
-    });
-    expect(out).toEqual({ prefix: 'or/', addressable: ['unprefixed'], listed: ['unprefixed'] });
+    })).toThrow(/listed entry 'prefixed' is not in.*addressable/);
   });
 
   it('canonicalises form order to unprefixed-first', () => {

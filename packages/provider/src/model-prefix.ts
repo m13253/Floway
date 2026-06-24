@@ -65,9 +65,13 @@ export const normalizeModelPrefix = (input: unknown): ModelPrefixConfig | null =
     throw new Error(`modelPrefix.prefix must be at most ${MODEL_PREFIX_MAX_LENGTH} characters`);
   }
   const addressable = canonicalForms(raw.addressable, 'addressable');
-  const listedCandidate = canonicalForms(raw.listed, 'listed');
+  const listed = canonicalForms(raw.listed, 'listed');
   if (addressable.length === 0) throw new Error('modelPrefix.addressable must be non-empty');
   const addressableSet = new Set(addressable);
-  const listed = listedCandidate.filter(f => addressableSet.has(f));
+  for (const form of listed) {
+    if (!addressableSet.has(form)) {
+      throw new Error(`modelPrefix.listed entry '${form}' is not in modelPrefix.addressable`);
+    }
+  }
   return { prefix: raw.prefix, addressable, listed };
 };

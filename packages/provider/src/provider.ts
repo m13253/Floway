@@ -31,7 +31,7 @@ export interface ModelProviderInstance {
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
-  // instance instead of re-fetching the row. NULL keeps the bare-id behavior.
+  // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;

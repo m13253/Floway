@@ -2,7 +2,7 @@ import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { AddressableForm, InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -100,6 +100,16 @@ const resolvedFromUpstreamModel = (upstreamModel: UpstreamModel, record: Provide
   };
 };
 
+const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
+  upstream: instance.upstream,
+  upstreamName: instance.name,
+  providerKind: instance.providerKind,
+  provider: instance.provider,
+  upstreamModel,
+  enabledFlags: upstreamModel.enabledFlags,
+  supportsResponsesItemReference: instance.supportsResponsesItemReference,
+});
+
 const collectProviderModels = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -156,36 +166,48 @@ const collectProviderModels = async (
       // (where the per-provider call reads the real upstream model id) is
       // untouched by the clone.
       const cfg = instance.modelPrefix;
-      const forms: readonly AddressableForm[] = cfg ? cfg.listed : ['unprefixed'];
-      for (const form of forms) {
-        const publicId = form === 'prefixed' ? `${cfg!.prefix}${upstreamModel.id}` : upstreamModel.id;
-        const surfacedModel: UpstreamModel = form === 'prefixed'
-          ? { ...upstreamModel, id: publicId }
-          : upstreamModel;
-        const record = providerModelRecord(instance, surfacedModel);
-        const existing = byId.get(publicId);
-        if (!existing) {
-          byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
-          continue;
+      if (cfg) {
+        for (const form of cfg.listed) {
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
+          const surfacedModel: UpstreamModel = form === 'prefixed'
+            ? { ...upstreamModel, id: publicId }
+            : upstreamModel;
+          mergeIntoCatalog(byId, instance, surfacedModel, publicId);
         }
-
-        // When multiple providers expose the same public model id, the first
-        // provider's metadata remains the public /models metadata. Runtime
-        // execution still uses the selected provider's own UpstreamModel, so
-        // capability-sensitive calls do not depend on this merged view being
-        // perfectly representative.
-        const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
-        byId.set(publicId, {
-          ...existing,
-          endpoints,
-          kind: kindForEndpoints(endpoints),
-          providers: [...existing.providers, record],
-        });
+      } else {
+        mergeIntoCatalog(byId, instance, upstreamModel, upstreamModel.id);
       }
     }
   }
 
   return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
+};
+
+// Insert or union-merge one surface form into the catalog map. When multiple
+// providers expose the same public model id, the first provider's metadata
+// remains the public /models metadata; subsequent providers contribute their
+// endpoints (and provider binding) via union. Runtime execution still uses the
+// selected provider's own UpstreamModel, so capability-sensitive calls do not
+// depend on this merged view being perfectly representative.
+const mergeIntoCatalog = (
+  byId: Map<string, ResolvedModel>,
+  instance: ModelProviderInstance,
+  surfacedModel: UpstreamModel,
+  publicId: string,
+): void => {
+  const record = providerModelRecord(instance, surfacedModel);
+  const existing = byId.get(publicId);
+  if (!existing) {
+    byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
+    return;
+  }
+  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+  byId.set(publicId, {
+    ...existing,
+    endpoints,
+    kind: kindForEndpoints(endpoints),
+    providers: [...existing.providers, record],
+  });
 };
 
 // Public-facing model-id ordering, applied in getModels() to every list that
@@ -316,13 +338,12 @@ export const resolveModelForRequest = async (
   // lookup only ever sees the stripped, upstream-facing id.
   const { providers: scopedProviders, modelId: scopedId } = restrictProvidersByPrefix(modelId, providers);
 
-  // Per-provider catalog lookup, same shape as enumerateProviderCandidates:
-  // each upstream's catalog is resolved against the bare id via
-  // resolveModelForProvider — which uses the upstream's `getProvidedModels`
-  // entries as-is, regardless of the upstream's `listed` policy. The earlier
-  // collectProviderModels-then-byId path coupled routing to the catalog
-  // listing surface and lost any upstream whose `listed` form did not
-  // include the bare id (e.g. `listed: ['prefixed']`).
+  // Per-provider catalog lookup: each upstream's catalog is resolved against
+  // the bare id via resolveModelForProvider, which uses `getProvidedModels`
+  // entries as-is regardless of the upstream's `listed` policy. Routing
+  // intentionally diverges from the listing surface so an upstream that lists
+  // `['prefixed']` only stays reachable by its bare id within the prefix
+  // scope.
   const settled = await Promise.allSettled(scopedProviders.map(provider =>
     resolveModelForProvider(provider, scopedId, fetcherForUpstream(provider.upstream), scheduler)
       .then(resolved => ({ provider, resolved }))));
@@ -332,8 +353,8 @@ export const resolveModelForRequest = async (
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
-      // Caller-driven cancellation must propagate; see the matching guard
-      // in `collectProviderModels` and `enumerateProviderCandidates`.
+      // Caller-driven cancellation must propagate — do not bury it in
+      // `failedUpstreams`.
       const error = result.reason;
       if (error instanceof Error && error.name === 'AbortError') throw error;
       failedUpstreams.push(scopedProviders[index].name);
@@ -370,16 +391,6 @@ export const resolveModelForRequest = async (
 
   return { id: winningId, model, failedUpstreams };
 };
-
-const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
-  upstream: instance.upstream,
-  upstreamName: instance.name,
-  providerKind: instance.providerKind,
-  provider: instance.provider,
-  upstreamModel,
-  enabledFlags: upstreamModel.enabledFlags,
-  supportsResponsesItemReference: instance.supportsResponsesItemReference,
-});
 
 export const resolveModelForProvider = async (
   instance: ModelProviderInstance,
