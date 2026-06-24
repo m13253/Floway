@@ -49,6 +49,7 @@
       "/auth/*",
       "/v1/*",
       "/v1beta/*",
+      "/completions",
       "/chat/*",
       "/responses",
       "/responses/*",

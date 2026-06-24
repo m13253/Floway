@@ -1,14 +1,15 @@
 // Ollama provider. Builds an UpstreamModel catalog from /api/tags + /api/show
 // (see fetch-models.ts) and routes inference through Ollama's OpenAI-/
 // Anthropic-compat shims at /v1/chat/completions, /v1/responses, /v1/messages,
-// /v1/embeddings — the same paths the cloud (ollama.com) and self-hosted Ollama
-// daemons share. Authentication is a single optional bearer token.
+// /v1/completions, /v1/embeddings — the same paths the cloud (ollama.com) and
+// self-hosted Ollama daemons share. Authentication is a single optional
+// bearer token.
 //
 // Capability → endpoints mapping:
 //   capabilities includes "embedding" → kind: 'embedding',
 //                                       endpoints: { embeddings: {} }
 //   otherwise (chat / vision / tools / thinking) → kind: 'chat',
-//                                       endpoints: { chatCompletions, responses, messages }
+//                                       endpoints: { completions, chatCompletions, responses, messages }
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
@@ -19,7 +20,7 @@
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { ollamaFetchChatCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
+import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
@@ -35,7 +36,7 @@ const rawModelIdOf = (model: UpstreamModel): string => model.providerData as str
 // Vision / tool / thinking capabilities live alongside `embedding` in the
 // /api/show response. Embedding is the only one that drives a different
 // kind/endpoints projection — the others are request-time signals.
-const CHAT_ENDPOINTS: ModelEndpoints = { chatCompletions: {}, responses: {}, messages: {} };
+const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
 const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
@@ -143,6 +144,7 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
       return [...manualModels, ...auto];
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
+    callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {

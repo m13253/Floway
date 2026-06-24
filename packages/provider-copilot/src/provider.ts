@@ -109,6 +109,9 @@ const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string |
 
 const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
+const rejectUnsupported = (capability: string) => (): Promise<never> =>
+  Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
+
 const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
   // variant selection is derived from request fields such as reasoning effort
@@ -292,6 +295,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
+    // Copilot's catalog never declares endpoints.completions, so this
+    // stub is unreachable; the rejection surfaces a routing bug.
+    callCompletions: rejectUnsupported('callCompletions'),
     callChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: ChatCompletionsBoundaryCtx = {
@@ -397,15 +403,10 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return { response, modelKey: rawModel.id };
     },
     callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
-    // Copilot has no /images/... upstream. getProvidedModels never emits a
-    // kind='image' model for Copilot, so these stubs are unreachable; they
-    // exist only to satisfy the ModelProvider interface.
-    callImagesGenerations: () => {
-      throw new Error('Copilot provider does not implement images_generations');
-    },
-    callImagesEdits: () => {
-      throw new Error('Copilot provider does not implement images_edits');
-    },
+    // Copilot has no /images/* upstream; catalog never emits a kind='image'
+    // model, so these stubs are unreachable.
+    callImagesGenerations: rejectUnsupported('callImagesGenerations'),
+    callImagesEdits: rejectUnsupported('callImagesEdits'),
   };
 
   return {

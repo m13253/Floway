@@ -8,8 +8,9 @@
 //   - its acceptBinding gate is `kind === 'embedding'`, satisfied by any
 //     embedding-only custom upstream, with no per-endpoint Copilot setup
 //     required;
-//   - its extractUsage reads OpenAI-style `usage.prompt_tokens`, so a
-//     2xx JSON body with that shape triggers a real usage write;
+//   - its extractBilling reads the OpenAI-style `usage.prompt_tokens` off
+//     a 2xx JSON body, so a body with that shape triggers a real usage
+//     write;
 //   - it shares the exact same forwardUpstreamResponse + scheduleUsageRecord
 //     path as the images endpoints — the behaviors under test are owned by
 //     passthroughServe, not the endpoint shape.
@@ -121,7 +122,7 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with n
     assertEquals(usage.length, 0);
     // The parse failure is observable through console.warn so operators can
     // correlate missing usage rows against upstream body shape regressions.
-    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('passthrough-serve: failed to parse 2xx upstream body for embeddings')), true);
+    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('passthrough-serve: failed to parse 2xx upstream body for /embeddings')), true);
   } finally {
     warnSpy.mockRestore();
   }

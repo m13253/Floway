@@ -1,5 +1,5 @@
 import { assertAzureUpstreamRecord } from './config.ts';
-import { azureFetchChatCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchMessages, azureFetchMessagesCountTokens, azureFetchResponses, azureFetchResponsesCompact } from './fetch.ts';
+import { azureFetchChatCompletions, azureFetchCompletions, azureFetchEmbeddings, azureFetchImagesEdits, azureFetchImagesGenerations, azureFetchMessages, azureFetchMessagesCountTokens, azureFetchResponses, azureFetchResponsesCompact } from './fetch.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
@@ -62,6 +62,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     getPricingForModelKey(modelKey) {
       return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
     },
+    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(azureFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {

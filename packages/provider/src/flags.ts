@@ -78,10 +78,22 @@ export const OPTIONAL_FLAGS = [
     description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
     defaultFor: [],
   },
+  {
+    id: 'demote-interleaved-system-to-user',
+    label: 'Demote interleaved system messages to user',
+    description: "Pick this when the upstream rejects `role: 'system'` after the first non-system message (e.g. DeepSeek-R1). The leading contiguous run of system messages is preserved; any later inline system message has its role rewritten to `user`, with content kept verbatim. For Anthropic Messages — where `payload.system` is conceptually the only first-position system slot — every inline `role: 'system'` message is demoted unconditionally.",
+    defaultFor: [],
+  },
   // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
   // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
   // subscription endpoint reads the placeholder block itself to attribute
   // billing.
+  {
+    id: 'demote-developer-to-system',
+    label: 'Demote developer role to system',
+    description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
+    defaultFor: [],
+  },
   {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',

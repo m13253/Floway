@@ -13,7 +13,7 @@ import type { Context } from 'hono';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { tokenUsageFromImagesResponse } from '../shared/telemetry/usage.ts';
+import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 
 interface ImagesGenerationsRequestBody {
   model?: unknown;
@@ -56,15 +56,14 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'images_generations',
+    sourceApi: '/images/generations',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
     call: (binding, opts) => {
       const { model: _model, ...body } = request.body;
       return binding.provider.callImagesGenerations(binding.upstreamModel, body, undefined, opts);
     },
-    extractUsage: tokenUsageFromImagesResponse,
-    noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
+    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
   return (ctx.dump?.finalize(response) ?? response);
 };
@@ -98,7 +97,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'images_edits',
+    sourceApi: '/images/edits',
     model: modelRaw,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
     call: (binding, opts) => {
@@ -114,8 +113,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       }
       return binding.provider.callImagesEdits(binding.upstreamModel, passthrough, undefined, opts);
     },
-    extractUsage: tokenUsageFromImagesResponse,
-    noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
+    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
   return (ctx.dump?.finalize(response) ?? response);
 };

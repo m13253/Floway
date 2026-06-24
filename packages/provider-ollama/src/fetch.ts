@@ -10,15 +10,6 @@
 import type { OllamaUpstreamConfig } from './config.ts';
 import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
-const OLLAMA_PATHS = {
-  chat_completions: '/v1/chat/completions',
-  responses: '/v1/responses',
-  messages: '/v1/messages',
-  embeddings: '/v1/embeddings',
-  tags: '/api/tags',
-  show: '/api/show',
-} as const;
-
 const ollamaFetchInternal = async (
   config: OllamaUpstreamConfig,
   path: string,
@@ -37,18 +28,20 @@ const ollamaFetchInternal = async (
 };
 
 export const ollamaFetchChatCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.chat_completions, init, options);
+  ollamaFetchInternal(config, '/v1/chat/completions', init, options);
 export const ollamaFetchResponses = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.responses, init, options);
+  ollamaFetchInternal(config, '/v1/responses', init, options);
 export const ollamaFetchResponsesCompact = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, `${OLLAMA_PATHS.responses}/compact`, init, options);
+  ollamaFetchInternal(config, '/v1/responses/compact', init, options);
 export const ollamaFetchMessages = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.messages, init, options);
+  ollamaFetchInternal(config, '/v1/messages', init, options);
 export const ollamaFetchMessagesCountTokens = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, `${OLLAMA_PATHS.messages}/count_tokens`, init, options);
+  ollamaFetchInternal(config, '/v1/messages/count_tokens', init, options);
 export const ollamaFetchEmbeddings = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.embeddings, init, options);
+  ollamaFetchInternal(config, '/v1/embeddings', init, options);
+export const ollamaFetchCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, '/v1/completions', init, options);
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.tags, init, options);
+  ollamaFetchInternal(config, '/api/tags', init, options);
 export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
-  ollamaFetchInternal(config, OLLAMA_PATHS.show, init, options);
+  ollamaFetchInternal(config, '/api/show', init, options);

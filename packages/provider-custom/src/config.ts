@@ -26,13 +26,22 @@ import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/p
 
 export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 
-// Logical endpoints the admin may override. Sub-paths (messages_count_tokens,
-// responses_compact) and the catalog (models — owned by modelsFetch.endpoint)
-// are intentionally absent: they derive their URL from a parent override or
-// a separate field. Kept package-internal because outside callers reach the
-// upstream through the typed `customFetchXxx` transports, not by naming an
-// endpoint key.
-type CustomPathOverrideKey = 'chat_completions' | 'responses' | 'messages' | 'embeddings' | 'images_generations' | 'images_edits';
+// Logical endpoints the admin may override. Sub-paths (the messages
+// count-tokens endpoint, the responses compact endpoint) and the catalog
+// (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
+// they derive their URL from a parent override or a separate field. Each
+// key is the OpenAI-canonical path fragment so the default upstream path
+// is just `/v1` + the key — the lookup table is the key itself. Kept
+// package-internal because outside callers reach the upstream through
+// the typed `customFetchXxx` transports, not by naming an endpoint key.
+type CustomPathOverrideKey =
+  | '/completions'
+  | '/chat/completions'
+  | '/responses'
+  | '/messages'
+  | '/embeddings'
+  | '/images/generations'
+  | '/images/edits';
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -88,7 +97,15 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>(['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits']);
+const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>([
+  '/completions',
+  '/chat/completions',
+  '/responses',
+  '/messages',
+  '/embeddings',
+  '/images/generations',
+  '/images/edits',
+]);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {
   if (value === undefined) return undefined;

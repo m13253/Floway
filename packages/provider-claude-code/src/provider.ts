@@ -90,6 +90,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     // Only /v1/messages is supported; reject any other endpoint loudly so a
     // dispatcher routing bug surfaces instead of a silent shape mismatch.
     callMessagesCountTokens: rejectUnsupported('callMessagesCountTokens'),
+    callCompletions: rejectUnsupported('callCompletions'),
     callChatCompletions: rejectUnsupported('callChatCompletions'),
     callResponses: rejectUnsupported('callResponses'),
     callResponsesCompact: rejectUnsupported('callResponsesCompact'),

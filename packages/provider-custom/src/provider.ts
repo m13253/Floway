@@ -1,6 +1,6 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchChatCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
+import { customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
@@ -177,6 +177,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       return withManual(autoFromResponse(response));
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
+    callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {

@@ -6,7 +6,7 @@ import type { Context } from 'hono';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { tokenUsageFromPromptTokenResponse } from '../shared/telemetry/usage.ts';
+import { tokenUsageFromEmbeddingsBody } from '../shared/telemetry/usage.ts';
 
 interface EmbeddingsRequestBody {
   model?: unknown;
@@ -57,15 +57,14 @@ export const embeddings = async (c: Context): Promise<Response> => {
   const response = await passthroughServe({
     c,
     ctx,
-    sourceApi: 'embeddings',
+    sourceApi: '/embeddings',
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.embeddings !== undefined,
     call: async (binding, opts) => {
       const { model: _model, ...body } = request.body;
       return await binding.provider.callEmbeddings(binding.upstreamModel, body, undefined, opts);
     },
-    extractUsage: tokenUsageFromPromptTokenResponse,
-    noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
+    response: { format: 'json', extractBilling: tokenUsageFromEmbeddingsBody },
   });
   return (ctx.dump?.finalize(response) ?? response);
 };

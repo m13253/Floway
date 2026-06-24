@@ -3,6 +3,7 @@ import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -112,6 +113,12 @@ export interface ModelProvider {
   getProvidedModels(fetcher: Fetcher): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
   getPricingForModelKey(modelKey: string): ModelPricing | null;
+  // /v1/completions text completions. Passthrough. Providers whose
+  // upstream doesn't expose /v1/completions set `endpoints.completions`
+  // to absent in getProvidedModels, so this method is unreachable for
+  // those bindings; the rejecting stubs in those providers are pure
+  // defense-in-depth.
+  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // Same `opts.headers` shape across every protocol so provider impls never
   // branch on the protocol when reading inbound headers. `anthropic-beta`
   // lives on `opts.headers` like any other header; providers that need the

@@ -79,7 +79,7 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
 
   // Chat-only custom upstream. Its /models response advertises gpt-4o
   // (which the id heuristic leaves as the chat fallback), so the model exists
-  // in the registry but no binding accepts an images_generations request.
+  // in the registry but no binding accepts an /images/generations request.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'Chat Only Provider',
