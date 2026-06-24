@@ -1,0 +1,155 @@
+<script setup lang="ts">
+// Editor for an upstream's optional model name prefix. The model is the
+// nullable wire shape; the empty-prefix string represents "no prefix" and
+// projects back to null at the boundary. The pill rows below the input
+// surface the two AddressableForm flags and enforce `listed ⊆ addressable`
+// the same way the control-plane normalize step does on save.
+
+import { computed } from 'vue';
+
+import type { AddressableForm, ModelPrefixConfig } from '../../api/types.ts';
+import { MODEL_PREFIX_REGEX } from '@floway-dev/provider/model-prefix';
+import { Input } from '@floway-dev/ui';
+
+const model = defineModel<ModelPrefixConfig | null>({ required: true });
+
+// Canonical order matches normalizeModelPrefix in @floway-dev/provider so the
+// payload we send is byte-identical to what the backend would synthesize.
+const FORM_ORDER: readonly AddressableForm[] = ['unprefixed', 'prefixed'];
+
+const addressable = computed<AddressableForm[]>(() => model.value?.addressable ?? ['unprefixed']);
+const listed = computed<AddressableForm[]>(() => model.value?.listed ?? []);
+
+const write = (draft: ModelPrefixConfig) => {
+  if (draft.prefix === '') { model.value = null; return; }
+  const aSet = new Set(draft.addressable);
+  const addressableSorted = FORM_ORDER.filter(f => aSet.has(f));
+  const lSet = new Set(draft.listed);
+  const listedSorted = FORM_ORDER.filter(f => aSet.has(f) && lSet.has(f));
+  model.value = { prefix: draft.prefix, addressable: addressableSorted, listed: listedSorted };
+};
+
+const prefixText = computed<string>({
+  get: () => model.value?.prefix ?? '',
+  set: text => write({
+    prefix: text,
+    addressable: model.value?.addressable ?? ['unprefixed'],
+    listed: model.value?.listed ?? ['unprefixed'],
+  }),
+});
+
+const prefixInvalid = computed(() => {
+  const v = prefixText.value;
+  return v !== '' && !MODEL_PREFIX_REGEX.test(v);
+});
+
+const toggleAddressable = (form: AddressableForm) => {
+  if (!model.value) return;
+  const current = new Set(model.value.addressable);
+  if (current.has(form)) {
+    // Refuse to clear the last remaining addressable form — an upstream with
+    // a prefix but no way to route to it is meaningless and the backend
+    // rejects it.
+    if (current.size === 1) return;
+    current.delete(form);
+  } else {
+    current.add(form);
+  }
+  write({ ...model.value, addressable: [...current], listed: [...model.value.listed] });
+};
+
+const toggleListed = (form: AddressableForm) => {
+  if (!model.value) return;
+  if (!model.value.addressable.includes(form)) return;
+  const current = new Set(model.value.listed);
+  if (current.has(form)) current.delete(form);
+  else current.add(form);
+  write({ ...model.value, addressable: [...model.value.addressable], listed: [...current] });
+};
+
+const sampleModel = 'gpt-4o';
+
+const forms: { id: AddressableForm; label: string }[] = [
+  { id: 'unprefixed', label: 'Unprefixed' },
+  { id: 'prefixed', label: 'Prefixed' },
+];
+</script>
+
+<template>
+  <div>
+    <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Model Name Prefix</p>
+    <Input
+      v-model="prefixText"
+      :invalid="prefixInvalid"
+      placeholder="e.g. openrouter/ — leave empty to disable"
+      class="mb-1.5 font-mono"
+    />
+    <p v-if="prefixInvalid" class="text-[11px] text-accent-rose">
+      Must end with <code class="font-mono">/</code> and contain only letters, digits, dots, hyphens, underscores, or slashes.
+    </p>
+    <p v-else class="text-[11px] text-gray-600">
+      Matched as a literal prefix on incoming model ids. Must end with <code class="font-mono">/</code>.
+    </p>
+
+    <template v-if="model && !prefixInvalid">
+      <div class="mt-3 -mx-1">
+        <div class="flex items-center justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5">
+          <div class="min-w-0">
+            <span class="block text-xs text-white">Addressable as</span>
+            <span class="block text-[11px] text-gray-500">forms clients can use to route here</span>
+          </div>
+          <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">
+            <label
+              v-for="form in forms"
+              :key="`addr-${form.id}`"
+              class="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+              :class="addressable.includes(form.id)
+                ? 'border-accent-cyan/40 bg-accent-cyan/15 text-accent-cyan'
+                : 'border-white/10 text-gray-500 hover:bg-white/5'"
+            >
+              <input
+                type="checkbox"
+                class="sr-only"
+                :checked="addressable.includes(form.id)"
+                :disabled="addressable.length === 1 && addressable[0] === form.id"
+                @change="toggleAddressable(form.id)"
+              >
+              <span>{{ form.label }}</span>
+            </label>
+          </fieldset>
+        </div>
+        <div class="flex items-center justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5">
+          <div class="min-w-0">
+            <span class="block text-xs text-white">Show in <code class="font-mono text-gray-400">/v1/models</code></span>
+            <span class="block text-[11px] text-gray-500">hidden forms stay addressable as private aliases</span>
+          </div>
+          <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">
+            <label
+              v-for="form in forms"
+              :key="`list-${form.id}`"
+              class="flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+              :class="[
+                addressable.includes(form.id) ? 'cursor-pointer' : 'cursor-not-allowed opacity-40',
+                listed.includes(form.id) && addressable.includes(form.id)
+                  ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
+                  : 'border-white/10 text-gray-500 hover:bg-white/5',
+              ]"
+            >
+              <input
+                type="checkbox"
+                class="sr-only"
+                :checked="listed.includes(form.id) && addressable.includes(form.id)"
+                :disabled="!addressable.includes(form.id)"
+                @change="toggleListed(form.id)"
+              >
+              <span>{{ form.label }}</span>
+            </label>
+          </fieldset>
+        </div>
+      </div>
+      <p class="mt-2 text-[11px] text-gray-600">
+        Example: <code class="font-mono text-gray-400">{{ sampleModel }}</code>, <code class="font-mono text-gray-400">{{ model.prefix + sampleModel }}</code>
+      </p>
+    </template>
+  </div>
+</template>

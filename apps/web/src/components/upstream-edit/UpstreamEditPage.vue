@@ -20,7 +20,7 @@ import {
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, ModelPrefixConfig, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { providerMeta } from '../upstreams/provider-meta.ts';
@@ -87,6 +87,7 @@ const sortOrder = ref<number>(props.nextSortOrder);
 const flagOverrides = ref<Record<string, boolean>>({});
 const disabledPublicModelIds = ref<string[]>([]);
 const proxyFallbackList = ref<ProxyFallbackEntry[]>([]);
+const modelPrefix = ref<ModelPrefixConfig | null>(null);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
 const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
@@ -110,6 +111,13 @@ const seedFromRecord = (r: UpstreamRecord) => {
   flagOverrides.value = { ...r.flag_overrides };
   disabledPublicModelIds.value = [...r.disabled_public_model_ids];
   proxyFallbackList.value = r.proxy_fallback_list.map(e => ({ id: e.id, ...(e.colos ? { colos: [...e.colos] } : {}) }));
+  modelPrefix.value = r.model_prefix === null
+    ? null
+    : {
+        prefix: r.model_prefix.prefix,
+        addressable: [...r.model_prefix.addressable],
+        listed: [...r.model_prefix.listed],
+      };
 
   if (r.provider === 'custom') {
     const cfg = r.config;
@@ -152,6 +160,7 @@ const seedFresh = () => {
   flagOverrides.value = {};
   disabledPublicModelIds.value = [];
   proxyFallbackList.value = [];
+  modelPrefix.value = null;
   customDraft.value = blankCustomDraft();
   azureDraft.value = blankAzureDraft();
   ollamaDraft.value = blankOllamaDraft();
@@ -344,6 +353,7 @@ const baseFields = () => ({
   flag_overrides: flagOverrides.value,
   disabled_public_model_ids: disabledPublicModelIds.value,
   proxy_fallback_list: proxyFallbackList.value,
+  model_prefix: modelPrefix.value,
 });
 
 const save = async () => {
@@ -542,6 +552,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:flag-overrides="flagOverrides"
         v-model:disabled-ids="disabledPublicModelIds"
         v-model:proxy-fallback-list="proxyFallbackList"
+        v-model:model-prefix="modelPrefix"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"
