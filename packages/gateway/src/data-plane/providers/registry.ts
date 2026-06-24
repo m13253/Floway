@@ -271,8 +271,7 @@ export const getInternalModels = async (
   (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 interface ModelResolution {
-  id: string;
-  model?: ResolvedModel;
+  matches: readonly ProviderModelResolution[];
   // Upstream names whose catalog fetch rejected during this resolution.
   // Threaded out so the caller's failure renderer can mention them
   // parenthetically — same data the dashboard's `modelsCache.lastError`
@@ -281,45 +280,52 @@ interface ModelResolution {
   failedUpstreams: readonly string[];
 }
 
-interface ProviderModelResolution {
+export interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
   binding: ProviderModelRecord;
 }
 
-// Routing primitive that scopes a candidate set to the upstream whose prefix
-// matches the inbound model id, and strips the matched prefix off `modelId`
-// before per-provider resolution. Returns the (possibly shorter) provider list
-// and the bare model id the upstream actually receives.
+export interface ModelInterpretation {
+  provider: ModelProviderInstance;
+  // The bare id to query the upstream's catalog with. Equals the inbound
+  // model id for the unprefixed surface; equals `inbound.slice(prefix.length)`
+  // for the prefixed surface.
+  lookupId: string;
+}
+
+// Expands one inbound model id into every (provider, catalog-lookup-id) pair
+// the upstream registry can interpret it as. A request matches an upstream
+// when the inbound id literally equals one of the public-id surfaces the
+// upstream advertises (bare and/or prefixed, per `modelPrefix.addressable`).
 //
-// The walk is first-wins in `listModelProviders` order (which is `sort_order`
-// from the repo): the first upstream whose `modelPrefix.prefix` is a literal
-// string prefix of `modelId` AND whose addressable forms include the prefixed
-// surface captures the request, and sibling upstreams are not considered — so
-// `or/gpt-4o` never reaches a Copilot upstream that lists `gpt-4o` natively,
-// and an overlap like (`or/`, `or/sub/`) is decided by sort order (NOT longest
-// match).
+// One upstream can produce up to two interpretations: a `[unprefixed]`-
+// addressable upstream contributes a single bare lookup; a `[prefixed]`-only
+// addressable upstream contributes a single stripped lookup (and only when
+// the inbound id starts with `prefix`); a `[unprefixed, prefixed]`-
+// addressable upstream contributes both when the prefix matches. FORM_ORDER
+// puts the bare-lookup interpretation first.
 //
-// When no configured prefix matches, the request is a bare-id call: upstreams
-// that declared the bare form unaddressable (`addressable = ['prefixed']` only)
-// drop out of the candidate set so they cannot serve it. Upstreams with no
-// prefix config remain candidates unconditionally.
-export const restrictProvidersByPrefix = (
+// Three upstreams that happen to advertise the same public id via different
+// constructions (e.g. one with `prefix=aa/` whose catalog has `bb/gpt-5`,
+// one with `prefix=aa/bb/` whose catalog has `gpt-5`, one with no prefix
+// whose catalog has `aa/bb/gpt-5`) all produce a distinct interpretation
+// here and all become candidates downstream.
+export const enumerateModelInterpretations = (
   modelId: string,
   providers: readonly ModelProviderInstance[],
-): { providers: readonly ModelProviderInstance[]; modelId: string } => {
-  for (const instance of providers) {
-    const cfg = instance.modelPrefix;
-    if (!cfg?.addressable.includes('prefixed')) continue;
-    if (!modelId.startsWith(cfg.prefix)) continue;
-    return { providers: [instance], modelId: modelId.slice(cfg.prefix.length) };
+): ModelInterpretation[] => {
+  const out: ModelInterpretation[] = [];
+  for (const provider of providers) {
+    const cfg = provider.modelPrefix;
+    if (cfg === null || cfg.addressable.includes('unprefixed')) {
+      out.push({ provider, lookupId: modelId });
+    }
+    if (cfg !== null && cfg.addressable.includes('prefixed') && modelId.startsWith(cfg.prefix)) {
+      out.push({ provider, lookupId: modelId.slice(cfg.prefix.length) });
+    }
   }
-  // No configured prefix matched. A model id can legitimately contain '/' as
-  // part of its bare upstream catalog id (e.g. Microsoft Foundry router model
-  // ids like 'accounts/msft/routers/x') — the fall-through hands the literal
-  // id to the per-provider lookup, which is what we want.
-  const filtered = providers.filter(p => !p.modelPrefix || p.modelPrefix.addressable.includes('unprefixed'));
-  return { providers: filtered, modelId };
+  return out;
 };
 
 export const resolveModelForRequest = async (
@@ -333,22 +339,17 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  // Apply the prefix policy before the per-upstream walk so a prefixed
-  // request only reaches its owning upstream, and the per-provider catalog
-  // lookup only ever sees the stripped, upstream-facing id.
-  const { providers: scopedProviders, modelId: scopedId } = restrictProvidersByPrefix(modelId, providers);
-
-  // Per-provider catalog lookup: each upstream's catalog is resolved against
-  // the bare id via resolveModelForProvider, which uses `getProvidedModels`
-  // entries as-is regardless of the upstream's `listed` policy. Routing
-  // intentionally diverges from the listing surface so an upstream that lists
-  // `['prefixed']` only stays reachable by its bare id within the prefix
-  // scope.
-  const settled = await Promise.allSettled(scopedProviders.map(provider =>
-    resolveModelForProvider(provider, scopedId, fetcherForUpstream(provider.upstream), scheduler)
+  // Each interpretation is a (provider, lookup-id) pair the inbound id can
+  // address. Per-provider catalog lookup uses the lookup id directly against
+  // `getProvidedModels`, decoupling routing from the upstream's `listed`
+  // policy.
+  const interpretations = enumerateModelInterpretations(modelId, providers);
+  const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
+    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
       .then(resolved => ({ provider, resolved }))));
 
   const failedUpstreams: string[] = [];
+  const failedSeen = new Set<string>();
   const matches: ProviderModelResolution[] = [];
 
   for (const [index, result] of settled.entries()) {
@@ -357,7 +358,13 @@ export const resolveModelForRequest = async (
       // `failedUpstreams`.
       const error = result.reason;
       if (error instanceof Error && error.name === 'AbortError') throw error;
-      failedUpstreams.push(scopedProviders[index].name);
+      // A single upstream may produce multiple interpretations; surface its
+      // failure once.
+      const name = interpretations[index].provider.name;
+      if (!failedSeen.has(name)) {
+        failedSeen.add(name);
+        failedUpstreams.push(name);
+      }
       continue;
     }
     const { resolved } = result.value;
@@ -365,31 +372,7 @@ export const resolveModelForRequest = async (
     matches.push(resolved);
   }
 
-  // Treat a failing upstream as "no models from that upstream right now"
-  // rather than rethrowing its catalog error — other upstreams still route,
-  // and the failed list is handed back so the caller's failure body can name
-  // the affected upstreams.
-  if (matches.length === 0) return { id: scopedId, failedUpstreams };
-
-  // First-wins on the resolved id when per-provider aliases disagree; the
-  // remaining providers that resolved to the same id contribute their
-  // bindings and endpoint capabilities.
-  const winningId = matches[0].id;
-  const winners = matches.filter(m => m.id === winningId);
-  const endpoints = winners.reduce<ModelEndpoints>(
-    (acc, { model }) => unionEndpoints(acc, model.endpoints),
-    {},
-  );
-  const { providerData: _providerData, endpoints: _endpoints, ...internal } = winners[0].model;
-  const model: ResolvedModel = {
-    ...internal,
-    id: winningId,
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-    providers: winners.map(({ binding }) => binding),
-  };
-
-  return { id: winningId, model, failedUpstreams };
+  return { matches, failedUpstreams };
 };
 
 export const resolveModelForProvider = async (

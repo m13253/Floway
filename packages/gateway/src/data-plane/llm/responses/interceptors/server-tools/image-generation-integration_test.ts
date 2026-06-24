@@ -31,11 +31,13 @@ const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: 
 
 vi.mock('../../../../providers/registry.ts', () => ({
   resolveModelForRequest: vi.fn(async () => ({
-    id: 'gpt-image-2',
-    model: {
+    matches: [{
       id: 'gpt-image-2',
-      endpoints: { imagesGenerations: {}, imagesEdits: {} },
-      providers: [{
+      model: {
+        id: 'gpt-image-2',
+        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      },
+      binding: {
         upstream: 'u',
         upstreamModel: { id: 'gpt-image-2', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
         provider: {
@@ -53,8 +55,9 @@ vi.mock('../../../../providers/registry.ts', () => ({
             return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
           },
         },
-      }],
-    },
+      },
+    }],
+    failedUpstreams: [],
   })),
 }));
 

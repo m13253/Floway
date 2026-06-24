@@ -540,8 +540,8 @@ const resolveImageBinding = async (
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
-  const binding = resolution.model?.providers.find(b => b.upstreamModel.endpoints[endpointKey] !== undefined);
-  if (binding === undefined) {
+  const match = resolution.matches.find(m => m.binding.upstreamModel.endpoints[endpointKey] !== undefined);
+  if (match === undefined) {
     return {
       ok: false,
       error: {
@@ -552,7 +552,7 @@ const resolveImageBinding = async (
       },
     };
   }
-  return { ok: true, binding };
+  return { ok: true, binding: match.binding };
 };
 
 // 60s cap matches the per-minute refill window of Azure TPM/RPM and

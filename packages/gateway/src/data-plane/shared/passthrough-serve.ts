@@ -4,8 +4,9 @@
 // matching endpoint and the JSON response is passed through back to the
 // client. The shape is:
 //
-//   resolve model -> iterate provider bindings -> first matching binding
-//     -> provider call -> passthrough response -> fire-and-forget usage + perf
+//   resolve model -> iterate matches -> first match whose binding serves
+//     the endpoint -> provider call -> passthrough response -> fire-and-
+//     forget usage + perf
 //
 // Usage extraction is provided by the caller because each endpoint family
 // reports usage differently. Usage and request-performance writes are
@@ -126,26 +127,30 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    // Telemetry keys on `canonicalId` (post-prefix-strip); user-facing error
-    // bodies echo the inbound `model`.
-    const { id: canonicalId, model: resolved, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
-    if (!resolved) {
+    // Each match is one (upstream, upstream-catalog id) pair that interprets
+    // the inbound public id. Iteration order follows sort_order × FORM_ORDER
+    // (unprefixed before prefixed within a dual-addressable upstream). The
+    // first match whose binding satisfies the endpoint capability wins.
+    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    if (matches.length === 0) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
-    for (const binding of resolved.providers) {
-      if (!bindingServesEndpoint(binding)) continue;
+    for (const match of matches) {
+      if (!bindingServesEndpoint(match.binding)) continue;
 
       const recorder = createUpstreamLatencyRecorder();
-      const { response, modelKey } = await call(binding, {
-        fetcher: fetcherForUpstream(binding.upstream),
+      const { response, modelKey } = await call(match.binding, {
+        fetcher: fetcherForUpstream(match.binding.upstream),
         recordUpstreamLatency: recorder.record,
         waitUntil: ctx.backgroundScheduler,
         headers: inboundHeadersForUpstream(c),
       });
       const upstreamDurationMs = recorder.durationMs();
-      const identity = passthroughTelemetryIdentity(binding, canonicalId, modelKey);
+      // Telemetry keys on `match.id` (the upstream's bare catalog id);
+      // user-facing error bodies echo the inbound `model`.
+      const identity = passthroughTelemetryIdentity(match.binding, match.id, modelKey);
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
         ...identity,
@@ -157,7 +162,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.error('upstream', binding.upstream);
+        ctx.dump?.error('upstream', match.binding.upstream);
         return forwardUpstreamResponse(response);
       }
 
