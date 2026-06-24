@@ -11,9 +11,9 @@
 export type AddressableForm = 'unprefixed' | 'prefixed';
 
 export interface ModelPrefixConfig {
-  readonly prefix: string;
-  readonly addressable: readonly AddressableForm[];
-  readonly listed: readonly AddressableForm[];
+  prefix: string;
+  addressable: AddressableForm[];
+  listed: AddressableForm[];
 }
 
 // Matches a prefix string that is itself a non-empty token (no leading slash,
