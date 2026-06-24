@@ -57,7 +57,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 1);
@@ -77,7 +77,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 0);
@@ -97,7 +97,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 0);
@@ -116,7 +116,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 2);
@@ -136,7 +136,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 2);
@@ -158,7 +158,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 1);
@@ -175,7 +175,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessagesOrResponses,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
     assertEquals(msgCandidates.length, 1);
     assertEquals(msgCandidates[0].targetApi, 'messages');
@@ -185,7 +185,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickResponses,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
     assertEquals(resCandidates.length, 1);
     assertEquals(resCandidates[0].targetApi, 'responses');
@@ -201,7 +201,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickAny,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
     assertEquals(anyCandidates.length, 1);
     assertEquals(anyCandidates[0].targetApi, 'chat-completions');
@@ -211,7 +211,7 @@ describe('enumerateProviderCandidates', () => {
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
-      currentColo: null,
+      currentColo: 'TEST',
     });
     assertEquals(msgCandidates.length, 0);
     // pickTarget filtered out, but the model exists — sawModel stays true.
@@ -230,7 +230,7 @@ describe('enumerateProviderCandidates', () => {
       id: 'up_broken',
       name: 'Broken upstream',
       sortOrder: 1,
-      config: { baseUrl: 'https://broken.example.com', bearerToken: 'sk-x', endpoints: { messages: {} } },
+      config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { messages: {} } },
     }));
     await repo.upstreams.save(azureUpstream('up_ok', 2, ['test-model'], { messages: {} }));
 
@@ -248,7 +248,7 @@ describe('enumerateProviderCandidates', () => {
           model: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,
-          currentColo: null,
+          currentColo: 'TEST',
         });
 
         assertEquals(candidates.length, 1);
@@ -270,13 +270,13 @@ describe('enumerateProviderCandidates', () => {
       id: 'up_a',
       name: 'A',
       sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', bearerToken: 'sk-x', endpoints: { messages: {} } },
+      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { messages: {} } },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_b',
       name: 'B',
       sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', bearerToken: 'sk-x', endpoints: { messages: {} } },
+      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { messages: {} } },
     }));
 
     await withMockedFetch(
@@ -291,7 +291,7 @@ describe('enumerateProviderCandidates', () => {
           model: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,
-          currentColo: null,
+          currentColo: 'TEST',
         });
 
         assertEquals(candidates.length, 0);

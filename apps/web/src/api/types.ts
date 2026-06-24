@@ -50,12 +50,12 @@ export interface CustomRawModel {
 
 export interface CustomUpstreamConfig {
   baseUrl: string;
-  authStyle: 'bearer' | 'anthropic';
+  authStyle: 'bearer' | 'anthropic' | 'none';
   endpoints: ModelEndpoints;
   pathOverrides?: Record<string, string>;
   modelsFetch: CustomModelsFetch;
   models: UpstreamModelConfig[];
-  bearerTokenSet?: boolean;
+  apiKeySet?: boolean;
 }
 
 export interface AzureUpstreamConfig {
@@ -104,7 +104,7 @@ export interface CodexUpstreamConfig {
 
 export interface OllamaUpstreamConfig {
   baseUrl: string;
-  // apiKeySet mirrors customConfig.bearerTokenSet — the wire never carries the
+  // apiKeySet mirrors customConfig.apiKeySet — the wire never carries the
   // real secret, only a flag the dashboard uses to render the "leave blank to
   // keep" hint and the "••••••••" placeholder.
   apiKeySet?: boolean;
@@ -247,9 +247,9 @@ interface UpstreamRecordBase {
   disabled_public_model_ids: string[];
   // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
   // string `'direct'` for "no proxy") and an optional `colos` whitelist that
-  // scopes the entry to specific Cloudflare colos / Node RUNTIME_LOCATION
-  // tags. Empty/missing whitelist means "active in all colos". Empty top-
-  // level list means "always direct".
+  // scopes the entry to specific location tags (Cloudflare colos / the Node
+  // `RUNTIME_LOCATION` env var). Empty/missing whitelist means "active in
+  // all locations". Empty top-level list means "always direct".
   proxy_fallback_list: ProxyFallbackEntry[];
   // Per-upstream model name prefix. When set, this upstream's models can be
   // addressed in two forms (`unprefixed` and `prefixed`) and listed in either
@@ -333,9 +333,10 @@ export interface ControlPlaneModel extends PublicModel {
 }
 
 export interface SearchConfig {
-  provider: 'disabled' | 'tavily' | 'microsoft-grounding';
+  provider: 'disabled' | 'tavily' | 'microsoft-grounding' | 'jina';
   tavily: { apiKey: string };
   microsoftGrounding: { apiKey: string };
+  jina: { apiKey: string };
 }
 
 export interface CopilotQuotaSnapshot {

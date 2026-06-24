@@ -282,6 +282,7 @@ beforeEach(() => {
     provider: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
+    jina: { apiKey: '' },
   } satisfies SearchConfig);
 });
 
@@ -343,8 +344,8 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   apiKeyId,
   upstreamIds: null,
   wantsStream: true,
-  runtimeLocation: 'test',
-  currentColo: null,
+  runtimeLocation: 'TEST',
+  currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
@@ -4491,8 +4492,8 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     apiKeyId: 'k1',
     upstreamIds: null,
     wantsStream: true,
-    runtimeLocation: 'test',
-    currentColo: null,
+    runtimeLocation: 'TEST',
+    currentColo: 'TEST',
     dump: null,
     backgroundScheduler: () => {},
     requestStartedAt: 0,

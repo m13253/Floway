@@ -206,7 +206,8 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
     buildCustomUpstreamRecord({
       config: {
         baseUrl: 'https://custom.example.com',
-        bearerToken: 'sk-custom',
+        authStyle: 'bearer',
+        apiKey: 'sk-custom',
         endpoints: { messages: {} },
       },
     }),
@@ -259,13 +260,13 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', bearerToken: 'sk-first', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { responses: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', bearerToken: 'sk-second', endpoints: { responses: {} } },
+    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { responses: {} } },
   }));
 
   const providers = await listModelProviders(null);
@@ -449,7 +450,7 @@ test('getInternalModels fans out per-upstream catalog fetches in parallel', asyn
       id: u.id,
       name: u.id,
       sortOrder: index,
-      config: { baseUrl: `https://${u.host}`, bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: `https://${u.host}`, authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
     }));
   }
 
@@ -492,19 +493,19 @@ test('getInternalModels: a rejected provider does not block other providers', as
     id: 'up_ok_1',
     name: 'OK 1',
     sortOrder: 1,
-    config: { baseUrl: 'https://ok1.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://ok1.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_broken',
     name: 'Broken',
     sortOrder: 2,
-    config: { baseUrl: 'https://broken.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok_2',
     name: 'OK 2',
     sortOrder: 3,
-    config: { baseUrl: 'https://ok2.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://ok2.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
   }));
 
   await withMockedFetch(
@@ -541,13 +542,13 @@ test('resolveModelForRequest: healthy upstream still resolves alongside a reject
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
   }));
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
-    config: { baseUrl: 'https://ok.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
   }));
 
   await withMockedFetch(
@@ -634,7 +635,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
     }));
 
     await withMockedFetch(
@@ -658,7 +659,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_prefixed',
       sortOrder: 1,
-      config: { baseUrl: 'https://prefixed.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://prefixed.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
       modelPrefix: { prefix: 'or/', addressable: ['prefixed'], listed: ['prefixed'] },
     }));
 
@@ -701,7 +702,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual_addressable',
       sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     }));
 
@@ -738,12 +739,12 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_plain',
       sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://plain.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
     }));
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 2,
-      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
 
@@ -781,7 +782,7 @@ describe('catalog listing under modelPrefix', () => {
     await repo.upstreams.save(buildCustomUpstreamRecord({
       id: 'up_dual',
       sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', bearerToken: 'sk-x', endpoints: { chatCompletions: {} } },
+      config: { baseUrl: 'https://dual.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { chatCompletions: {} } },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
       disabledPublicModelIds: ['gpt-4o'],
     }));
