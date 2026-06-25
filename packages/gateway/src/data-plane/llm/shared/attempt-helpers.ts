@@ -43,15 +43,10 @@ export const buildUpstreamCallOptions = (
 // otherwise the events stream is wrapped with upstream telemetry and flows on
 // with both the telemetry identity and the context.
 //
-// Latency contract by branch:
-//   - ok=true: a real upstream call happened; durationMs MUST be present,
-//     so we assert it before threading into the success telemetry path.
-//   - ok=false: an upstream call MAY have happened (non-2xx from an actual
-//     upstream) or MAY NOT (a request-side 400 the provider short-circuited
-//     at the gateway before any fetch). The duration is whatever the
-//     recorder happens to know — passed through to recordUpstreamHttpFailure,
-//     which records the latency on the failure metric when present and skips
-//     it when null.
+// The recorder enters via the ok=true branch only: success requires a real
+// upstream round-trip, so durationMs is asserted at use. The ok=false
+// branch carries no latency today — the failure metric scope is counter-only
+// — and so doesn't consult the recorder.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ProviderCandidate,
@@ -60,7 +55,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
-    recordUpstreamHttpFailure(ctx, context, recorder.durationMs());
+    recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   return eventResult(

@@ -46,6 +46,11 @@ export const recordRequestPerformance = (
   scheduler(failed ? recordPerformanceError(context, 'request_total') : recordPerformanceLatency(context, 'request_total', durationMs));
 };
 
+export interface UpstreamLatencyRecorder {
+  record: <T>(promise: Promise<T>) => Promise<T>;
+  durationMs: () => number | null;
+}
+
 // Gateway-side counterpart to `UpstreamCallOptions.recordUpstreamLatency`
 // (see the contract docstring on that interface). Mints a fresh `record`
 // for one provider call and reports back whether the wrap happened and
@@ -53,8 +58,8 @@ export const recordRequestPerformance = (
 // per-call hooks added to the options bag don't expand the recorder's
 // surface.
 //
-// `durationMs()` honestly returns `null` when the provider never wrapped
-// a fetch. Consumers decide what the absence means:
+// `durationMs()` returns `null` when the provider never wrapped a fetch.
+// Consumers decide what the absence means:
 //   - success-path consumers MUST treat null as a bug (a real upstream
 //     call must instrument its round-trip),
 //   - failure-path consumers may receive null because the provider
@@ -66,7 +71,7 @@ export const recordRequestPerformance = (
 // "you forgot to wrap" error attached to the exact line that depends on
 // the value.
 export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
-  let last: number | undefined;
+  let last: number | null = null;
   return {
     record: <T>(promise: Promise<T>): Promise<T> => {
       const startedAt = performance.now();
@@ -74,14 +79,9 @@ export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
         last = performance.now() - startedAt;
       });
     },
-    durationMs: (): number | null => last ?? null,
+    durationMs: () => last,
   };
 };
-
-export interface UpstreamLatencyRecorder {
-  record: <T>(promise: Promise<T>) => Promise<T>;
-  durationMs: () => number | null;
-}
 
 // Asserts a recorded duration; throws if the wrap never happened. Use at
 // any call site whose semantics require the value (every success-side

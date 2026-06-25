@@ -65,11 +65,10 @@ const byModelPreference = (a: CopilotRawModel, b: CopilotRawModel): number => {
 const firstPreferred = (models: readonly CopilotRawModel[]): CopilotRawModel | undefined => [...models].sort(byModelPreference)[0];
 
 // A narrowing filter that rolls back to the original pool when it would empty
-// it — the cascade stays best-effort so a hint that can't be satisfied does
-// not lose the work the prior hints already did. Fast Mode is a hard
-// constraint at the callMessages entry: by the time selection runs, the
-// caller has already 400'd if no -fast variant exists, so the rollback here
-// is dead weight on that path but keeps selection a pure function over hints.
+// it. Keeps selection best-effort over hints so a unit caller that bypasses
+// the entry-point pre-check still gets a reasonable answer; in production
+// Fast Mode is a hard constraint at the callMessages entry and the rollback
+// is unreachable there.
 const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawModel) => boolean): readonly CopilotRawModel[] => {
   const filtered = pool.filter(predicate);
   return filtered.length > 0 ? filtered : pool;
@@ -82,10 +81,10 @@ const chooseClaudeVariant = (candidates: readonly CopilotRawModel[], exactBase: 
   }
 
   // Fast Mode narrows the pool first because it has the strongest contract.
-  // 1m and effort then layer on top: 1m runs as an explicit branch (it pairs
-  // the 1m filter with effort and falls back to bare-1m on miss), while the
+  // 1m and effort then layer on top: 1m runs as an explicit branch (pair
+  // the 1m filter with effort, fall back to bare-1m on miss); the
   // effort-only branch implicitly prefers 1m variants within its narrowed
-  // pool because 1m models historically advertise broader effort coverage.
+  // pool because 1m models tend to advertise broader effort coverage.
   const pool = hints.fast ? narrow(candidates, supportsFastMode) : candidates;
 
   if (hints.context1m) {
@@ -114,8 +113,4 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
   return chooseClaudeVariant(candidates, exactBase, hints);
 };
 
-// Whether the public Copilot model has a Fast Mode raw variant available.
-// Used by the Messages entry point to short-circuit with a 400 before
-// boundary work begins, mirroring Anthropic's contract that Fast Mode is
-// never silently downgraded.
 export const copilotModelSupportsFastMode = (rawModels: readonly CopilotRawModel[]): boolean => rawModels.some(supportsFastMode);

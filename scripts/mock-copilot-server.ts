@@ -19,8 +19,7 @@
 // How to use:
 //
 //   1. Start the mock:
-//        pnpm run mock:copilot
-//      (which runs `jiti scripts/mock-copilot-server.ts`).
+//        pnpm exec jiti scripts/mock-copilot-server.ts
 //
 //   2. Patch ONE line in `packages/provider-copilot/src/auth.ts` so the
 //      token exchange goes to this server instead of api.github.com:
