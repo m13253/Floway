@@ -259,7 +259,7 @@ const updateFlagOverrides = (values: Record<string, boolean>) => {
 // (ReasoningEffort::Custom(String)) so any string is accepted upstream;
 // these are just the convenient quick-adds. See:
 // https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs
-const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ultra'] as const;
+const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 // Free-typing input for adding a custom reasoning level not in the quick-add list.
 const reasoningLevelInput = ref('');
