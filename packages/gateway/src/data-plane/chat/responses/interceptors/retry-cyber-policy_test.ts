@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import type { ResponsesInvocation } from './types.ts';
+import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -45,6 +46,7 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
   ...overrides,

@@ -16,6 +16,7 @@ import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.t
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -348,6 +349,7 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
@@ -4497,6 +4499,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     currentColo: 'TEST',
     dump: null,
     backgroundScheduler: () => {},
+    c: stubAuthedContext(),
     responseHeaders: new Headers(),
     requestStartedAt: 0,
     abortSignal: controller.signal,

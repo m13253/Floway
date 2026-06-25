@@ -4,6 +4,7 @@ import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/stor
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { applyAliasRulesToResponses } from '../../model-aliases/apply.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -48,10 +49,10 @@ export const responsesServe = {
     });
     if (plan.kind === 'failure') return plan.result;
     // Operator-locked alias rules apply to the prepared inbound IR before
-    // the attempt runs; the `x-floway-alias` header rides out via
-    // ctx.responseHeaders.
+    // the attempt runs; the `x-floway-alias` header is staged via Hono's
+    // `c.header` so it survives `streamSSE`'s internal `c.newResponse`.
     if (plan.candidate.aliasRules) applyAliasRulesToResponses(plan.prepared, plan.candidate.aliasRules);
-    if (plan.candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', plan.candidate.aliasName);
+    if (plan.candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', plan.candidate.aliasName);
     const effectiveSnapshotMode: ResponsesSnapshotMode = snapshotMode !== 'none' && containsCompactionTrigger(plan.prepared.input)
       ? 'replace'
       : snapshotMode;
@@ -73,7 +74,7 @@ export const responsesServe = {
     // applying uniformly keeps the operator's intent expressed at the
     // inbound boundary regardless of which endpoint runs.
     if (plan.candidate.aliasRules) applyAliasRulesToResponses(plan.prepared, plan.candidate.aliasRules);
-    if (plan.candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', plan.candidate.aliasName);
+    if (plan.candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', plan.candidate.aliasName);
     return await responsesAttempt.compact({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers });
   },
 };

@@ -19,6 +19,7 @@ import {
 } from './image-generation.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
+import { stubAuthedContext } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../../items/store.ts';
 import type { ResponsesInvocation } from '../types.ts';
@@ -56,6 +57,7 @@ const gatewayCtx = (): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
 });

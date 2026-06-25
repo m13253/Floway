@@ -10,5 +10,5 @@ CREATE TABLE model_aliases (
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
-INSERT INTO model_aliases (alias, target_model_id, rules_json, on_conflict)
+INSERT OR IGNORE INTO model_aliases (alias, target_model_id, rules_json, on_conflict)
 VALUES ('codex-auto-review', 'gpt-5.4', '{"reasoning":{"effort":"low"}}', 'real-only');

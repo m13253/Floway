@@ -5,6 +5,7 @@ import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatef
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
+import { stubAuthedContext } from '../../../test-helpers/gateway-ctx.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -57,6 +58,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
 });

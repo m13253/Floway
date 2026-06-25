@@ -4,6 +4,7 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState, recordPerformance, recordUsage } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubAuthedContext } from '../../../test-helpers/gateway-ctx.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -45,6 +46,7 @@ const setup = (): Harness => {
       dump: null,
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
+      c: stubAuthedContext(),
       responseHeaders: new Headers(),
     }),
   };

@@ -13,9 +13,11 @@ interface ModelAliasRow {
 
 // The model_aliases table is operator-managed and small (dozens of rows at
 // most), so the data plane reads the full table per request — no cache layer.
+// `ORDER BY alias` makes the read deterministic so `/v1/models` and friends
+// emit alias entries in a stable, operator-predictable order across runtimes.
 export const loadAllAliases = async (db: SqlDatabase): Promise<readonly ModelAlias[]> => {
   const { results } = await db
-    .prepare('SELECT alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at FROM model_aliases')
+    .prepare('SELECT alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at FROM model_aliases ORDER BY alias')
     .all<ModelAliasRow>();
   return results.map(toModelAlias);
 };

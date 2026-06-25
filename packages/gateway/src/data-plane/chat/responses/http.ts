@@ -16,6 +16,23 @@ import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider'
 // performance telemetry, and usage accounting all see the real model name
 // (and the `low` reasoning effort the alias implies — generate only;
 // compact carries no `reasoning` field).
+//
+// This shim predates the operator-managed alias table seeded by migration
+// `0046_model_aliases.sql`. The two paths overlap on `/v1/responses` —
+// rewriting at this entry swaps the inbound `model` to `gpt-5.4` BEFORE the
+// alias matcher in `enumerateProviderCandidates` runs, so the alias row
+// never matches for this surface. The carveout is deliberate: the seeded
+// alias is stored with `on_conflict='real-only'`, which means on a Codex
+// upstream that exposes a real `codex-auto-review` model the alias would
+// silently lose to the real id and the `reasoning.effort=low` rule would
+// never apply — breaking parity with Codex CLI's native auto-review
+// behavior. Other inbound surfaces (`/v1/messages`, `/v1/chat/completions`,
+// `/v1beta/…`) carry no entry-level shim and reach the alias matcher
+// unchanged; they observe `real-only` semantics as designed.
+//
+// The shim is a temporary carveout pending a follow-up that either deletes
+// it after a deliberate Codex behavior change (e.g. switching to
+// `both-alias-first`) or migrates the entire surface to the alias table.
 const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoningEffort: boolean): ResponsesPayload => {
   if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
   if (!stampReasoningEffort) return { ...payload, model: CODEX_AUTO_REVIEW_TARGET };

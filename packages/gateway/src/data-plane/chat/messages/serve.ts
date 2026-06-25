@@ -6,6 +6,7 @@ import { applyAliasRulesToMessages } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -59,10 +60,10 @@ export const messagesServe = {
     // Operator-locked alias rules go onto the inbound IR before the attempt
     // begins so the per-protocol interceptor chain (and any downstream
     // translate pass) sees the already-injected fields. The matching
-    // `x-floway-alias` response header is staged on the gateway-stamped
-    // header set; the http wrapper flushes it onto the outgoing Response.
+    // `x-floway-alias` header is staged via Hono's `c.header` so it
+    // survives `streamSSE`'s internal `c.newResponse`.
     if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
-    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
+    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await messagesAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
@@ -96,7 +97,7 @@ export const messagesServe = {
     // rules apply uniformly regardless of endpoint, and the response header
     // rides out the same way.
     if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
-    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
+    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await messagesAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

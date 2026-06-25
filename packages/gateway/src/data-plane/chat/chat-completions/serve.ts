@@ -6,6 +6,7 @@ import { applyAliasRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -50,9 +51,10 @@ export const chatCompletionsServe = {
     }
     // Apply operator-locked alias rules to the inbound IR before the
     // attempt runs its interceptor chain. The matching `x-floway-alias`
-    // header rides out via ctx.responseHeaders.
+    // header is staged via Hono's `c.header` so it survives `streamSSE`'s
+    // internal `c.newResponse`.
     if (candidate.aliasRules) applyAliasRulesToChatCompletions(payload, candidate.aliasRules);
-    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
+    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 };

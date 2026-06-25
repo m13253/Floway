@@ -6,6 +6,7 @@ import { applyAliasRulesToGemini } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -60,10 +61,10 @@ export const geminiServe = {
       );
     }
     // Operator-locked alias rules apply to the Gemini IR before the attempt
-    // runs; the matching `x-floway-alias` header rides out via
-    // ctx.responseHeaders.
+    // runs; the matching `x-floway-alias` header is staged via Hono's
+    // `c.header` so it survives `streamSSE`'s internal `c.newResponse`.
     if (candidate.aliasRules) applyAliasRulesToGemini(payload, candidate.aliasRules);
-    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
+    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await geminiAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
@@ -97,7 +98,7 @@ export const geminiServe = {
       );
     }
     if (candidate.aliasRules) applyAliasRulesToGemini(payload, candidate.aliasRules);
-    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
+    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await geminiAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

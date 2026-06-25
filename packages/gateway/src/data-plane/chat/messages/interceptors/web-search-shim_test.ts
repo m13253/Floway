@@ -13,6 +13,7 @@ import {
 } from './web-search-shim.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../../tools/web-search/search-config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
@@ -58,6 +59,7 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
 });

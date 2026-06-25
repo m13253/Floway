@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -405,6 +406,51 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
           status: 'UNAVAILABLE',
         },
       });
+    },
+  );
+});
+
+// Gemini's `Model` resource is closed (no `aliasedFrom` extension), so the
+// `/v1beta/models` surface advertises an alias entry as a synthetic Gemini
+// model carrying the alias id and the target's display fields. This test
+// guards the synthetic shape — name, displayName, supportedGenerationMethods
+// — so a future refactor of `loadGeminiModels` cannot silently drop the
+// alias entries.
+test('/v1beta/models appends visible aliases as synthetic Gemini model entries', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-gemini-list',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-gemini-list', display_name: 'GPT Gemini List' }]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = await response.json() as { models: Array<{ name: string; displayName: string; supportedGenerationMethods: string[] }> };
+      const aliasEntry = body.models.find(m => m.name === 'models/codex-auto-review');
+      if (!aliasEntry) throw new Error('expected codex-auto-review alias entry');
+      assertEquals(aliasEntry.displayName, 'codex-auto-review');
+      assertEquals(aliasEntry.supportedGenerationMethods, ['generateContent', 'streamGenerateContent', 'countTokens']);
     },
   );
 });

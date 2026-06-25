@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesInvocation } from './types.ts';
+import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -16,6 +17,7 @@ const stubCtx: GatewayCtx = {
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  c: stubAuthedContext(),
   responseHeaders: new Headers(),
   requestStartedAt: 0,
 };
