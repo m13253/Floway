@@ -51,8 +51,8 @@ const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | nul
   return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
 };
 
-// Pure function over already-resolved inputs. Tests can call this directly
-// with fixtures, avoiding mocks for the fetcher chain and scheduler.
+// Pure function over already-resolved inputs — the request handler does the
+// I/O, this does the catalog shape.
 export const computeCatalog = (
   bundled: CodexCatalog,
   internalModels: readonly InternalModel[],
@@ -75,8 +75,8 @@ export const computeCatalog = (
     if (im.kind !== 'chat') continue;
     const hit = matchBundled(im.id);
     if (hit) {
-      // Bundled reuse: clone, override slug + display_name with the public id /
-      // registry display name so the Codex picker selects the right value.
+      // Override slug so the Codex picker keys on the public id, not the
+      // matched bundled segment.
       const cloned: CatalogModel = { ...hit, slug: im.id };
       if (im.display_name !== undefined) cloned.display_name = im.display_name;
       // Registry-derived tiers win over bundled; bundled chatgpt.com today emits
@@ -97,7 +97,7 @@ export const computeCatalog = (
   }
   if (aliasActive) {
     const aliasEntry = bundledBySlug.get(CODEX_AUTO_REVIEW_ALIAS);
-    if (aliasEntry) models.push({ ...aliasEntry });   // slug stays as alias literal
+    if (aliasEntry) models.push({ ...aliasEntry });
   }
   const slugContextWindow = new Map<string, number>();
   for (const m of internalModels) {

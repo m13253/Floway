@@ -23,8 +23,7 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
   // request-time: Codex CLI sends `reasoning.effort` from the global default, and
   // Floway's translation layer maps that effort value into the appropriate upstream
   // representation (e.g. Anthropic `thinking.budget_tokens`). The catalog simply doesn't
-  // surface effort pickers for models that don't support effort-tiered reasoning — which
-  // is the right UX.
+  // surface effort pickers for models that don't support effort-tiered reasoning.
   const supportedReasoning = model.chat?.reasoning?.effort?.supported ?? [];
   const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
   const contextWindow = model.limits.max_context_window_tokens;
