@@ -120,8 +120,6 @@ export const geminiFunctionResponsePart = (part: GeminiPart, ids: GeminiToolCall
 // Reasoning effort is freeform on the inbound IRs (per Goal 2: never gate
 // operator-typed values), but the gateway publishes a canonical closed set so
 // translate-side mappers can normalize without rewriting unknown values.
-// References:
-// - docs/superpowers/specs/2026-06-25-model-aliases-design.md (Translate Layer)
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): ReasoningEffort | undefined => {

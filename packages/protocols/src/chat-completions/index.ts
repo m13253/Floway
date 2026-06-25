@@ -30,15 +30,15 @@ export interface ChatCompletionsPayload {
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
   stream_options?: { include_usage: boolean } | null;
-  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
   thinking_budget?: number;
-  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
   adaptive_thinking?: boolean;
-  /** Floway protocol extension. Translated to OpenAI Responses `reasoning.summary` / Anthropic `thinking.display` / Gemini `thinkingConfig.includeThoughts` when routed to those upstreams; dropped on OpenAI Chat targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to OpenAI Responses `reasoning.summary` / Anthropic `thinking.display` / Gemini `thinkingConfig.includeThoughts` when routed to those upstreams; dropped on OpenAI Chat targets. */
   reasoning_summary?: string;
-  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. */
   anthropic_speed?: string;
-  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. */
   anthropic_beta?: readonly string[];
 }
 

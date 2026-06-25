@@ -6,9 +6,9 @@ export interface GeminiPayload {
   generationConfig?: GeminiGenerationConfig;
   safetySettings?: GeminiSafetySetting[];
   cachedContent?: string;
-  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. */
   anthropicSpeed?: string;
-  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. */
   anthropicBeta?: readonly string[];
 }
 
@@ -42,9 +42,9 @@ export interface GeminiGenerationConfig {
   responseMimeType?: string;
   responseSchema?: unknown;
   thinkingConfig?: GeminiThinkingConfig;
-  /** Floway protocol extension. Translated to OpenAI Chat `verbosity` / Responses `text.verbosity` when routed to those upstreams; dropped on Anthropic Messages and Gemini targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to OpenAI Chat `verbosity` / Responses `text.verbosity` when routed to those upstreams; dropped on Anthropic Messages and Gemini targets. */
   verbosity?: string;
-  /** Floway protocol extension. Translated to OpenAI Chat `service_tier` / Responses `service_tier` / Anthropic `service_tier` when routed to those upstreams; dropped on Gemini targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  /** Floway protocol extension. Translated to OpenAI Chat `service_tier` / Responses `service_tier` / Anthropic `service_tier` when routed to those upstreams; dropped on Gemini targets. */
   serviceTier?: string;
 }
 

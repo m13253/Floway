@@ -193,7 +193,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   // slots. `anthropic_beta` is body-side residue that the per-upstream
   // sanitizer strips after translation; the gateway-side rule-apply pass owns
   // moving its value onto the outbound `anthropic-beta` header before the
-  // upstream call. See docs/superpowers/specs/2026-06-25-model-aliases-design.md.
+  // upstream call.
   const thinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,

@@ -114,7 +114,6 @@ export interface PublicModel {
   // gateway appends to the listing. Clients that do not know about the
   // field ignore it; alias-aware clients (dashboard, CLI shims) render the
   // alias's target id and rules from this payload directly.
-  // See docs/superpowers/specs/2026-06-25-model-aliases-design.md.
   aliasedFrom?: PublicModelAliasedFrom;
 }
 

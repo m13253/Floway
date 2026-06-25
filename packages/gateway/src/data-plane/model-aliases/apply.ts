@@ -8,8 +8,7 @@ import { mapSummaryToAnthropicDisplay } from '@floway-dev/translate/via-messages
 // Each function writes the alias rules into the inbound IR's slot best suited
 // to the host protocol: native when the protocol can express the concept,
 // extension otherwise. Writes overwrite any user-supplied value — aliases are
-// operator-locked per Goal 3. Mapping table is the single source of truth in
-// docs/superpowers/specs/2026-06-25-model-aliases-design.md.
+// operator-locked.
 
 export const applyAliasRulesToChatCompletions = (payload: ChatCompletionsPayload, rules: ModelAliasRules): void => {
   // reasoning.effort is native; budget/adaptive/summary ride on extension slots
