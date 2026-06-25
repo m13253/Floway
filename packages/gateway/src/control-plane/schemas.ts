@@ -635,3 +635,73 @@ export const performanceQuery = z.object({
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
 });
+
+// --- model aliases ---
+//
+// Operator-managed alias rows wired through `/api/aliases`. The schemas
+// describe the request bodies the dashboard sends; deeper invariants
+// (the alias's target model exists in the catalog, the upstream ids
+// resolve, etc.) are intentionally NOT enforced here — an alias is allowed
+// to point at a target that is currently absent so an operator can pre-
+// stage the row before the upstream is registered, mirroring how the
+// catalog tolerates pending references.
+
+// Mirror the public model-id grammar: letters, digits, `_ . : - / `. Matches
+// the surface ids the dashboard already accepts in the models picker and the
+// `/v1/models` listing, so an alias name is interchangeable with a real id at
+// the request boundary.
+export const MODEL_ALIAS_PATTERN = /^[A-Za-z0-9_.:\-/]+$/;
+
+const aliasNameSchema = z.string().min(1).regex(MODEL_ALIAS_PATTERN, 'alias must be 1+ chars of [A-Za-z0-9_.:-/]');
+
+// Rule field values pass through to the upstream verbatim — the gateway
+// deliberately does not enum-gate operator input here. The Goal-2 contract
+// is that a freshly added enum upstream-side ships through without a
+// gateway code change, so we validate shape (non-empty string, in-range
+// number) but never set membership.
+const aliasReasoningSchema = z.object({
+  effort: z.string().min(1).optional(),
+  budgetTokens: z.number().int().nonnegative().optional(),
+  adaptive: z.boolean().optional(),
+  summary: z.string().min(1).optional(),
+}).strict().refine(
+  r => r.effort !== undefined || r.budgetTokens !== undefined || r.adaptive !== undefined || r.summary !== undefined,
+  { message: 'reasoning must declare at least one of effort, budgetTokens, adaptive, summary' },
+);
+
+const aliasRulesSchema = z.object({
+  reasoning: aliasReasoningSchema.optional(),
+  verbosity: z.string().min(1).optional(),
+  serviceTier: z.string().min(1).optional(),
+  // Each beta header token is a non-empty string. Empty arrays are accepted
+  // (the dashboard sends `[]` when the operator clears every tag) and are
+  // semantically equivalent to omitting the field.
+  anthropicBeta: z.array(z.string().min(1)).optional(),
+}).strict();
+
+const onConflictSchema = z.enum(['alias-only', 'real-only', 'both-real-first', 'both-alias-first']);
+const upstreamIdsSchema = z.array(z.string().min(1));
+
+export const createAliasBody = z.object({
+  alias: aliasNameSchema,
+  targetModelId: z.string().min(1),
+  upstreamIds: upstreamIdsSchema,
+  rules: aliasRulesSchema,
+  visibleInModelsList: z.boolean(),
+  // Defaults to `'real-only'` server-side when omitted so the dashboard's
+  // "create" form does not have to ship a default — the route layer fills it.
+  onConflict: onConflictSchema.optional(),
+  displayName: z.string().min(1).optional(),
+});
+
+// PATCH accepts a partial shape. `displayName` is nullable so the operator
+// can clear an existing label back to the synthesized fallback; absent vs.
+// null is meaningful and propagated through to the handler via Object.hasOwn.
+export const updateAliasBody = z.object({
+  targetModelId: z.string().min(1).optional(),
+  upstreamIds: upstreamIdsSchema.optional(),
+  rules: aliasRulesSchema.optional(),
+  visibleInModelsList: z.boolean().optional(),
+  onConflict: onConflictSchema.optional(),
+  displayName: z.string().min(1).nullable().optional(),
+});
