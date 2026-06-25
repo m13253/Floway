@@ -39,9 +39,9 @@ const selectedUiId = ref<string | null>(null);
 // and must keep shadowing it). Pure-manual rows have no such constraint.
 const lockedUpstreamId = reactive(new Set<string>());
 
-// Per-row validity reported by ModelEditor. Only the selected row is ever
-// mounted, so we track a single slot — when the selection changes the
-// previous row's validity is no longer observable and is removed.
+// Validity entries persist across row selection changes — switching away
+// from an invalid row keeps it in the map so save stays blocked. Entries
+// are dropped only when the row itself is removed.
 const rowValidity = reactive(new Map<string, boolean>());
 
 const onRowValidityChange = (uiId: string, valid: boolean) => {

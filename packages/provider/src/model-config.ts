@@ -260,6 +260,7 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
     };
   }
   if (value.reasoning !== undefined) out.reasoning = reasoningField(value.reasoning, `${label}.reasoning`);
+  if (out.modalities === undefined && out.reasoning === undefined) return undefined;
   return out;
 };
 
