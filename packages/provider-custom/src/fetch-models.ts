@@ -12,7 +12,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
-import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -78,124 +78,6 @@ const parseKind = (value: unknown): ModelKind | undefined => {
   return undefined;
 };
 
-// Chat metadata types and parsing. Mirrored from the provider package's model-config.ts.
-// These are defined locally here because custom provider is permissive about chat fields,
-// treating them as best-effort metadata rather than structured configuration.
-
-type Modality = 'text' | 'image';
-
-interface UpstreamChatModelConfig {
-  modalities?: {
-    input: readonly Modality[];
-    output: readonly Modality[];
-  };
-  reasoning?: {
-    effort?: { supported: readonly string[]; default: string };
-    budget_tokens?: { min?: number; max?: number };
-    adaptive?: boolean;
-    mandatory?: boolean;
-  };
-}
-
-const MODALITY_VALUES: ReadonlySet<Modality> = new Set(['text', 'image']);
-
-const modalityArrayField = (value: unknown): readonly Modality[] => {
-  if (!Array.isArray(value)) throw new Error('must be an array');
-  const out: Modality[] = [];
-  for (const entry of value) {
-    if (typeof entry !== 'string' || !MODALITY_VALUES.has(entry as Modality)) {
-      throw new Error(`unknown modality ${JSON.stringify(entry)}`);
-    }
-    if (!out.includes(entry as Modality)) out.push(entry as Modality);
-  }
-  if (out.length === 0) throw new Error('must have at least one modality');
-  return out;
-};
-
-const inputModalitiesField = (value: unknown): readonly Modality[] => {
-  const modalities = modalityArrayField(value);
-  if (!modalities.includes('text')) throw new Error('must include text');
-  return modalities;
-};
-
-const parseChat = (value: unknown): UpstreamChatModelConfig | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('must be an object');
-  const record = value as Record<string, unknown>;
-  const out: UpstreamChatModelConfig = {};
-
-  if (record.modalities !== undefined) {
-    if (typeof record.modalities !== 'object' || record.modalities === null || Array.isArray(record.modalities)) {
-      throw new Error('modalities must be an object');
-    }
-    const mod = record.modalities as Record<string, unknown>;
-    out.modalities = {
-      input: inputModalitiesField(mod.input),
-      output: modalityArrayField(mod.output),
-    };
-  }
-
-  if (record.reasoning !== undefined) {
-    if (typeof record.reasoning !== 'object' || record.reasoning === null || Array.isArray(record.reasoning)) {
-      throw new Error('reasoning must be an object');
-    }
-    const reasoning = record.reasoning as Record<string, unknown>;
-    const result: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
-
-    if (reasoning.effort !== undefined) {
-      if (typeof reasoning.effort !== 'object' || reasoning.effort === null || Array.isArray(reasoning.effort)) {
-        throw new Error('effort must be an object');
-      }
-      const effort = reasoning.effort as Record<string, unknown>;
-      if (!Array.isArray(effort.supported)) throw new Error('effort.supported must be an array');
-      const supported: string[] = [];
-      for (const eff of effort.supported) {
-        if (typeof eff !== 'string' || eff.length === 0) throw new Error('effort.supported must contain non-empty strings');
-        if (!supported.includes(eff)) supported.push(eff);
-      }
-      if (supported.length === 0) throw new Error('effort.supported must have at least one entry');
-      if (typeof effort.default !== 'string' || effort.default.length === 0) {
-        throw new Error('effort.default must be a non-empty string');
-      }
-      if (!supported.includes(effort.default)) {
-        throw new Error(`effort.default not in effort.supported`);
-      }
-      result.effort = { supported, default: effort.default };
-    }
-
-    if (reasoning.budget_tokens !== undefined) {
-      if (typeof reasoning.budget_tokens !== 'object' || reasoning.budget_tokens === null || Array.isArray(reasoning.budget_tokens)) {
-        throw new Error('budget_tokens must be an object');
-      }
-      const bt = reasoning.budget_tokens as Record<string, unknown>;
-      const min = (typeof bt.min === 'number' && Number.isInteger(bt.min) && bt.min >= 0) ? bt.min : undefined;
-      const max = (typeof bt.max === 'number' && Number.isInteger(bt.max) && bt.max >= 0) ? bt.max : undefined;
-      if (min !== undefined && max !== undefined && max < min) {
-        throw new Error('budget_tokens.max must be >= min');
-      }
-      result.budget_tokens = { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}) };
-    }
-
-    if (reasoning.adaptive !== undefined) {
-      if (typeof reasoning.adaptive !== 'boolean') throw new Error('adaptive must be a boolean');
-      if (reasoning.adaptive) result.adaptive = true;
-    }
-
-    if (reasoning.mandatory !== undefined) {
-      if (typeof reasoning.mandatory !== 'boolean') throw new Error('mandatory must be a boolean');
-      if (reasoning.mandatory) result.mandatory = true;
-    }
-
-    if (!result.effort && !result.budget_tokens && !result.adaptive && !result.mandatory) {
-      throw new Error('reasoning must have at least one of effort, budget_tokens, adaptive, mandatory');
-    }
-
-    out.reasoning = result;
-  }
-
-  return Object.keys(out).length > 0 ? out : undefined;
-};
-
 const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (!isRecord(value)) return null;
   if (typeof value.id !== 'string' || value.id === '') return null;
@@ -218,7 +100,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (kind !== undefined) model.kind = kind;
   // Attempt to parse chat metadata; silently skip on malformed data.
   try {
-    const chat = parseChat(value.chat);
+    const chat = chatField(value.chat, `${value.id}.chat`);
     if (chat !== undefined) model.chat = chat;
   } catch {
     // Permissive: if chat field is malformed, skip it and continue.
