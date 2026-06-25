@@ -1,6 +1,7 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
+import { getRepo } from '../../../repo/index.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -25,9 +26,11 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      aliases,
       pickTarget: endpoints =>
         endpoints.messages ? 'messages'
           : endpoints.responses ? 'responses'
@@ -57,9 +60,11 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
+    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      aliases,
       pickTarget: endpoints => endpoints.messages ? 'messages' : null,
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,

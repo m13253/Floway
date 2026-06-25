@@ -1,6 +1,7 @@
 import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
+import { getRepo } from '../../../repo/index.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -30,9 +31,11 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, model, headers } = args;
+    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
+      aliases,
       // Gemini has no native upstream target in the provider API; prefer
       // Chat Completions, then Messages, then Responses.
       pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
@@ -60,9 +63,11 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, model, headers } = args;
+    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
+      aliases,
       // Gemini countTokens has no native upstream support; only providers
       // exposing the Messages endpoint qualify because we translate Gemini
       // → Messages and call Messages count_tokens upstream.

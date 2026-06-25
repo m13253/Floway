@@ -1,5 +1,7 @@
 import { fetchUpstreamModelsCached } from './models-cache.ts';
+import type { ModelAlias, ModelAliasRules } from '../../control-plane/model-aliases/types.ts';
 import { getRepo } from '../../repo/index.ts';
+import { matchAlias } from '../model-aliases/match.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -289,8 +291,22 @@ export interface ModelInterpretation {
   provider: ModelProviderInstance;
   // The bare id to query the upstream's catalog with. Equals the inbound
   // model id for the unprefixed surface; equals `inbound.slice(prefix.length)`
-  // for the prefixed surface.
+  // for the prefixed surface. For an alias-rewrite interpretation it equals
+  // the matched alias's `targetModelId`.
   lookupId: string;
+  // Operator-locked request-time rules carried alongside an alias-rewrite
+  // interpretation. Set only when this interpretation is the alias-rewrite
+  // half of a matched alias; the real-name interpretation in the same
+  // `conflictGroup` (and every non-aliased interpretation) leaves this
+  // undefined.
+  aliasRules?: ModelAliasRules;
+  // The alias name as authored by the operator. Set in lockstep with
+  // `aliasRules` and carried out for the `x-floway-alias` response header.
+  aliasName?: string;
+  // Identity-keyed group shared by the two interpretations a single
+  // `onConflict: 'real-only'` alias emits. The post-resolution prune uses
+  // this to drop the alias-rewrite member when both halves resolved.
+  conflictGroup?: { readonly originalLookupId: string };
 }
 
 // Expands one inbound model id into every (provider, catalog-lookup-id) pair
@@ -298,21 +314,74 @@ export interface ModelInterpretation {
 // when the inbound id literally equals one of the public-id surfaces the
 // upstream advertises (bare and/or prefixed, per `modelPrefix.addressable`).
 // The unprefixed interpretation is always pushed first when both apply.
+//
+// Each (provider, lookupId) candidate is then matched against the global
+// alias table — semantic P, post-prefix-strip — and the matched alias's
+// `onConflict` decides whether to push the real-name interpretation, the
+// alias-rewrite interpretation, or both (in either order). When neither
+// the alias nor the alias's target id is exposed by the upstream catalog,
+// the fan-out still emits both interpretations and resolution simply
+// drops the half that misses.
 export const enumerateModelInterpretations = (
   modelId: string,
   providers: readonly ModelProviderInstance[],
+  aliases: readonly ModelAlias[],
 ): ModelInterpretation[] => {
   const out: ModelInterpretation[] = [];
   for (const provider of providers) {
     const cfg = provider.modelPrefix;
     if (cfg === null || cfg.addressable.includes('unprefixed')) {
-      out.push({ provider, lookupId: modelId });
+      pushInterpretation(out, provider, modelId, aliases);
     }
     if (cfg !== null && cfg.addressable.includes('prefixed') && modelId.startsWith(cfg.prefix)) {
-      out.push({ provider, lookupId: modelId.slice(cfg.prefix.length) });
+      pushInterpretation(out, provider, modelId.slice(cfg.prefix.length), aliases);
     }
   }
   return out;
+};
+
+const pushInterpretation = (
+  out: ModelInterpretation[],
+  provider: ModelProviderInstance,
+  lookupId: string,
+  aliases: readonly ModelAlias[],
+): void => {
+  const hit = matchAlias(lookupId, provider.upstream, aliases);
+  if (!hit) {
+    out.push({ provider, lookupId });
+    return;
+  }
+  const { alias } = hit;
+  const aliasInterp: ModelInterpretation = {
+    provider,
+    lookupId: alias.targetModelId,
+    aliasRules: alias.rules,
+    aliasName: alias.alias,
+  };
+  const realInterp: ModelInterpretation = { provider, lookupId };
+  switch (alias.onConflict) {
+  case 'alias-only':
+    out.push(aliasInterp);
+    return;
+  case 'real-only': {
+    // Both halves enter the resolution pass; the post-resolution prune
+    // drops the alias-rewrite member when the real-name resolved too.
+    // Identity-keyed group so the prune step can rejoin them without
+    // re-deriving an alias key.
+    const group = { originalLookupId: lookupId };
+    out.push({ ...realInterp, conflictGroup: group });
+    out.push({ ...aliasInterp, conflictGroup: group });
+    return;
+  }
+  case 'both-real-first':
+    out.push(realInterp);
+    out.push(aliasInterp);
+    return;
+  case 'both-alias-first':
+    out.push(aliasInterp);
+    out.push(realInterp);
+    return;
+  }
 };
 
 // Fan out per-interpretation against the SWR cache and collect the resolved
@@ -321,21 +390,26 @@ export const enumerateModelInterpretations = (
 // per-caller divergence (passthrough vs LLM-candidate shape) happens after
 // this returns. Cancellation (`AbortError`) propagates so the per-request
 // abort signal cannot be masked by a slow upstream's rejection.
+//
+// Each successful resolution carries its source `interpretation` back to
+// the caller so the alias-rewrite metadata (`aliasRules`, `aliasName`)
+// rides through to the candidate, and so the `real-only` post-resolution
+// prune can rejoin the two halves of a conflict group.
 export const collectInterpretationOutcomes = async (
   interpretations: readonly ModelInterpretation[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  resolutions: Array<{ interpretation: ModelInterpretation; provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
   failedUpstreams: string[];
 }> => {
-  const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
-    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
-      .then(resolved => ({ provider, resolved }))));
+  const settled = await Promise.allSettled(interpretations.map(interpretation =>
+    resolveModelForProvider(interpretation.provider, interpretation.lookupId, fetcherForUpstream(interpretation.provider.upstream), scheduler)
+      .then(resolved => ({ interpretation, resolved }))));
 
   const failedUpstreams: string[] = [];
   const failedSeen = new Set<string>();
-  const resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
+  const resolutions: Array<{ interpretation: ModelInterpretation; provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -350,12 +424,36 @@ export const collectInterpretationOutcomes = async (
       }
       continue;
     }
-    const { provider, resolved } = result.value;
+    const { interpretation, resolved } = result.value;
     if (!resolved) continue;
-    resolutions.push({ provider, resolved });
+    resolutions.push({ interpretation, provider: interpretation.provider, resolved });
   }
 
-  return { resolutions, failedUpstreams };
+  // `onConflict: 'real-only'`: when both halves of a conflict group
+  // resolved, drop the alias-rewrite half so the real-name match is the
+  // only one downstream sees. When only the alias-rewrite half resolved
+  // (the upstream has no model named after the alias itself), keep it —
+  // the operator's intent is to fall back to the alias when no real model
+  // collides.
+  const droppedInterpretations = new Set<ModelInterpretation>();
+  const byGroup = new Map<{ readonly originalLookupId: string }, ModelInterpretation[]>();
+  for (const { interpretation } of resolutions) {
+    const group = interpretation.conflictGroup;
+    if (!group) continue;
+    const list = byGroup.get(group) ?? [];
+    list.push(interpretation);
+    byGroup.set(group, list);
+  }
+  for (const members of byGroup.values()) {
+    if (members.length < 2) continue;
+    const aliasRewriteMember = members.find(i => i.aliasRules !== undefined);
+    if (aliasRewriteMember) droppedInterpretations.add(aliasRewriteMember);
+  }
+
+  return {
+    resolutions: resolutions.filter(r => !droppedInterpretations.has(r.interpretation)),
+    failedUpstreams,
+  };
 };
 
 export const resolveModelForRequest = async (
@@ -363,13 +461,14 @@ export const resolveModelForRequest = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  aliases: readonly ModelAlias[] = [],
 ): Promise<ModelResolution> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  const interpretations = enumerateModelInterpretations(modelId, providers);
+  const interpretations = enumerateModelInterpretations(modelId, providers, aliases);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
   return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };

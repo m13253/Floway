@@ -1,6 +1,7 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
+import { getRepo } from '../../../repo/index.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -18,9 +19,11 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      aliases,
       pickTarget: endpoints =>
         endpoints.chatCompletions ? 'chat-completions'
           : endpoints.messages ? 'messages'

@@ -54,6 +54,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -74,6 +75,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -94,6 +96,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -113,6 +116,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -133,6 +137,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: ['up_c', 'up_a'],
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -155,6 +160,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -172,6 +178,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates: msgCandidates } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessagesOrResponses,
       scheduler: testScheduler,
@@ -182,6 +189,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates: resCandidates } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickResponses,
       scheduler: testScheduler,
@@ -198,6 +206,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates: anyCandidates } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickAny,
       scheduler: testScheduler,
@@ -208,6 +217,7 @@ describe('enumerateProviderCandidates', () => {
 
     const { candidates: msgCandidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
+      aliases: [],
       model: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
@@ -245,6 +255,7 @@ describe('enumerateProviderCandidates', () => {
       async () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
+          aliases: [],
           model: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,
@@ -288,6 +299,7 @@ describe('enumerateProviderCandidates', () => {
       async () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
+          aliases: [],
           model: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,

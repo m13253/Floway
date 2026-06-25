@@ -7,6 +7,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ModelAliasesRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -34,6 +35,8 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
+import { loadAllAliases } from '../control-plane/model-aliases/repo.ts';
+import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -1599,6 +1602,7 @@ export class SqlRepo implements Repo {
   proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  modelAliases: ModelAliasesRepo;
 
   constructor(db: SqlDatabase) {
     this.users = new SqlUsersRepo(db);
@@ -1614,5 +1618,14 @@ export class SqlRepo implements Repo {
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
+    this.modelAliases = new SqlModelAliasesRepo(db);
+  }
+}
+
+class SqlModelAliasesRepo implements ModelAliasesRepo {
+  constructor(private db: SqlDatabase) {}
+
+  loadAll(): Promise<readonly ModelAlias[]> {
+    return loadAllAliases(this.db);
   }
 }

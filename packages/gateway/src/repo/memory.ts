@@ -13,6 +13,7 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ModelAliasesRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -39,6 +40,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
+import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -896,6 +898,7 @@ export class InMemoryRepo implements Repo {
   proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  modelAliases: ModelAliasesRepo;
 
   constructor() {
     this.users = new MemoryUsersRepo();
@@ -911,5 +914,21 @@ export class InMemoryRepo implements Repo {
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
+    this.modelAliases = new MemoryModelAliasesRepo();
+  }
+}
+
+// Test-only in-memory backing for the alias table. The list starts empty
+// and can be reseeded via `setAll` so tests exercising alias-resolution
+// behavior do not depend on a live SQL database.
+export class MemoryModelAliasesRepo implements ModelAliasesRepo {
+  private rows: readonly ModelAlias[] = [];
+
+  loadAll(): Promise<readonly ModelAlias[]> {
+    return Promise.resolve(this.rows);
+  }
+
+  setAll(rows: readonly ModelAlias[]): void {
+    this.rows = rows;
   }
 }

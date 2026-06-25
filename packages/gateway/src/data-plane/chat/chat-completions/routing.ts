@@ -1,13 +1,13 @@
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatCandidate } from '../shared/candidates.ts';
 import type { RoutingDecision } from '../shared/routing.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export const planChatCompletionsRouting = async (input: {
   readonly payload: ChatCompletionsPayload;
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ChatCandidate[];
   readonly store: StatefulResponsesStore;
 }): Promise<RoutingDecision> =>
   await classifyResponsesItemAffinity({

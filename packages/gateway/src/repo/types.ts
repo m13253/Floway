@@ -1,3 +1,4 @@
+import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
@@ -332,4 +333,11 @@ export interface Repo {
   proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  modelAliases: ModelAliasesRepo;
+}
+
+// Operator-managed alias table; small (dozens of rows at most) and read
+// per request, so the repo deliberately exposes only a full-table fetch.
+export interface ModelAliasesRepo {
+  loadAll(): Promise<readonly ModelAlias[]>;
 }

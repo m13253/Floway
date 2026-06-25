@@ -1,7 +1,8 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { enumerateProviderCandidates, type ProviderCandidate } from '../shared/candidates.ts';
+import { getRepo } from '../../../repo/index.ts';
+import { enumerateProviderCandidates, type ChatCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -72,7 +73,7 @@ const stageUserInputItems = async (input: ResponsesPayload['input'], store: Stat
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate };
+  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ChatCandidate };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
@@ -88,9 +89,11 @@ export const prepareResponsesServePlan = async (args: {
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx, store, pickTarget } = args;
   const prepared = await expandPreviousResponseId(payload, store);
+  const aliases = await getRepo().modelAliases.loadAll();
   const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
+    aliases,
     pickTarget,
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
