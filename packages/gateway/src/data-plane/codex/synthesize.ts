@@ -3,6 +3,7 @@
 // `openai/codex`'s OpenAiModelsManager deserializes; fields we do not
 // opinionate on are filled with safe baselines.
 
+import { SYNTHESIZED_BASE_INSTRUCTIONS } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
 const BASELINE_TRUNCATION = { mode: 'tokens', limit: 10000 } as const;
@@ -45,7 +46,7 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     supported_in_api: true,
     reasoning_summary_format: 'none',
     default_reasoning_summary: 'none',
-    base_instructions: '',
+    base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
     effective_context_window_percent: 95,
     experimental_supported_tools: [],
     additional_speed_tiers: [],

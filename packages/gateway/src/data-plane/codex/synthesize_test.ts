@@ -29,6 +29,12 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 10000 });
     expect(entry.visibility).toBe('list');
     expect(entry.priority).toBe(0);
+    // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
+    // openai/codex's gpt-5.5 entry) — see synthesized-base-instructions.ts.
+    // Test the opening line so a future refresh that mangles the file gets
+    // caught without re-asserting all ~20KB on every run.
+    expect(typeof entry.base_instructions).toBe('string');
+    expect((entry.base_instructions as string).startsWith('You are Codex, a coding agent running in the Codex CLI.')).toBe(true);
   });
 
   test('falls back to id for display_name when absent', () => {
