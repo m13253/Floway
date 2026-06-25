@@ -44,6 +44,13 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     default_verbosity: null,
     prefer_websockets: true,
     supported_in_api: true,
+    // ModelInfo (codex-rs/protocol/src/openai_models.rs) requires
+    // `supports_reasoning_summaries: bool` and `apply_patch_tool_type:
+    // Option<...>` to be present; absence aborts deserialization of the
+    // whole `/models` body and codex silently falls back to its bundled
+    // catalog — wiping out every synthesized entry.
+    supports_reasoning_summaries: false,
+    apply_patch_tool_type: null,
     reasoning_summary_format: 'none',
     default_reasoning_summary: 'none',
     base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
