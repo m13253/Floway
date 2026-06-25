@@ -92,14 +92,30 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
   callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
+  callResponsesCompact?: (model: unknown, body: unknown) => Promise<{ ok: true; result: import('@floway-dev/protocols/responses').ResponsesResult; modelKey: string } | { ok: false; response: Response; modelKey: string }>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
+  const callResponsesGen = overrides.callResponses;
+  const callResponsesCompactFn = overrides.callResponsesCompact;
   const provider = stubProvider({
-    callResponses: overrides.callResponses,
-    ...(overrides.callResponsesCompact !== undefined ? { callResponsesCompact: overrides.callResponsesCompact as never } : {}),
+    callResponses: (callResponsesGen || callResponsesCompactFn)
+      ? async (model, body, action, signal, opts) => {
+        if (action === 'compact') {
+          if (!callResponsesCompactFn) throw new Error('compact called but no callResponsesCompact stub provided');
+          const res = await callResponsesCompactFn(model, body);
+          return res.ok
+            ? { action: 'compact' as const, ok: true as const, result: res.result, modelKey: res.modelKey }
+            : { action: 'compact' as const, ok: false as const, response: res.response, modelKey: res.modelKey };
+        }
+        if (!callResponsesGen) throw new Error('generate called but no callResponses stub provided');
+        const stream = await callResponsesGen(model, body, signal, opts);
+        return stream.ok
+          ? { action: 'generate' as const, ok: true as const, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate' as const, ok: false as const, response: stream.response, modelKey: stream.modelKey };
+      }
+      : undefined,
   });
   return {
     provider: {

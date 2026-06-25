@@ -338,6 +338,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
     ...overrides.payload,
   } as ResponsesPayload,
   headers: new Headers(),
+  action: 'generate',
 });
 
 const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({

@@ -1,6 +1,13 @@
 import { type CallCodexResponsesOptions, callCodexResponses } from './fetch.ts';
 import type { ResponsesCompactPayload, ResponsesInputItem, ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, type ProviderCompactionResult } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse } from '@floway-dev/provider';
+
+// Internal shape of the helper's return value. The boundary handler in
+// provider.ts re-tags this onto the unified `ProviderResponsesResult`
+// (`action: 'compact'`) before returning to the gateway.
+export type CodexCompactionCallResult =
+  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
 
 export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponsesOptions, 'body'> {
   body: Omit<ResponsesCompactPayload, 'model' | 'store'>;
@@ -13,7 +20,7 @@ export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponse
 // /responses call (refresh + 429 quota + 401 retry), drain the SSE frames,
 // and reshape via the shared `compactionResponse` helper so the envelope
 // matches the Copilot path.
-export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<ProviderCompactionResult> => {
+export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<CodexCompactionCallResult> => {
   const originalInput: ResponsesInputItem[] = typeof opts.body.input === 'string'
     ? [{ type: 'message', role: 'user', content: opts.body.input }]
     : opts.body.input;

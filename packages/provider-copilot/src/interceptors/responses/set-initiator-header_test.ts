@@ -17,6 +17,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 test('Responses initiator is user when the last input item is a plain user message', async () => {

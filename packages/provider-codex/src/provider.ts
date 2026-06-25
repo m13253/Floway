@@ -9,8 +9,7 @@ import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
@@ -102,17 +101,33 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: new Headers(opts.headers),
         model,
+        action,
       };
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderStreamResult<ResponsesStreamEvent>>(
-        ctx, {}, codexResponsesChain<ProviderStreamResult<ResponsesStreamEvent>>(), async () => {
+      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
+        ctx, {}, codexResponsesChain<ProviderResponsesResult>(), async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await callCodexResponses({
+          if (ctx.action === 'compact') {
+            const compactResult = await callCodexResponsesCompact({
+              upstreamId: record.id,
+              account,
+              model,
+              body: wireBody,
+              headers: ctx.headers,
+              signal,
+              effects,
+              call: opts,
+            });
+            return compactResult.ok
+              ? { action: 'compact', ok: true, result: compactResult.result, modelKey: compactResult.modelKey }
+              : { action: 'compact', ok: false, response: compactResult.response, modelKey: compactResult.modelKey };
+          }
+          const streamResult = await callCodexResponses({
             upstreamId: record.id,
             account,
             model,
@@ -122,30 +137,9 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
             effects,
             call: opts,
           });
-        },
-      );
-    },
-
-    callResponsesCompact: async (model, body, signal, opts) => {
-      const ctx: ResponsesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-      };
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
-        ctx, {}, codexResponsesChain<ProviderCompactionResult>(), async () => {
-          const { account } = await readActiveAccount();
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          return await callCodexResponsesCompact({
-            upstreamId: record.id,
-            account,
-            model,
-            body: wireBody,
-            headers: ctx.headers,
-            signal,
-            effects,
-            call: opts,
-          });
+          return streamResult.ok
+            ? { action: 'generate', ok: true, events: streamResult.events, modelKey: streamResult.modelKey, ...(streamResult.headers ? { headers: streamResult.headers } : {}) }
+            : { action: 'generate', ok: false, response: streamResult.response, modelKey: streamResult.modelKey };
         },
       );
     },

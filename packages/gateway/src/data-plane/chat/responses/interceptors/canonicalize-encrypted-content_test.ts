@@ -31,6 +31,7 @@ const invocation = (): ResponsesInvocation => ({
     stageInputs: false,
   }),
   headers: new Headers(),
+  action: 'generate',
 });
 
 const result = (response: { status: 'completed'; output: unknown[] }) => (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>

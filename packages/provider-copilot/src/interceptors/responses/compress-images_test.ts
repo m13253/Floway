@@ -22,6 +22,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 const firstImageUrl = (payload: ResponsesPayload): string => {

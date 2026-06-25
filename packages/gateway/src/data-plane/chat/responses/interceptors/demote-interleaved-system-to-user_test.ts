@@ -44,6 +44,7 @@ const invocation = (
     stageInputs: false,
   }),
   headers: new Headers(),
+  action: 'generate',
 });
 
 test('leaves the payload untouched when the flag is not set', async () => {

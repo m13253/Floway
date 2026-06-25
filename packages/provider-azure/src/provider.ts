@@ -64,8 +64,13 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     },
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
-    callResponses: (model, body, signal, opts) => callStreaming(azureFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
-    callResponsesCompact: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
+      if (action === 'generate') {
+        const stream = await callStreaming(azureFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
       const upstreamModelId = providerData(model).upstreamModelId;
       const response = await azureFetchResponsesCompact(
         azure.config,
@@ -73,8 +78,8 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
         { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
       );
       return response.ok
-        ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
-        : { ok: false, response, modelKey: upstreamModelId };
+        ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
+        : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
     },
     callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, opts.headers, opts),

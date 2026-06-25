@@ -27,6 +27,7 @@ const invocation = (): ResponsesBoundaryCtx => ({
   },
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 const collect = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {

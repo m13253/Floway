@@ -179,8 +179,13 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
-    callResponses: (model, body, signal, opts) => callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
-    callResponsesCompact: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
+      if (action === 'generate') {
+        const stream = await callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
       rememberPricingForModel(model);
       const rawModelId = rawModelIdOf(model);
       const response = await customFetchResponsesCompact(
@@ -189,8 +194,8 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
         { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
       );
       return response.ok
-        ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-        : { ok: false, response, modelKey: rawModelId };
+        ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+        : { action: 'compact', ok: false, response, modelKey: rawModelId };
     },
     callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),

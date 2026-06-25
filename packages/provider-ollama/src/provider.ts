@@ -146,8 +146,13 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
     callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
-    callResponses: (model, body, signal, opts) => callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts),
-    callResponsesCompact: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
+      if (action === 'generate') {
+        const stream = await callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
       const rawModelId = rawModelIdOf(model);
       const response = await ollamaFetchResponsesCompact(
         config,
@@ -155,8 +160,8 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
         { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
       );
       return response.ok
-        ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-        : { ok: false, response, modelKey: rawModelId };
+        ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+        : { action: 'compact', ok: false, response, modelKey: rawModelId };
     },
     callMessages: (model, body, signal, opts) => callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchMessagesCountTokens, model, body, signal, opts),

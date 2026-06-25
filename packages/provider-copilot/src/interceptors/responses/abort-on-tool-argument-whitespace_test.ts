@@ -26,6 +26,7 @@ const invocation = (): ResponsesBoundaryCtx => ({
   },
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 const stubRequest = {};

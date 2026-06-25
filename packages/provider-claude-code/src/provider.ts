@@ -93,7 +93,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     callCompletions: rejectUnsupported('callCompletions'),
     callChatCompletions: rejectUnsupported('callChatCompletions'),
     callResponses: rejectUnsupported('callResponses'),
-    callResponsesCompact: rejectUnsupported('callResponsesCompact'),
     callEmbeddings: rejectUnsupported('callEmbeddings'),
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),
     callImagesEdits: rejectUnsupported('callImagesEdits'),

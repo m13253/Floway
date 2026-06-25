@@ -173,11 +173,10 @@ const handleClientMessage = async (
       model: payload.model,
     });
     const store = session.createStore(payload.store ?? undefined);
-    const snapshotMode = 'append';
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, store, snapshotMode, headers: inboundHeadersForUpstream(c) });
+      result = await responsesServe.generate({ payload, ctx, store, snapshotMode: 'append', headers: inboundHeadersForUpstream(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
