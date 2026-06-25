@@ -50,7 +50,6 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     // catalog — wiping out every synthesized entry.
     supports_reasoning_summaries: false,
     apply_patch_tool_type: null,
-    reasoning_summary_format: 'none',
     default_reasoning_summary: 'none',
     base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
     effective_context_window_percent: 95,
