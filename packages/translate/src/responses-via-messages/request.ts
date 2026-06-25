@@ -337,14 +337,26 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   // facets that target the structured thinking slot survive the legacy
   // disable shortcut. Native `reasoning.summary` does not surface onto
   // Messages — the Responses-native vocabulary keeps its pre-existing
-  // translation contract and rides the upstream sanitizer. `service_tier`
-  // is native on both protocols and propagates verbatim.
+  // translation contract and rides the upstream sanitizer.
   const extensionThinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,
   });
   const disabledThinking = effort === 'none' ? { type: 'disabled' as const } : undefined;
   const thinking = extensionThinking ?? disabledThinking;
+
+  // `service_tier: 'fast'` from the Responses caller maps to Anthropic's
+  // `speed: 'fast'`; all other defined service_tier values pass through as
+  // `service_tier` on the Messages wire (Anthropic accepts 'auto',
+  // 'standard_only', and future literals). An explicit `anthropic_speed`
+  // from the alias-extension layer rides through independently and may
+  // co-set `speed`.
+  const serviceTierFields: Partial<MessagesPayload> =
+    payload.service_tier === 'fast'
+      ? { speed: 'fast' }
+      : payload.service_tier != null
+        ? { service_tier: payload.service_tier }
+        : {};
 
   // Responses `metadata` is intentionally omitted on the Messages path;
   // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
@@ -361,8 +373,8 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     tool_choice: translateToolChoice(payload.tool_choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
-    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
     ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
+    ...serviceTierFields,
   };
 
   return { target, customToolNames };

@@ -278,6 +278,12 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
 
+  // `speed: 'fast'` maps to Chat Completions `service_tier: 'fast'`; other
+  // non-fast `speed` values have no OpenAI equivalent and are dropped. When
+  // `speed` is absent, Anthropic's own `service_tier` ('auto'/'standard_only')
+  // is passed through verbatim for symmetry with the forward direction.
+  const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
+
   return {
     model: payload.model,
     messages: translateMessagesInput(payload.messages, payload.system),
@@ -291,6 +297,7 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
     tool_choice: translateMessagesToolChoice(payload.tool_choice, clientTools),
     ...(responseFormat ? { response_format: responseFormat } : {}),
     ...(payload.verbosity != null ? { verbosity: payload.verbosity } : {}),
+    ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };
 

@@ -500,16 +500,15 @@ test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no
     max_tokens: 256,
     messages: [{ role: 'user', content: 'hi' }],
     thinking: { type: 'enabled', budget_tokens: 4096, display: 'summarized' },
-    speed: 'fast',
   });
 
-  // Only the OpenAI-canonical effort axis survives; budget_tokens, display,
-  // and speed have no Chat-completions equivalent and the translate function
-  // emits nothing for them. (The sanitizer would strip anything anyway.)
+  // Only the OpenAI-canonical effort axis survives; budget_tokens and display
+  // have no Chat-completions equivalent and the translate function emits
+  // nothing for them. (The sanitizer would strip anything anyway.) `speed`
+  // has its own bridge test below and is intentionally excluded here.
   assertEquals(result.reasoning_effort, 'medium');
   assertEquals('thinking_budget' in result, false);
   assertEquals('reasoning_summary' in result, false);
-  assertEquals('speed' in result, false);
   assertEquals('anthropic_speed' in result, false);
 });
 
@@ -521,4 +520,60 @@ test('translateMessagesToChatCompletions does not emit verbosity when the extens
   });
 
   assertEquals('verbosity' in result, false);
+});
+
+// ── speed ↔ service_tier bridge ──
+
+test('translateMessagesToChatCompletions maps speed:fast to service_tier:fast on the outbound Chat Completions payload', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    speed: 'fast',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'fast');
+});
+
+test('translateMessagesToChatCompletions omits service_tier when speed is absent', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertFalse('service_tier' in result);
+});
+
+test('translateMessagesToChatCompletions drops speed values other than fast without emitting service_tier', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    speed: 'standard',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertFalse('service_tier' in result);
+});
+
+test('translateMessagesToChatCompletions forwards Anthropic service_tier to Chat Completions when speed is absent', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'auto',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'auto');
+});
+
+test('translateMessagesToChatCompletions forwards service_tier:standard_only to Chat Completions when speed is absent', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'standard_only',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'standard_only');
 });

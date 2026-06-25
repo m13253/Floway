@@ -200,6 +200,18 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     reasoningSummary: payload.reasoning_summary,
   });
 
+  // `service_tier: 'fast'` from the Chat Completions caller maps to
+  // Anthropic's `speed: 'fast'`; all other defined service_tier values
+  // pass through as `service_tier` on the Messages wire. An explicit
+  // `anthropic_speed` from the alias-extension layer rides through
+  // independently and may co-set `speed`.
+  const serviceTierFields: Partial<MessagesPayload> =
+    payload.service_tier === 'fast'
+      ? { speed: 'fast' }
+      : payload.service_tier != null
+        ? { service_tier: payload.service_tier }
+        : {};
+
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
@@ -219,7 +231,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...(thinking ? { thinking } : {}),
     ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
-    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
+    ...serviceTierFields,
   };
 };
 

@@ -6,6 +6,51 @@ import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToo
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
+const minimalPayload = {
+  model: 'claude-test',
+  input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
+  instructions: null,
+  temperature: null,
+  top_p: null,
+  max_output_tokens: 256,
+  tools: null,
+  tool_choice: 'auto' as const,
+  metadata: null,
+  stream: null,
+  store: false,
+  parallel_tool_calls: true,
+};
+
+// ── service_tier → speed mapping ──
+
+test('translateResponsesToMessages maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
+  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'fast' });
+
+  assertEquals(result.target.speed, 'fast');
+  assertFalse('service_tier' in result.target);
+});
+
+test('translateResponsesToMessages passes service_tier:priority through as service_tier (no speed override)', async () => {
+  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'priority' });
+
+  assertEquals(result.target.service_tier, 'priority');
+  assertFalse('speed' in result.target);
+});
+
+test('translateResponsesToMessages passes service_tier:auto through as service_tier', async () => {
+  const result = await translateResponsesToMessages({ ...minimalPayload, service_tier: 'auto' });
+
+  assertEquals(result.target.service_tier, 'auto');
+  assertFalse('speed' in result.target);
+});
+
+test('translateResponsesToMessages omits both speed and service_tier when service_tier is absent', async () => {
+  const result = await translateResponsesToMessages(minimalPayload);
+
+  assertFalse('speed' in result.target);
+  assertFalse('service_tier' in result.target);
+});
+
 test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
   const result = await translateResponsesToMessages({
     model: 'claude-test',
