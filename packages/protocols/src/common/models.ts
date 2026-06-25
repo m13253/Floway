@@ -136,6 +136,28 @@ export interface PublicModelAliasedFrom {
   onConflict: 'alias-only' | 'real-only' | 'both-real-first' | 'both-alias-first';
 }
 
+// Per-rule short labels for the closed knob set an alias may lock. Returned
+// in the deterministic order the dashboard and the synthesized display name
+// both render, so the order an operator sees stays stable across surfaces
+// regardless of how the JSON key order arrived. Each entry is meant to render
+// as its own badge in the dashboard `/models` row and is joined with `, ` to
+// build the parenthesized rules summary the gateway appends when an alias has
+// no explicit `displayName`.
+export const formatAliasRuleBadges = (rules: PublicModelAliasedFrom['rules']): string[] => {
+  const parts: string[] = [];
+  if (rules.reasoning?.effort !== undefined) parts.push(`${rules.reasoning.effort} effort`);
+  if (rules.reasoning?.budgetTokens !== undefined) parts.push(`${rules.reasoning.budgetTokens}tk reasoning`);
+  if (rules.reasoning?.adaptive === true) parts.push('adaptive reasoning');
+  if (rules.reasoning?.summary !== undefined) parts.push(`${rules.reasoning.summary} summary`);
+  if (rules.verbosity !== undefined) parts.push(`${rules.verbosity} verbosity`);
+  if (rules.serviceTier !== undefined) parts.push(`${rules.serviceTier} tier`);
+  if (rules.anthropicSpeed !== undefined) parts.push(`${rules.anthropicSpeed} speed`);
+  if (rules.anthropicBeta !== undefined && rules.anthropicBeta.length > 0) {
+    parts.push([...rules.anthropicBeta].sort().join('/'));
+  }
+  return parts;
+};
+
 export interface PublicModelsResponse {
   // OpenAI container
   object: 'list';

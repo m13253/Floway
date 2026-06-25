@@ -6,10 +6,11 @@ import type {
   ModelEndpoints,
   ModelKind,
   ModelPricing,
+  PublicModelAliasedFrom,
 } from '@floway-dev/protocols/common';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, PublicModelAliasedFrom };
 export type { AddressableForm, ModelPrefixConfig };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
@@ -326,6 +327,7 @@ export interface PublicModel {
   endpoints?: Record<string, ModelEndpointInfo>;
   cost?: ModelPricing;
   kind?: ModelKind;
+  aliasedFrom?: PublicModelAliasedFrom;
 }
 
 export interface ControlPlaneModel extends PublicModel {

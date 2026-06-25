@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import { formatAliasRuleBadges } from '@floway-dev/protocols/common';
 
 defineProps<{
   model: ControlPlaneModel;
@@ -43,6 +44,12 @@ const formatTokenLimit = (n: number) => {
           <span v-if="model.limits?.max_output_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
             output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
           </span>
+          <span
+            v-for="badge in (model.aliasedFrom ? formatAliasRuleBadges(model.aliasedFrom.rules) : [])"
+            :key="badge"
+            class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400"
+            :title="`alias rule from ${model.aliasedFrom?.targetModelId}`"
+          >{{ badge }}</span>
         </div>
       </div>
       <button class="btn-ghost text-[11px] flex shrink-0 items-center gap-1" @click="$emit('clear')">
