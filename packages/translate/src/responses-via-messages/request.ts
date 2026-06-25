@@ -335,9 +335,10 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   // Extension-driven thinking (`thinking_budget`, `adaptive_thinking`) wins
   // over the native `effort === 'none'` disable, so the alias write-side
   // facets that target the structured thinking slot survive the legacy
-  // disable shortcut. Native `reasoning.summary` and `service_tier` do not
-  // surface onto Messages — the Responses-native vocabulary keeps its
-  // pre-existing translation contract and rides the upstream sanitizer.
+  // disable shortcut. Native `reasoning.summary` does not surface onto
+  // Messages — the Responses-native vocabulary keeps its pre-existing
+  // translation contract and rides the upstream sanitizer. `service_tier`
+  // is native on both protocols and propagates verbatim.
   const extensionThinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,
@@ -360,6 +361,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     tool_choice: translateToolChoice(payload.tool_choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
+    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
     ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
   };
 
