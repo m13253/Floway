@@ -184,6 +184,50 @@ test('compact + flag on: synthesized encrypted_content decodes to a user message
   assertEquals(decoded[0].content[0].text, 'THE SUMMARY');
 });
 
+test('compact + flag on: upstream `output_text` SDK alias is dropped from the synthesized envelope', async () => {
+  const inv = makeInvocation(
+    { input: [{ type: 'message', role: 'user', content: 'history' }] },
+    { action: 'compact' },
+  );
+
+  // Some upstreams (and some OpenAPI implementations) emit the convenience
+  // `output_text` alias alongside `output`. The synthesized
+  // `response.compaction` envelope must not forward it — its value is the
+  // upstream's summary plaintext, which a downstream SDK reading
+  // `output_text` on a compaction envelope would surface in place of the
+  // opaque-blob contract `encrypted_content` is supposed to carry.
+  const runWithOutputText = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+    const response: ResponsesResult = {
+      id: 'resp_fake_upstream',
+      object: 'response',
+      model: 'test-upstream-model',
+      status: 'completed',
+      output: [{
+        type: 'message',
+        id: 'msg_1',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'THE SUMMARY' }],
+      }],
+      output_text: 'THE SUMMARY',
+      error: null,
+      incomplete_details: null,
+      usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+    };
+    return Promise.resolve(eventResult(
+      (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+        yield doneFrame();
+      })(),
+      testTelemetryModelIdentity,
+    ));
+  };
+  const result = await withResponsesCompactShim(inv, stubCtx, runWithOutputText);
+  if (result.type !== 'events') throw new Error('expected events branch');
+  const collected = await collectResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.output_text, undefined);
+});
+
 test('compact + flag on: compaction_trigger items are stripped before the upstream call', async () => {
   const inv = makeInvocation(
     {

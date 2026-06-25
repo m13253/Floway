@@ -118,8 +118,7 @@ export const expandShimCompactionItems = (payload: ResponsesPayload): ResponsesP
 
 type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
-// Collects assistant output_text blocks from a completed result into a single
-// string. Used to extract the summary text from the upstream's response to the
+// Extracts the summary text from the upstream's response to the
 // SUMMARIZATION_PROMPT.
 const extractTextFromResult = (result: ResponsesResult): string => {
   const parts: string[] = [];
@@ -139,18 +138,23 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
     content: [{ type: 'input_text', text: summaryText }],
   };
   const encryptedContent = encodePayload([summaryItem]);
-  const compactionItemId = `cmp_${crypto.randomUUID()}`;
-  const responseId = `resp_compact_shim_${crypto.randomUUID()}`;
+
+  // Drop the SDK-only `output_text` alias that some upstreams emit — its
+  // value is the upstream's summary plaintext, which has no place on a
+  // synthesized `response.compaction` envelope whose `output` carries only
+  // an opaque compaction item. Same destructure precedent at
+  // `protocols/responses/from-result.ts:14`.
+  const { output_text: _droppedOutputText, ...upstreamBase } = upstream;
 
   return {
-    ...upstream,
-    id: responseId,
+    ...upstreamBase,
+    id: `resp_compact_shim_${crypto.randomUUID()}`,
     object: 'response.compaction',
     status: 'completed',
     output: [
       {
         type: 'compaction',
-        id: compactionItemId,
+        id: `cmp_${crypto.randomUUID()}`,
         encrypted_content: encryptedContent,
       },
     ] as unknown as ResponsesResult['output'],
@@ -186,8 +190,8 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   } finally {
     ctx.payload = originalPayload;
     // Re-tag the action so the gateway's post-chain snapshot derivation
-    // picks 'replace' — even on the error path so the chain's outer state
-    // matches what the caller requested.
+    // picks 'replace'. Restored in `finally` alongside `payload` so the
+    // outer state is symmetric whether the inner call resolves or throws.
     ctx.action = 'compact';
   }
 

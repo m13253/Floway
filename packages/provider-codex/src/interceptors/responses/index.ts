@@ -13,11 +13,13 @@ import type { Interceptor } from '@floway-dev/interceptor';
 // conventional but not load-bearing — it hashes only `instructions + first
 // user-message text`, neither of which is mutated by the other two.
 //
-// Each interceptor is generic over the terminal result type: the streaming
-// `/responses` chain runs to ProviderStreamResult, the compaction chain runs
-// to ProviderResponsesResult, and both feed the same boundary ctx. Codex
-// interceptors are pure payload/header mutators, so the streaming variant
-// returns ProviderStreamResult directly (no per-frame lift/lower).
+// Each interceptor is generic over its terminal result type so the same
+// definition would still fit if the chain ever needed to split. Today the
+// codex `callResponses` runs this chain exactly once per request — the
+// terminal is always `ProviderResponsesResult`, whose discriminated union
+// covers both `action: 'generate'` (streaming events) and `action: 'compact'`
+// (envelope value). Codex interceptors are pure payload/header mutators that
+// never inspect the terminal, so there is no per-frame lift/lower seam.
 export const codexResponsesChain = <TResult>(): readonly Interceptor<ResponsesBoundaryCtx, object, TResult>[] => [
   injectDefaultInstructions,
   stripUnsupportedFields,
