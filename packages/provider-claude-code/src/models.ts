@@ -32,7 +32,6 @@ export interface ClaudeCodeApiModel {
   capabilities?: {
     image_input?: { supported: boolean };
     thinking?: {
-      supported?: boolean;
       types?: {
         enabled?: { supported: boolean };
         adaptive?: { supported: boolean };
@@ -80,9 +79,8 @@ const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
 };
 
 // Parses the `capabilities` block from the Anthropic /v1/models response.
-// Unknown or malformed sub-fields are skipped so that additions to the
-// upstream schema do not break the refresh. We only throw on clearly invalid
-// shapes for fields we actually consume.
+// Unknown sub-fields are silently skipped — Anthropic adds capabilities
+// forward-compatibly, and we'd rather miss a future field than fail the catalog refresh.
 const parseCapabilities = (raw: unknown, modelId: string): ClaudeCodeApiModel['capabilities'] => {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const cap = raw as Record<string, unknown>;
@@ -96,7 +94,6 @@ const parseCapabilities = (raw: unknown, modelId: string): ClaudeCodeApiModel['c
   if (typeof cap.thinking === 'object' && cap.thinking !== null) {
     const th = cap.thinking as Record<string, unknown>;
     const thinking: NonNullable<ClaudeCodeApiModel['capabilities']>['thinking'] = {};
-    if (typeof th.supported === 'boolean') thinking.supported = th.supported;
     if (typeof th.types === 'object' && th.types !== null) {
       const types = th.types as Record<string, unknown>;
       const parsedTypes: NonNullable<typeof thinking.types> = {};
@@ -110,7 +107,7 @@ const parseCapabilities = (raw: unknown, modelId: string): ClaudeCodeApiModel['c
       }
       if (parsedTypes.enabled !== undefined || parsedTypes.adaptive !== undefined) thinking.types = parsedTypes;
     }
-    if (thinking.supported !== undefined || thinking.types !== undefined) out.thinking = thinking;
+    if (thinking.types !== undefined) out.thinking = thinking;
   }
 
   if (typeof cap.effort === 'object' && cap.effort !== null) {
@@ -125,10 +122,8 @@ const parseCapabilities = (raw: unknown, modelId: string): ClaudeCodeApiModel['c
         }
       }
       out.effort = effort;
-    } else {
+    } else if (typeof eff.supported !== 'boolean') {
       // `effort.supported` is required to interpret the block; skip if absent.
-      // Log the anomaly so it shows up in the refresh trace.
-      console.warn(`Claude Code /v1/models entry ${modelId}: effort block missing top-level supported boolean, skipping`);
     }
   }
 
