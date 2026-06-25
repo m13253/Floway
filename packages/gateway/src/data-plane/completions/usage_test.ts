@@ -23,6 +23,29 @@ test('tokenUsageFromCompletionsUsage splits prompt_tokens into cache_read + bare
   );
 });
 
+test('tokenUsageFromCompletionsUsage reads DeepSeek prompt_cache_hit_tokens', () => {
+  // DeepSeek exposes a non-OpenAI shape on /v1/chat/completions (it has no
+  // /v1/completions of its own, but the helper symmetry matters): hit + miss
+  // counters at the usage root, with `prompt_tokens` equal to `hit + miss`.
+  assertEquals(
+    tokenUsageFromCompletionsUsage(
+      { prompt_tokens: 200, completion_tokens: 5, total_tokens: 205, prompt_cache_hit_tokens: 128, prompt_cache_miss_tokens: 72 },
+      undefined,
+    ),
+    { input: 72, input_cache_read: 128, output: 5 },
+  );
+});
+
+test('tokenUsageFromCompletionsUsage reads the flat top-level cached_tokens (Moonshot / Cohere v2 / Qwen Singapore legacy)', () => {
+  assertEquals(
+    tokenUsageFromCompletionsUsage(
+      { prompt_tokens: 50, completion_tokens: 3, total_tokens: 53, cached_tokens: 32 },
+      undefined,
+    ),
+    { input: 18, input_cache_read: 32, output: 3 },
+  );
+});
+
 test('tokenUsageFromCompletionsUsage runs serviceTier through billableServiceTier', () => {
   // Non-base values pass through; default / standard fold to null so they
   // aggregate with rows that have no tier; null/undefined stays null.

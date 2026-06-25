@@ -36,6 +36,63 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   return out;
 };
 
+// Cache-read / cache-write token counts pulled from an OpenAI-shaped `usage`
+// block. The field name and nesting depth vary by upstream; this helper
+// hides the variants so the per-API extractors (chat-completions, completions)
+// see a single normalized pair regardless of which provider answered.
+//
+// Cache-read candidates, in order of preference:
+//   - `prompt_tokens_details.cached_tokens` — OpenAI canonical (vLLM, llama.cpp,
+//     SGLang, Gemini OpenAI-compat, xAI, Mistral, OpenRouter, Groq, Cerebras,
+//     Zhipu, Doubao, Qwen main, …).
+//   - `prompt_cache_hit_tokens`             — DeepSeek (paired with
+//     `prompt_cache_miss_tokens`; `prompt_tokens` is `hit + miss`).
+//   - `cached_tokens`                       — Moonshot / Kimi, Cohere v2 native,
+//     Qwen Singapore legacy (top-level, no wrapper).
+//
+// Cache-write candidates, in order of preference:
+//   - `prompt_tokens_details.cache_creation_input_tokens` — the Anthropic
+//     messages → chat-completions translation pair forwards the native
+//     Anthropic field name under OpenAI's wrapper.
+//   - `prompt_tokens_details.cache_write_tokens`           — OpenRouter
+//     (Anthropic / Gemini-explicit / Alibaba-routed).
+//
+// Each count is a subset of `prompt_tokens`, so subtracting them in the
+// caller recovers the disjoint bare-input dimension. Upstreams that report
+// no cache fields at all (Together, Perplexity, SiliconFlow, TGI, Ollama-
+// compat, plus most providers without a cache layer) fall through to zero,
+// leaving the whole prompt count on the bare input bucket.
+export interface OpenAICacheTokens {
+  readonly cacheRead: number;
+  readonly cacheWrite: number;
+}
+
+interface OpenAIUsageWithCacheVariants {
+  prompt_tokens_details?: {
+    cached_tokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+    cache_write_tokens?: unknown;
+  };
+  prompt_cache_hit_tokens?: unknown;
+  cached_tokens?: unknown;
+}
+
+export const openAICacheTokensFromUsage = (usage: unknown): OpenAICacheTokens => {
+  if (!usage || typeof usage !== 'object') return { cacheRead: 0, cacheWrite: 0 };
+  const u = usage as OpenAIUsageWithCacheVariants;
+  return {
+    cacheRead: firstNumber([u.prompt_tokens_details?.cached_tokens, u.prompt_cache_hit_tokens, u.cached_tokens]),
+    cacheWrite: firstNumber([u.prompt_tokens_details?.cache_creation_input_tokens, u.prompt_tokens_details?.cache_write_tokens]),
+  };
+};
+
+const firstNumber = (candidates: readonly unknown[]): number => {
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number') return candidate;
+  }
+  return 0;
+};
+
 export const tokenUsageFromEmbeddingsBody = (body: unknown): TokenUsage | null => {
   if (!body || typeof body !== 'object') return null;
   const { usage } = body as { usage?: unknown };
