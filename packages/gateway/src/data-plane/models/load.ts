@@ -25,6 +25,7 @@ export const toPublicModel = (model: InternalModel & { aliasedFrom?: ListedModel
   }
   if (model.cost) info.cost = model.cost;
   if (model.aliasedFrom) info.aliasedFrom = model.aliasedFrom;
+  if (model.chat) info.chat = model.chat;
   return info;
 };
 

@@ -89,6 +89,30 @@ export const resolveEffectivePricing = (pricing: ModelPricing | null, tier: stri
 // not pre-declare for future capabilities.
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
+export type Modality = 'text' | 'image';
+
+// Operator-configured chat capability metadata. Lives in protocols because it
+// flows verbatim onto PublicModel.chat (the wire DTO) and is also re-exported
+// by @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
+// definition serves both surfaces.
+export interface ChatModelInfo {
+  modalities?: {
+    input: readonly Modality[];
+    output: readonly Modality[];
+  };
+  reasoning?: {
+    // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
+    effort?: { supported: readonly string[]; default: string };
+    // Operator-supplied token budget. Bounds are optional; absent bounds mean
+    // "operator can supply a budget, but legal range is unknown".
+    budget_tokens?: { min?: number; max?: number };
+    // Model-controlled adaptive depth — the model decides how much reasoning to do.
+    adaptive?: boolean;
+    // Always-on reasoning — the model cannot be instructed to skip it.
+    mandatory?: boolean;
+  };
+}
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -115,6 +139,7 @@ export interface PublicModel {
   // field ignore it; alias-aware clients (dashboard, CLI shims) render the
   // alias's target id and rules from this payload directly.
   aliasedFrom?: PublicModelAliasedFrom;
+  chat?: ChatModelInfo;
 }
 
 export interface PublicModelAliasedFrom {

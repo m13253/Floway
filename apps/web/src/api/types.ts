@@ -20,6 +20,19 @@ export interface ProxyFallbackEntry {
   colos?: string[];
 }
 
+// Mutable variant of @floway-dev/protocols/common ChatModelInfo. The editor
+// mutates these arrays in place during reasoning-level/modality edits, so
+// dropping `readonly` here is intentional — the wire shape stays readonly.
+export interface UpstreamChatConfig {
+  modalities?: { input: ('text' | 'image')[]; output: ('text' | 'image')[] };
+  reasoning?: {
+    effort?: { supported: string[]; default: string };
+    budget_tokens?: { min?: number; max?: number };
+    adaptive?: true;
+    mandatory?: true;
+  };
+}
+
 export interface UpstreamModelConfig {
   upstreamModelId: string;
   publicModelId?: string;
@@ -29,6 +42,7 @@ export interface UpstreamModelConfig {
   limits?: ModelLimits;
   cost?: ModelPricing;
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
+  chat?: UpstreamChatConfig;
 }
 
 export interface CustomModelsFetch {

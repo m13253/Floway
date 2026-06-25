@@ -1,3 +1,4 @@
+import { chatFromCopilotRaw } from './chat-from-raw.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
 import { copilotFetchChatCompletions, copilotFetchEmbeddings, copilotFetchMessages, copilotFetchMessagesCountTokens, copilotFetchResponses } from './fetch.ts';
@@ -43,6 +44,8 @@ const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'kind
   if (model.created !== undefined) internal.created = model.created;
   const displayName = model.display_name ?? model.name;
   if (displayName !== undefined) internal.display_name = displayName;
+  const chat = chatFromCopilotRaw(model);
+  if (chat !== undefined) internal.chat = chat;
   return internal;
 };
 
