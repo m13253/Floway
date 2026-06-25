@@ -81,7 +81,7 @@ const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
 // Parses the `capabilities` block from the Anthropic /v1/models response.
 // Unknown sub-fields are silently skipped — Anthropic adds capabilities
 // forward-compatibly, and we'd rather miss a future field than fail the catalog refresh.
-const parseCapabilities = (raw: unknown, modelId: string): ClaudeCodeApiModel['capabilities'] => {
+const parseCapabilities = (raw: unknown, _modelId: string): ClaudeCodeApiModel['capabilities'] => {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const cap = raw as Record<string, unknown>;
   const out: NonNullable<ClaudeCodeApiModel['capabilities']> = {};

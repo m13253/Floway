@@ -170,3 +170,17 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   assertEquals(body.model, 'gpt-oss:120b');
   assertEquals(body.stream, true);
 });
+
+test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
+  const instance = createOllamaProvider(buildRecord());
+  await withMockedFetch(tagsAndShow, async () => {
+    const models = await instance.provider.getProvidedModels(directFetcher);
+    const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
+    assertEquals(gptoss.chat, {
+      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
+    });
+    // Embedding model has no thinking/vision → no chat field.
+    const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
+    assertEquals(embed.chat, undefined);
+  });
+});
