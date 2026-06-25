@@ -46,20 +46,25 @@ export const recordRequestPerformance = (
   scheduler(failed ? recordPerformanceError(context, 'request_total') : recordPerformanceLatency(context, 'request_total', durationMs));
 };
 
-// Gateway-side counterpart to `UpstreamCallOptions.recordUpstreamLatency` (see
-// the contract docstring on that interface). Mints a fresh `record` for one
-// provider call and reads back the wrapped promise's duration after the call
-// returns; `durationMs()` throws when the provider returned without ever
-// wrapping. Kept separate from `UpstreamCallOptions` so future per-call hooks
-// added to the options bag don't expand the recorder's surface.
+// Gateway-side counterpart to `UpstreamCallOptions.recordUpstreamLatency`
+// (see the contract docstring on that interface). Mints a fresh `record`
+// for one provider call and reports back whether the wrap happened and
+// what it measured. Kept separate from `UpstreamCallOptions` so future
+// per-call hooks added to the options bag don't expand the recorder's
+// surface.
 //
-// The throw on missing wrap is the developer guard for the success path
-// (a real upstream call that forgot to instrument latency). Short-circuit
-// paths that return `ok: false` without ever talking to the upstream MUST
-// NOT call `durationMs()` — there's nothing to measure. Helpers that route
-// based on `ok` (e.g. `providerStreamResultToExecuteResult`) consume the
-// recorder lazily so the guard fires only on the success branch where the
-// duration is actually consumed.
+// `durationMs()` honestly returns `null` when the provider never wrapped
+// a fetch. Consumers decide what the absence means:
+//   - success-path consumers MUST treat null as a bug (a real upstream
+//     call must instrument its round-trip),
+//   - failure-path consumers may receive null because the provider
+//     short-circuited at the gateway before any upstream call (e.g. a
+//     request-side 400). When a failure path does have a duration, it is
+//     free to record it.
+//
+// Per-call-site asserts (instead of a recorder-side throw) keep the
+// "you forgot to wrap" error attached to the exact line that depends on
+// the value.
 export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
   let last: number | undefined;
   return {
@@ -69,16 +74,20 @@ export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
         last = performance.now() - startedAt;
       });
     },
-    durationMs: (): number => {
-      if (last === undefined) {
-        throw new Error('upstream call returned without wrapping its fetch promise in opts.recordUpstreamLatency');
-      }
-      return last;
-    },
+    durationMs: (): number | null => last ?? null,
   };
 };
 
 export interface UpstreamLatencyRecorder {
   record: <T>(promise: Promise<T>) => Promise<T>;
-  durationMs: () => number;
+  durationMs: () => number | null;
 }
+
+// Asserts a recorded duration; throws if the wrap never happened. Use at
+// any call site whose semantics require the value (every success-side
+// record, plus the count_tokens contract guard).
+export const requireRecordedDurationMs = (recorder: UpstreamLatencyRecorder, what: string): number => {
+  const value = recorder.durationMs();
+  if (value === null) throw new Error(`${what} returned without wrapping its fetch promise in opts.recordUpstreamLatency`);
+  return value;
+};

@@ -2,7 +2,7 @@ import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency } from '../../../../shared/telemetry/performance.ts';
+import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
@@ -618,7 +618,7 @@ const issueImageCall = async (
       runtimeLocation: state.runtimeLocation,
     };
     if (response.ok) {
-      const durationMs = recorder.durationMs();
+      const durationMs = requireRecordedDurationMs(recorder, isEdit ? 'callImagesEdits' : 'callImagesGenerations');
       state.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', durationMs));
     } else {
       state.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));

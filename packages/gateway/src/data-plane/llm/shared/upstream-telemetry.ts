@@ -81,9 +81,17 @@ export const withUpstreamTelemetry = <T>(
   })();
 };
 
-// A non-ok upstream HTTP response never produces a frame stream, so it records
-// its `upstream_success` failure directly.
-export const recordUpstreamHttpFailure = (ctx: GatewayCtx, context: PerformanceTelemetryContext): void => {
+// A non-ok upstream HTTP response never produces a frame stream, so it
+// records its `upstream_success` failure directly. Optionally accepts a
+// recorded round-trip latency: when the provider actually called the
+// upstream and got a non-2xx back, the duration is meaningful; when the
+// provider short-circuited at the gateway (e.g. a request-side 400 the
+// provider rejected before any fetch), latency is `null` and there is
+// nothing to record. Today the failure-side latency is dropped (the
+// metric scope only carries a counter on the error branch) — accepting
+// it here keeps the API honest and lets a future schema add failure
+// latency without touching call sites.
+export const recordUpstreamHttpFailure = (ctx: GatewayCtx, context: PerformanceTelemetryContext, _durationMs: number | null): void => {
   ctx.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
 };
 

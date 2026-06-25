@@ -1,7 +1,7 @@
 import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
-import { type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
+import { requireRecordedDurationMs, type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -43,12 +43,15 @@ export const buildUpstreamCallOptions = (
 // otherwise the events stream is wrapped with upstream telemetry and flows on
 // with both the telemetry identity and the context.
 //
-// The recorder is consulted lazily — only the success branch needs the
-// round-trip duration, and the recorder's "did you wrap the fetch" contract
-// only fires there. A provider that short-circuits without ever talking to
-// the upstream (e.g. a request-side 400) returns `ok: false` and never
-// triggers the recorder check, which is the correct semantic: there was no
-// upstream round-trip to measure.
+// Latency contract by branch:
+//   - ok=true: a real upstream call happened; durationMs MUST be present,
+//     so we assert it before threading into the success telemetry path.
+//   - ok=false: an upstream call MAY have happened (non-2xx from an actual
+//     upstream) or MAY NOT (a request-side 400 the provider short-circuited
+//     at the gateway before any fetch). The duration is whatever the
+//     recorder happens to know — passed through to recordUpstreamHttpFailure,
+//     which records the latency on the failure metric when present and skips
+//     it when null.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ProviderCandidate,
@@ -57,11 +60,11 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
-    recordUpstreamHttpFailure(ctx, context);
+    recordUpstreamHttpFailure(ctx, context, recorder.durationMs());
     return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   return eventResult(
-    withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, recorder.durationMs()),
+    withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, requireRecordedDurationMs(recorder, 'upstream success')),
     telemetryModelIdentity(candidate, providerResult.modelKey),
     { performance: context, headers: providerResult.headers },
   );
