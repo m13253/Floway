@@ -1,7 +1,7 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import { buildMessagesThinkingFromExtensions, mapSummaryToAnthropicDisplay } from '../shared/via-messages/anthropic-extensions.ts';
+import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import {
@@ -332,29 +332,18 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
-  // Native Responses → Messages: `reasoning.summary` materializes onto the
-  // Messages-native `thinking.display`. Extension-driven thinking
-  // (`thinking_budget`, `adaptive_thinking`) takes precedence over the
-  // summary-only fallback because the alias write-side validator pins
-  // facets one-at-a-time; when neither extension is set and summary is the
-  // only signal, we synthesize `thinking.{type:'enabled', display}` so the
-  // display reaches the wire.
+  // Extension-driven thinking (`thinking_budget`, `adaptive_thinking`) wins
+  // over the native `effort === 'none'` disable, so the alias write-side
+  // facets that target the structured thinking slot survive the legacy
+  // disable shortcut. Native `reasoning.summary` and `service_tier` do not
+  // surface onto Messages — the Responses-native vocabulary keeps its
+  // pre-existing translation contract and rides the upstream sanitizer.
   const extensionThinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,
   });
   const disabledThinking = effort === 'none' ? { type: 'disabled' as const } : undefined;
-  const summaryDisplay = payload.reasoning?.summary !== undefined ? mapSummaryToAnthropicDisplay(payload.reasoning.summary) : undefined;
-  const fallbackDisplayThinking =
-    !extensionThinking && !disabledThinking && summaryDisplay !== undefined
-      ? { type: 'enabled' as const, display: summaryDisplay as NonNullable<MessagesPayload['thinking']>['display'] }
-      : undefined;
-  const thinkingFromExtensions = extensionThinking
-    ? summaryDisplay !== undefined
-      ? { ...extensionThinking, display: summaryDisplay as NonNullable<MessagesPayload['thinking']>['display'] }
-      : extensionThinking
-    : undefined;
-  const thinking = thinkingFromExtensions ?? disabledThinking ?? fallbackDisplayThinking;
+  const thinking = extensionThinking ?? disabledThinking;
 
   // Responses `metadata` is intentionally omitted on the Messages path;
   // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
@@ -372,7 +361,6 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
-    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
   };
 
   return { target, customToolNames };

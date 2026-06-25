@@ -428,22 +428,6 @@ test('buildTargetRequest emits generationConfig.serviceTier onto Messages servic
   assertEquals(result.service_tier, 'priority');
 });
 
-test('buildTargetRequest maps includeThoughts onto thinking.display (true → summarized, false → omitted)', () => {
-  const summarized = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { includeThoughts: true } } },
-    'claude-test',
-    noOptions,
-  );
-  const omitted = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { includeThoughts: false } } },
-    'claude-test',
-    noOptions,
-  );
-
-  assertEquals(summarized.thinking, { type: 'enabled', display: 'summarized' });
-  assertEquals(omitted.thinking, { type: 'enabled', display: 'omitted' });
-});
-
 test('buildTargetRequest drops verbosity extension on Messages (no slot)', () => {
   const result = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'low' } },

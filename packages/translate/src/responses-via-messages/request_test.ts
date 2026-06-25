@@ -664,35 +664,12 @@ test('translateResponsesToMessages emits adaptive_thinking onto thinking.{adapti
   assertEquals(result.target.thinking, { type: 'adaptive' });
 });
 
-test('translateResponsesToMessages maps reasoning.summary onto thinking.display (concise|detailed → summarized, omitted → omitted)', async () => {
-  const concise = await translateResponsesToMessages(minimalResponsesPayload({ reasoning: { effort: 'high', summary: 'concise' } }));
-  const detailed = await translateResponsesToMessages(minimalResponsesPayload({ reasoning: { effort: 'high', summary: 'detailed' } }));
-  const omitted = await translateResponsesToMessages(minimalResponsesPayload({ reasoning: { effort: 'high', summary: 'omitted' } }));
-
-  assertEquals(concise.target.thinking, { type: 'enabled', display: 'summarized' });
-  assertEquals(detailed.target.thinking, { type: 'enabled', display: 'summarized' });
-  assertEquals(omitted.target.thinking, { type: 'enabled', display: 'omitted' });
-});
-
 test('translateResponsesToMessages emits anthropic_speed onto speed', async () => {
   const result = await translateResponsesToMessages(minimalResponsesPayload({ anthropic_speed: 'fast' }));
   assertEquals(result.target.speed, 'fast');
 });
 
-test('translateResponsesToMessages forwards service_tier verbatim', async () => {
-  const result = await translateResponsesToMessages(minimalResponsesPayload({ service_tier: 'priority' }));
-  assertEquals(result.target.service_tier, 'priority');
-});
-
 test('translateResponsesToMessages leaves anthropic_beta as inbound residue for the gateway header pass', async () => {
   const result = await translateResponsesToMessages(minimalResponsesPayload({ anthropic_beta: ['fast-mode-2026-02-01'] }));
   assertEquals('anthropic_beta' in result.target, false);
-});
-
-test('translateResponsesToMessages emission stack: budget + summary writes display onto the budget-driven block', async () => {
-  const result = await translateResponsesToMessages(minimalResponsesPayload({
-    thinking_budget: 2048,
-    reasoning: { effort: 'medium', summary: 'concise' },
-  }));
-  assertEquals(result.target.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
 });

@@ -161,14 +161,6 @@ const applyThinkingConfig = (request: MessagesPayload, thinkingConfig?: GeminiTh
     }
   }
 
-  // `includeThoughts` materializes onto `thinking.display`: true → summarized
-  // (Anthropic redacts to a single-block summary), false → omitted (no
-  // thinking surface at all). Skip when the source did not express either.
-  if (thinkingConfig.includeThoughts !== undefined && request.thinking?.type !== 'disabled') {
-    const display = thinkingConfig.includeThoughts === true ? ('summarized' as const) : ('omitted' as const);
-    request.thinking = request.thinking ? { ...request.thinking, display } : { type: 'enabled', display };
-  }
-
   const effort = geminiThinkingLevelEffort(thinkingConfig);
   // Spread to merge with any output_config fields a sibling helper has
   // already written (e.g. structured-output `format` from
