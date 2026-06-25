@@ -100,6 +100,20 @@ describe('chatField', () => {
     expect(() => chatField({ reasoning: { supported_efforts: ['low'] } }, 'm.chat'))
       .toThrow(/default_effort/);
   });
+
+  test('returns empty object (not undefined) for empty chat block', () => {
+    expect(chatField({}, 'm.chat')).toEqual({});
+  });
+
+  test('accepts image-only output modalities', () => {
+    const chat = chatField({ modalities: { input: ['text'], output: ['image'] } }, 'm.chat');
+    expect(chat?.modalities?.output).toEqual(['image']);
+  });
+
+  test('rejects empty output modalities array', () => {
+    expect(() => chatField({ modalities: { input: ['text'], output: [] } }, 'm.chat'))
+      .toThrow(/at least one modality/);
+  });
 });
 
 describe('modelsField chat integration', () => {

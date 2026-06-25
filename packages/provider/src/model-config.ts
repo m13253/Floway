@@ -171,8 +171,14 @@ const modalityArrayField = (value: unknown, label: string): readonly Modality[] 
     }
     if (!out.includes(entry as Modality)) out.push(entry as Modality);
   }
-  if (!out.includes('text')) throw new Error(`Malformed ${label}: must include 'text'`);
+  if (out.length === 0) throw new Error(`Malformed ${label}: must have at least one modality`);
   return out;
+};
+
+const inputModalitiesField = (value: unknown, label: string): readonly Modality[] => {
+  const modalities = modalityArrayField(value, label);
+  if (!modalities.includes('text')) throw new Error(`Malformed ${label}: must include 'text'`);
+  return modalities;
 };
 
 const reasoningField = (value: unknown, label: string): UpstreamChatModelConfig['reasoning'] => {
@@ -199,7 +205,7 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
   if (value.modalities !== undefined) {
     if (!isRecord(value.modalities)) throw new Error(`Malformed ${label}.modalities: must be an object`);
     out.modalities = {
-      input: modalityArrayField(value.modalities.input, `${label}.modalities.input`),
+      input: inputModalitiesField(value.modalities.input, `${label}.modalities.input`),
       output: modalityArrayField(value.modalities.output, `${label}.modalities.output`),
     };
   }
