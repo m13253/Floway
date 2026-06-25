@@ -1,9 +1,9 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { buildMessagesThinkingFromExtensions, mapSummaryToAnthropicDisplay } from '../shared/via-messages/anthropic-extensions.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
-import { buildMessagesThinkingFromExtensions, mapSummaryToAnthropicDisplay } from '../shared/via-messages/anthropic-extensions.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,

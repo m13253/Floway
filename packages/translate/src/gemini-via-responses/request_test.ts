@@ -411,3 +411,58 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
+
+// ── Floway extension emission ──
+
+test('buildTargetRequest emits generationConfig.verbosity onto text.verbosity', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'medium' } },
+    'gpt-test',
+  );
+
+  assertEquals(result.text?.verbosity, 'medium');
+});
+
+test('buildTargetRequest emits generationConfig.serviceTier onto Responses service_tier', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
+    'gpt-test',
+  );
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('buildTargetRequest maps includeThoughts onto reasoning.summary (true → detailed, false → omitted)', () => {
+  const withSummary = buildTargetRequest(
+    {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      generationConfig: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: true } },
+    },
+    'gpt-test',
+  );
+  const withoutSummary = buildTargetRequest(
+    {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      generationConfig: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: false } },
+    },
+    'gpt-test',
+  );
+
+  assertEquals(withSummary.reasoning, { effort: 'high', summary: 'detailed' });
+  assertEquals(withoutSummary.reasoning, { effort: 'high', summary: 'omitted' });
+});
+
+test('buildTargetRequest drops top-level Anthropic extensions on Responses', () => {
+  const result = buildTargetRequest(
+    {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      anthropicSpeed: 'fast',
+      anthropicBeta: ['fast-mode-2026-02-01'],
+    },
+    'gpt-test',
+  );
+
+  assertEquals('anthropicSpeed' in result, false);
+  assertEquals('anthropic_speed' in result, false);
+  assertEquals('anthropicBeta' in result, false);
+});

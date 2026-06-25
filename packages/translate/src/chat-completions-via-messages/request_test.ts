@@ -1161,3 +1161,102 @@ test('translateChatCompletionsToMessages rejects an unknown user content part ty
     'does not accept video_url content parts',
   );
 });
+
+// ── Floway extension emission ──
+
+test('translateChatCompletionsToMessages emits thinking_budget extension onto thinking.{enabled, budget_tokens}', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking_budget: 4096,
+    }),
+  );
+
+  assertEquals(result.thinking, { type: 'enabled', budget_tokens: 4096 });
+});
+
+test('translateChatCompletionsToMessages emits adaptive_thinking extension onto thinking.{adaptive} (wins over budget)', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking_budget: 4096,
+      adaptive_thinking: true,
+    }),
+  );
+
+  assertEquals(result.thinking, { type: 'adaptive' });
+});
+
+test('translateChatCompletionsToMessages maps reasoning_summary onto thinking.display via concise|detailed → summarized', async () => {
+  const concise = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'concise' }));
+  const detailed = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'detailed' }));
+  const omitted = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'omitted' }));
+  const auto = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'auto' }));
+
+  assertEquals(concise.thinking, { type: 'enabled', display: 'summarized' });
+  assertEquals(detailed.thinking, { type: 'enabled', display: 'summarized' });
+  assertEquals(omitted.thinking, { type: 'enabled', display: 'omitted' });
+  // `auto` returns undefined display so Anthropic's account-default applies;
+  // with no budget/adaptive signal there is no thinking block to attach to.
+  assertEquals(auto.thinking, undefined);
+});
+
+test('translateChatCompletionsToMessages merges reasoning_summary onto budget-driven thinking block', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      thinking_budget: 2048,
+      reasoning_summary: 'concise',
+    }),
+  );
+
+  assertEquals(result.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
+});
+
+test('translateChatCompletionsToMessages emits anthropic_speed onto Messages speed', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      anthropic_speed: 'fast',
+    }),
+  );
+
+  assertEquals(result.speed, 'fast');
+});
+
+test('translateChatCompletionsToMessages forwards service_tier verbatim', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      service_tier: 'priority',
+    }),
+  );
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('translateChatCompletionsToMessages does not emit Messages-protocol fields when the extension is unset', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+  );
+
+  assertEquals(result.thinking, undefined);
+  assertEquals(result.speed, undefined);
+  assertEquals(result.service_tier, undefined);
+});
+
+test('translateChatCompletionsToMessages leaves anthropic_beta as inbound residue (header injection is the gateway-side rule-apply step)', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      anthropic_beta: ['fast-mode-2026-02-01', 'context-1m-2025-08-07'],
+    }),
+  );
+
+  // The translated body must not echo the OpenAI-family `anthropic_beta`
+  // field; the per-upstream sanitizer is responsible for stripping any
+  // residue, and the rule-apply pass handles the outbound header.
+  assertEquals('anthropic_beta' in result, false);
+});

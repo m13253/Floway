@@ -502,3 +502,83 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
     'does not accept role tool',
   );
 });
+
+// ── Floway extension emission ──
+
+test('translateMessagesToResponses emits verbosity onto text.verbosity', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    verbosity: 'medium',
+  });
+
+  assertEquals(result.text?.verbosity, 'medium');
+});
+
+test('translateMessagesToResponses co-emits verbosity with json_schema format under text', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    verbosity: 'low',
+    output_config: { format: { type: 'json_schema', schema: { type: 'object', properties: {} } } },
+  });
+
+  assertEquals(result.text?.verbosity, 'low');
+  assertEquals(result.text?.format?.type, 'json_schema');
+});
+
+test('translateMessagesToResponses maps thinking.display onto reasoning.summary (summarized → concise, omitted → omitted, full → detailed)', () => {
+  const summarized = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', display: 'summarized' },
+  });
+  const omitted = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', display: 'omitted' },
+  });
+  const full = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', display: 'full' },
+  });
+
+  assertEquals(summarized.reasoning?.summary, 'concise');
+  assertEquals(omitted.reasoning?.summary, 'omitted');
+  assertEquals(full.reasoning?.summary, 'detailed');
+});
+
+test('translateMessagesToResponses forwards service_tier verbatim', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    service_tier: 'priority',
+  });
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('translateMessagesToResponses drops Anthropic-only mode knobs the Responses wire cannot express', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', budget_tokens: 4096 },
+    speed: 'fast',
+  });
+
+  // budget_tokens, adaptive, speed, anthropic-beta have no Responses slot;
+  // translate emits nothing for them. The sanitizer drops residue.
+  assertEquals('thinking_budget' in result, false);
+  assertEquals('adaptive_thinking' in result, false);
+  assertEquals('anthropic_speed' in result, false);
+  assertEquals('anthropic_beta' in result, false);
+  assertEquals('speed' in result, false);
+});

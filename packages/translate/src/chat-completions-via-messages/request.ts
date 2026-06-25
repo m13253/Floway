@@ -1,8 +1,8 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
+import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
-import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 

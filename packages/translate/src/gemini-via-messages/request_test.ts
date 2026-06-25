@@ -405,3 +405,68 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
+
+// ── Floway extension emission ──
+
+test('buildTargetRequest emits top-level anthropicSpeed onto Messages speed', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], anthropicSpeed: 'fast' },
+    'claude-test',
+    noOptions,
+  );
+
+  assertEquals(result.speed, 'fast');
+});
+
+test('buildTargetRequest emits generationConfig.serviceTier onto Messages service_tier', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
+    'claude-test',
+    noOptions,
+  );
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('buildTargetRequest maps includeThoughts onto thinking.display (true → summarized, false → omitted)', () => {
+  const summarized = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { includeThoughts: true } } },
+    'claude-test',
+    noOptions,
+  );
+  const omitted = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { includeThoughts: false } } },
+    'claude-test',
+    noOptions,
+  );
+
+  assertEquals(summarized.thinking, { type: 'enabled', display: 'summarized' });
+  assertEquals(omitted.thinking, { type: 'enabled', display: 'omitted' });
+});
+
+test('buildTargetRequest drops verbosity extension on Messages (no slot)', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'low' } },
+    'claude-test',
+    noOptions,
+  );
+
+  assertEquals('verbosity' in result, false);
+});
+
+test('buildTargetRequest leaves anthropicBeta as inbound residue for the gateway header pass', () => {
+  const result = buildTargetRequest(
+    {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      anthropicBeta: ['fast-mode-2026-02-01'],
+    },
+    'claude-test',
+    noOptions,
+  );
+
+  // Translate cannot move it to a header; the gateway-side rule-apply pass
+  // (Task 5) materializes anthropicBeta into the outbound anthropic-beta
+  // header. The body must not echo it.
+  assertEquals('anthropicBeta' in result, false);
+  assertEquals('anthropic_beta' in result, false);
+});

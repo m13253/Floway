@@ -115,7 +115,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
   // `reasoning_summary` is the inbound CC extension that materializes onto
   // the Responses-native `reasoning.summary` slot. Co-emit alongside
   // `reasoning.effort` so a single `reasoning` object captures both knobs.
-  const reasoningEffort = payload.reasoning_effort != null ? payload.reasoning_effort : undefined;
+  const reasoningEffort = payload.reasoning_effort ?? undefined;
   const reasoningSummary = payload.reasoning_summary;
   const reasoning =
     reasoningEffort !== undefined || reasoningSummary !== undefined

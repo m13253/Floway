@@ -1455,3 +1455,55 @@ test('translateResponsesToChatCompletions maps multimodal function_call_output i
     { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
   ]);
 });
+
+// ── Floway extension emission ──
+
+test('translateResponsesToChatCompletions maps text.verbosity onto verbosity', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    text: { verbosity: 'low' },
+  });
+
+  assertEquals(result.target.verbosity, 'low');
+});
+
+test('translateResponsesToChatCompletions co-emits reasoning.effort onto reasoning_effort and service_tier verbatim', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    reasoning: { effort: 'xhigh' },
+    service_tier: 'priority',
+  });
+
+  assertEquals(result.target.reasoning_effort, 'xhigh');
+  assertEquals(result.target.service_tier, 'priority');
+});
+
+test('translateResponsesToChatCompletions leaves Messages-only extensions as inbound residue (CC has no slot)', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    thinking_budget: 4096,
+    adaptive_thinking: true,
+    anthropic_speed: 'fast',
+    anthropic_beta: ['fast-mode-2026-02-01'],
+  });
+
+  assertEquals('thinking_budget' in result.target, false);
+  assertEquals('adaptive_thinking' in result.target, false);
+  assertEquals('anthropic_speed' in result.target, false);
+  assertEquals('anthropic_beta' in result.target, false);
+});
+
+test('translateResponsesToChatCompletions drops reasoning.summary (Chat has no slot)', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    reasoning: { effort: 'medium', summary: 'concise' },
+  });
+
+  assertEquals(result.target.reasoning_effort, 'medium');
+  // Verbosity is on text.* not reasoning; ensure no surrogate field invented.
+  assertEquals('reasoning_summary' in result.target, false);
+});

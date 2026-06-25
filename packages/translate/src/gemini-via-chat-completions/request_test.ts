@@ -477,3 +477,59 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
+
+// ── Floway extension emission ──
+
+test('buildTargetRequest emits generationConfig.verbosity onto Chat verbosity', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'low' } },
+    'gpt-test',
+  );
+
+  assertEquals(result.verbosity, 'low');
+});
+
+test('buildTargetRequest emits generationConfig.serviceTier onto Chat service_tier (camelCase → snake_case)', () => {
+  const result = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
+    'gpt-test',
+  );
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('buildTargetRequest drops top-level Anthropic extensions (anthropicSpeed, anthropicBeta) on Chat', () => {
+  const result = buildTargetRequest(
+    {
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      anthropicSpeed: 'fast',
+      anthropicBeta: ['fast-mode-2026-02-01'],
+    },
+    'gpt-test',
+  );
+
+  assertEquals('anthropicSpeed' in result, false);
+  assertEquals('anthropic_speed' in result, false);
+  assertEquals('speed' in result, false);
+  assertEquals('anthropicBeta' in result, false);
+  assertEquals('anthropic_beta' in result, false);
+});
+
+test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and max', () => {
+  const xhigh = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'xhigh' } } },
+    'gpt-test',
+  );
+  const max = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'max' } } },
+    'gpt-test',
+  );
+  const minimal = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } },
+    'gpt-test',
+  );
+
+  assertEquals(xhigh.reasoning_effort, 'xhigh');
+  assertEquals(max.reasoning_effort, 'max');
+  assertEquals(minimal.reasoning_effort, 'minimal');
+});
