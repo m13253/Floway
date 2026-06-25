@@ -57,6 +57,58 @@ describe('fetchCodexCatalog', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({ models: [{ slug: 'gpt-x', display_name: 'GPT-X' }] }));
     await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/context_window/);
   });
+
+  test('carries input_modalities, supported_reasoning_levels, default_reasoning_level through to CodexRawModel', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{
+        slug: 'gpt-5.5',
+        display_name: 'GPT-5.5',
+        context_window: 272000,
+        input_modalities: ['text', 'image'],
+        supported_reasoning_levels: [
+          { effort: 'low', description: 'Fast' },
+          { effort: 'medium', description: 'Balanced' },
+          { effort: 'high', description: 'Thorough' },
+        ],
+        default_reasoning_level: 'medium',
+      }],
+    }));
+    const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]).toEqual({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      input_modalities: ['text', 'image'],
+      reasoning_efforts: ['low', 'medium', 'high'],
+      default_reasoning_effort: 'medium',
+    });
+  });
+
+  test('tolerates entries missing the new optional fields (pre-catalog backwards compat)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-old', display_name: 'GPT-Old', context_window: 100000 }],
+    }));
+    const catalog = await fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(catalog[0]).toEqual({ id: 'gpt-old', display_name: 'GPT-Old', context_window: 100000 });
+    expect(catalog[0].input_modalities).toBeUndefined();
+    expect(catalog[0].reasoning_efforts).toBeUndefined();
+    expect(catalog[0].default_reasoning_effort).toBeUndefined();
+  });
+
+  test('throws on malformed input_modalities entry (unknown modality)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities: ['video'] }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/modality/);
+  });
+
+  test('throws on malformed supported_reasoning_levels entry (missing effort)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, supported_reasoning_levels: [{ description: 'no effort field' }] }],
+    }));
+    await expect(fetchCodexCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/reasoning level entry malformed/);
+  });
 });
 
 describe('codexRawToUpstreamModel', () => {
@@ -125,5 +177,78 @@ describe('codexRawToUpstreamModel', () => {
     const flags: ReadonlySet<string> = new Set(['responses-web-search-shim']);
     const m = codexRawToUpstreamModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, flags);
     expect(m.enabledFlags).toBe(flags);
+  });
+
+  test('populates chat when raw advertises both modalities and reasoning', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      input_modalities: ['text', 'image'],
+      reasoning_efforts: ['low', 'medium', 'high', 'xhigh'],
+      default_reasoning_effort: 'medium',
+    }, noFlags);
+    expect(m.chat).toEqual({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh'], default: 'medium' } },
+    });
+  });
+
+  test('omits chat when raw has no modalities or reasoning metadata', () => {
+    const m = codexRawToUpstreamModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
+    expect(m.chat).toBeUndefined();
+  });
+
+  test('sets chat.modalities but omits chat.reasoning when only modalities are present', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      input_modalities: ['text'],
+    }, noFlags);
+    expect(m.chat).toEqual({
+      modalities: { input: ['text'], output: ['text'] },
+    });
+    expect(m.chat?.reasoning).toBeUndefined();
+  });
+
+  test('derives default = medium when supported includes medium and default_reasoning_level absent', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      reasoning_efforts: ['low', 'medium', 'high'],
+    }, noFlags);
+    expect(m.chat?.reasoning).toEqual({ effort: { supported: ['low', 'medium', 'high'], default: 'medium' } });
+  });
+
+  test('derives default = first when medium absent and default_reasoning_level absent', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      reasoning_efforts: ['low', 'high'],
+    }, noFlags);
+    expect(m.chat?.reasoning).toEqual({ effort: { supported: ['low', 'high'], default: 'low' } });
+  });
+
+  test('drops reasoning entirely when default_reasoning_level present but supported_reasoning_levels absent', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      default_reasoning_effort: 'medium',
+    }, noFlags);
+    expect(m.chat?.reasoning).toBeUndefined();
+  });
+
+  test('throws when default_reasoning_effort is not in reasoning_efforts', () => {
+    expect(() => codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      reasoning_efforts: ['low', 'medium'],
+      default_reasoning_effort: 'high',
+    }, noFlags)).toThrow(/default_reasoning_level not in supported_reasoning_levels/);
   });
 });

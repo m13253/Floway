@@ -313,6 +313,7 @@ const refreshCachedModels = async () => {
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
+const modelsPanelInvalid = ref(false);
 
 const buildCustomConfig = (): Extract<CreateBody, { provider: 'custom' }>['config'] => {
   const config: Extract<CreateBody, { provider: 'custom' }>['config'] = {
@@ -362,6 +363,7 @@ const save = async () => {
   const trimmedName = name.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
+  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check model reasoning settings'; return; }
 
   saving.value = true;
   try {
@@ -590,6 +592,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :upstream-id-label="upstreamIdLabelForActive"
         :read-only="activeProvider === 'copilot' || activeProvider === 'codex' || activeProvider === 'claude-code'"
         :all-manual="activeProvider === 'azure'"
+        @update:invalid="v => modelsPanelInvalid = v"
       />
     </div>
   </div>

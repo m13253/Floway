@@ -18,6 +18,7 @@
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.
 
+import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
@@ -63,6 +64,8 @@ const finalizeOllamaModels = (
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
     const cost = pricingForOllamaModelKey(raw.id);
     if (cost) model.cost = cost;
+    const chat = chatFromOllamaRaw(raw);
+    if (chat) model.chat = chat;
     models.push(model);
   }
   return models;
@@ -89,6 +92,7 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.cost) internal.cost = model.cost;
+    if (model.chat) internal.chat = model.chat;
     return internal;
   });
   const manualPricingByUpstreamId = new Map<string, ModelPricing>(

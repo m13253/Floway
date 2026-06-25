@@ -446,6 +446,7 @@ export const listUpstreamModels = async (c: AuthedContext<'/:id'>) => {
       ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
       ...(model.limits ? { limits: model.limits } : {}),
       ...(model.cost ? { cost: model.cost } : {}),
+      ...(model.chat ? { chat: model.chat } : {}),
     }));
     return c.json({ data });
   } catch (e) {

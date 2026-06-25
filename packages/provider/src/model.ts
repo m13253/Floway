@@ -1,3 +1,4 @@
+import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
@@ -84,6 +85,7 @@ export interface InternalModel {
   };
   kind: ModelKind;
   cost?: ModelPricing;
+  chat?: UpstreamChatModelConfig;
 }
 
 export interface UpstreamModel extends InternalModel {
