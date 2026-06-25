@@ -1,10 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { computeCatalogForTest } from './models.ts';
+import { computeCatalog } from './models.ts';
 import type { InternalModel } from '@floway-dev/provider';
-
-// computeCatalog is internal; we export computeCatalogForTest as a thin alias
-// taking pre-built inputs so we don't have to mock the upstream fetcher chain.
 
 const bundled = {
   models: [
@@ -23,7 +20,7 @@ const chat = (id: string, displayName?: string, ctx = 100000): InternalModel => 
 
 describe('computeCatalog', () => {
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
-    const out = computeCatalogForTest(bundled, [chat('gpt-5.5', 'Custom Display Name', 200000)]);
+    const out = computeCatalog(bundled, [chat('gpt-5.5', 'Custom Display Name', 200000)]);
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
     expect(e.slug).toBe('gpt-5.5');
@@ -34,7 +31,7 @@ describe('computeCatalog', () => {
   });
 
   test('segment match via prefix and suffix', () => {
-    const out = computeCatalogForTest(bundled, [
+    const out = computeCatalog(bundled, [
       chat('openrouter/gpt-5.5:nitro'),
       chat('azure/gpt-5.4'),
     ]);
@@ -44,19 +41,19 @@ describe('computeCatalog', () => {
   });
 
   test('multiple bundled-matching ids of the same bundled slug coexist', () => {
-    const out = computeCatalogForTest(bundled, [chat('gpt-5.5'), chat('openrouter/gpt-5.5:nitro')]);
+    const out = computeCatalog(bundled, [chat('gpt-5.5'), chat('openrouter/gpt-5.5:nitro')]);
     expect(out.models).toHaveLength(2);
     expect(out.models.every(m => m.priority === 1)).toBe(true);
   });
 
   test('first segment match wins', () => {
     // openrouter/gpt-5.5/gpt-5.4 — the first match should be gpt-5.5
-    const out = computeCatalogForTest(bundled, [chat('openrouter/gpt-5.5/gpt-5.4')]);
+    const out = computeCatalog(bundled, [chat('openrouter/gpt-5.5/gpt-5.4')]);
     expect(out.models[0].priority).toBe(1);  // gpt-5.5's priority
   });
 
   test('no match: synthesizes a new entry', () => {
-    const out = computeCatalogForTest(bundled, [chat('deepseek-v4-pro', 'DeepSeek V4 Pro', 128000)]);
+    const out = computeCatalog(bundled, [chat('deepseek-v4-pro', 'DeepSeek V4 Pro', 128000)]);
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
     expect(e.slug).toBe('deepseek-v4-pro');
@@ -67,7 +64,7 @@ describe('computeCatalog', () => {
   });
 
   test('non-chat models are dropped', () => {
-    const out = computeCatalogForTest(bundled, [
+    const out = computeCatalog(bundled, [
       { id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {} },
       chat('gpt-5.5'),
     ] as InternalModel[]);
@@ -76,12 +73,12 @@ describe('computeCatalog', () => {
   });
 
   test('alias appears when target is in registry', () => {
-    const out = computeCatalogForTest(bundled, [chat('gpt-5.4')]);   // gpt-5.4 is CODEX_AUTO_REVIEW_TARGET
+    const out = computeCatalog(bundled, [chat('gpt-5.4')]);   // gpt-5.4 is CODEX_AUTO_REVIEW_TARGET
     expect(out.models.map(m => m.slug)).toContain('codex-auto-review');
   });
 
   test('alias absent when target not in registry', () => {
-    const out = computeCatalogForTest(bundled, [chat('gpt-5.5')]);
+    const out = computeCatalog(bundled, [chat('gpt-5.5')]);
     expect(out.models.map(m => m.slug)).not.toContain('codex-auto-review');
   });
 });

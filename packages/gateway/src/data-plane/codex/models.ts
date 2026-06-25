@@ -35,8 +35,7 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { getInternalModels } from '../providers/registry.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 // Five minutes is short enough to pick up an upstream catalog change within
 // one or two codex sessions but long enough that an active user only ever
@@ -52,11 +51,9 @@ const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | nul
   return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
 };
 
-// Internal: pure function over already-resolved inputs. Exported as
-// `computeCatalogForTest` so tests can supply fixtures without mocking
-// fetchCodexCatalog / getInternalModels / scheduler. Production path
-// (`codexModels` handler) still composes these via `computeCatalog`.
-export const computeCatalogForTest = (
+// Pure function over already-resolved inputs. Tests can call this directly
+// with fixtures, avoiding mocks for the fetcher chain and scheduler.
+export const computeCatalog = (
   bundled: CodexCatalog,
   internalModels: readonly InternalModel[],
 ): CodexCatalog => {
@@ -108,19 +105,6 @@ export const computeCatalogForTest = (
   return applyContextWindowFromRegistry({ models }, contextWindowOf);
 };
 
-const computeCatalog = async (
-  userAgent: string | undefined,
-  upstreamIds: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<CodexCatalog> => {
-  const [bundled, internalModels] = await Promise.all([
-    resolveCodexCatalog(userAgent),
-    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
-  ]);
-  return computeCatalogForTest(bundled, internalModels);
-};
-
 export const codexModels = async (c: Context): Promise<Response> => {
   const userAgent = c.req.header('user-agent');
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
@@ -137,7 +121,11 @@ export const codexModels = async (c: Context): Promise<Response> => {
 
   const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
-  const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {
+  const [bundled, internalModels] = await Promise.all([
+    resolveCodexCatalog(userAgent),
+    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
+  ]);
+  const response = Response.json(computeCatalog(bundled, internalModels), {
     headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },
   });
   if (cache !== null && cacheKey !== null) {
