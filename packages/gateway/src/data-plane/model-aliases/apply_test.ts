@@ -195,12 +195,6 @@ describe('applyAliasRulesToGemini', () => {
     expect(payload.generationConfig?.serviceTier).toBe('flex');
   });
 
-  test('writes anthropicBeta to top-level extension slot', () => {
-    const payload = gem();
-    applyAliasRulesToGemini(payload, { anthropicBeta: ['ctx-1m'] });
-    expect(payload.anthropicBeta).toEqual(['ctx-1m']);
-  });
-
   test('preserves existing thinkingConfig entries when adding a new one', () => {
     const payload = gem({ generationConfig: { thinkingConfig: { thinkingBudget: 1024 } } });
     applyAliasRulesToGemini(payload, { reasoning: { summary: 'detailed' } });

@@ -43,10 +43,9 @@ export const applyAliasRulesToMessages = (payload: MessagesPayload, rules: Model
   if (rules.reasoning?.effort !== undefined) {
     payload.output_config = { ...payload.output_config, effort: rules.reasoning.effort };
   }
-  // Adaptive wins over budgetTokens when both arrive — the write-side
-  // validator forbids the combination, but the apply step has to make a
-  // choice if both slip through and the translate-layer policy is
-  // adaptive-first.
+  // The dashboard's tagged radio enforces mutual exclusivity between
+  // adaptive and budgetTokens; if both arrive through the raw API the apply
+  // step picks adaptive (matches the translate-layer adaptive-first policy).
   if (rules.reasoning?.adaptive === true) {
     payload.thinking = { type: 'adaptive' };
   } else if (rules.reasoning?.budgetTokens !== undefined) {
@@ -74,9 +73,10 @@ export const applyAliasRulesToMessages = (payload: MessagesPayload, rules: Model
 
 export const applyAliasRulesToGemini = (payload: GeminiPayload, rules: ModelAliasRules): void => {
   // All four reasoning knobs ride on the native thinkingConfig; verbosity and
-  // serviceTier ride on extension slots under generationConfig; anthropicBeta
-  // rides on a top-level extension slot so the existing gemini-via-messages
-  // translator picks it up there.
+  // serviceTier ride on extension slots under generationConfig. anthropicBeta
+  // doesn't surface on Gemini-inbound bodies — the gemini-via-messages
+  // translator doesn't read it, and the Messages attempt reads it off the
+  // candidate's aliasRules directly when stamping the outbound header.
   const hasThinking = rules.reasoning?.effort !== undefined
     || rules.reasoning?.budgetTokens !== undefined
     || rules.reasoning?.adaptive === true
@@ -101,5 +101,4 @@ export const applyAliasRulesToGemini = (payload: GeminiPayload, rules: ModelAlia
     if (rules.serviceTier !== undefined) generationConfig.serviceTier = rules.serviceTier;
     payload.generationConfig = generationConfig;
   }
-  if (rules.anthropicBeta?.length) payload.anthropicBeta = [...rules.anthropicBeta];
 };
