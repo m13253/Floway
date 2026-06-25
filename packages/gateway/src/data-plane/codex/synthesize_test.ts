@@ -63,7 +63,7 @@ describe('synthesizeCatalogEntry', () => {
   test('propagates reasoning levels as {effort, description} preset', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      chat: { reasoning: { supported_efforts: ['low', 'high'], default_effort: 'low' } },
+      chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'low' } } },
     });
     expect(entry.supported_reasoning_levels).toEqual([
       { effort: 'low', description: '' },
