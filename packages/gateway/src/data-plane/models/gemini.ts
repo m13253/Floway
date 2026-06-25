@@ -1,8 +1,6 @@
 import type { Context } from 'hono';
 
-import { aliasListingEmissions, aliasPublicId } from './alias-listing.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
-import { composeAliasDisplayName } from '../../control-plane/model-aliases/display.ts';
 import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -34,6 +32,10 @@ interface GeminiModel {
   cost?: ModelPricing;
 }
 
+// Gemini's Model resource is closed (no `aliasedFrom` extension), so an alias
+// arrives here through `getModelsForListing` looking like any other chat
+// model — `id`, `display_name`, `limits`, `cost` already finalized by
+// `synthesizeListedAliases` — and the mapper has no alias-specific branch.
 const toGeminiModel = (model: InternalModel): GeminiModel => {
   const limits = model.limits;
   const inputTokenLimit = limits.max_prompt_tokens ?? limits.max_context_window_tokens;
@@ -72,33 +74,11 @@ const loadGeminiModels = async (
   scheduler: BackgroundScheduler,
   aliases: readonly ModelAlias[],
 ): Promise<GeminiModel[]> => {
-  const { models, providers, rawCatalogs } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler);
-  // Only chat models are representable in the Gemini /models shape.
-  const realChatEntries = models.filter(model => model.kind === 'chat').map(toGeminiModel);
-  // Per-upstream alias enumeration mirrors `/v1/models`. Each emission becomes
-  // one Gemini Model entry whose id and displayName reflect that specific
-  // (provider, addressable form) pair; targets of the wrong kind never reach
-  // here because they were already filtered out of the catalog walk.
-  const aliasEntries: GeminiModel[] = [];
-  for (const alias of aliases) {
-    if (!alias.visibleInModelsList) continue;
-    for (const emission of aliasListingEmissions(alias, providers, rawCatalogs)) {
-      if (emission.target.kind !== 'chat') continue;
-      const aliasLocalName = composeAliasDisplayName({
-        aliasDisplayName: alias.displayName,
-        targetDisplayName: emission.target.display_name ?? emission.target.id,
-        rules: alias.rules,
-      });
-      aliasEntries.push(toGeminiModel({
-        ...emission.target,
-        id: aliasPublicId(alias, emission),
-        display_name: emission.form === 'prefixed' ? `${emission.provider.name}: ${aliasLocalName}` : aliasLocalName,
-        kind: 'chat',
-        limits: emission.target.limits ?? {},
-      }));
-    }
-  }
-  return [...realChatEntries, ...aliasEntries];
+  const { models } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler, aliases);
+  // Only chat models are representable in the Gemini /models shape — alias
+  // entries whose target is non-chat fall out of this filter just like real
+  // non-chat catalog entries do.
+  return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {

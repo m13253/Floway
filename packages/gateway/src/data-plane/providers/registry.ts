@@ -2,6 +2,7 @@ import { fetchUpstreamModelsCached } from './models-cache.ts';
 import type { ModelAlias, ModelAliasRules } from '../../control-plane/model-aliases/types.ts';
 import { getRepo } from '../../repo/index.ts';
 import { matchAlias } from '../model-aliases/match.ts';
+import { synthesizeListedAliases, type ListedModel } from '../models/alias-listing.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -271,13 +272,14 @@ export const getModels = async (
 };
 
 // Returns the merged public model list AND the per-upstream raw catalogs and
-// provider instances. Listing surfaces (`/v1/models`, Gemini `/models`) use the
-// extra channels to synthesize alias entries that reflect which upstreams can
-// actually serve each alias's target and in which addressable form. Computing
-// both off the same `collectProviderModels` pass keeps catalog fetches to one
-// round per upstream regardless of how many alias rows reference each target.
+// provider instances. Listing surfaces (`/v1/models`, `/api/models`, Gemini
+// `/models`) use the same call so alias entries — synthesized once via
+// `synthesizeListedAliases` against the same `(providers, rawCatalogs)` pair —
+// are interleaved into the catalog before it returns. Per-surface mappers
+// then walk one uniform `ListedModel[]` instead of re-implementing alias
+// fan-out three times.
 export interface PublicModelsListing {
-  models: ResolvedModel[];
+  models: ListedModel[];
   providers: readonly ModelProviderInstance[];
   rawCatalogs: ReadonlyMap<string, readonly UpstreamModel[]>;
 }
@@ -286,6 +288,7 @@ export const getModelsForListing = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  aliases: readonly ModelAlias[],
 ): Promise<PublicModelsListing> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
@@ -294,7 +297,11 @@ export const getModelsForListing = async (
 
   const { models, sawSuccess, lastError, rawCatalogs } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
 
-  if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), providers, rawCatalogs };
+  if (sawSuccess) {
+    const real = models.sort((a, b) => compareModelIds(a.id, b.id));
+    const aliasEntries = synthesizeListedAliases(aliases, providers, rawCatalogs);
+    return { models: [...real, ...aliasEntries], providers, rawCatalogs };
+  }
   if (lastError) throw lastError;
   return { models: [], providers, rawCatalogs };
 };
