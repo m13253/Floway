@@ -1,7 +1,6 @@
 import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
-import { mapAnthropicDisplayToSummary } from '../shared/messages-via/reasoning-summary.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import {
   type MessagesAssistantMessage,
@@ -208,15 +207,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   // Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
   const effort = resolveMessagesReasoningEffort(payload);
-  const display = payload.thinking?.display;
-  const summary = display !== undefined ? mapAnthropicDisplayToSummary(display) : undefined;
-  const reasoning =
-    effort !== undefined || summary !== undefined
-      ? {
-          ...(effort !== undefined ? { effort } : {}),
-          ...(summary !== undefined ? { summary } : {}),
-        }
-      : undefined;
+  const reasoning = effort ? { effort } : undefined;
   const clientTools = getClientTools(payload.tools);
   const instructions = translateSystemPrompt(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
@@ -225,8 +216,8 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   const text = formatPart || verbosityPart ? { ...formatPart, ...verbosityPart } : undefined;
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
-  // `store: false`, or `parallel_tool_calls: true` when the Messages source
-  // did not express those knobs.
+  // `store: false`, `parallel_tool_calls: true`, or `reasoning.summary` when the
+  // Messages source did not express those knobs.
   return {
     model: payload.model,
     input: translateMessagesInput(payload.messages),
@@ -240,7 +231,6 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
     stream: true,
     ...(reasoning ? { reasoning } : {}),
     ...(text ? { text } : {}),
-    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
   };
 };
 

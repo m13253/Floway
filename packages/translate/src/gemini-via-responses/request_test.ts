@@ -432,26 +432,6 @@ test('buildTargetRequest emits generationConfig.serviceTier onto Responses servi
   assertEquals(result.service_tier, 'priority');
 });
 
-test('buildTargetRequest maps includeThoughts onto reasoning.summary (true → detailed, false → omitted)', () => {
-  const withSummary = buildTargetRequest(
-    {
-      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      generationConfig: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: true } },
-    },
-    'gpt-test',
-  );
-  const withoutSummary = buildTargetRequest(
-    {
-      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      generationConfig: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: false } },
-    },
-    'gpt-test',
-  );
-
-  assertEquals(withSummary.reasoning, { effort: 'high', summary: 'detailed' });
-  assertEquals(withoutSummary.reasoning, { effort: 'high', summary: 'omitted' });
-});
-
 test('buildTargetRequest drops top-level Anthropic extensions on Responses', () => {
   const result = buildTargetRequest(
     {

@@ -291,7 +291,6 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
     tool_choice: translateMessagesToolChoice(payload.tool_choice, clientTools),
     ...(responseFormat ? { response_format: responseFormat } : {}),
     ...(payload.verbosity != null ? { verbosity: payload.verbosity } : {}),
-    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
   };
 };
 

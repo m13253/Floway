@@ -494,17 +494,6 @@ test('translateMessagesToChatCompletions emits verbosity extension verbatim', ()
   assertEquals(result.verbosity, 'low');
 });
 
-test('translateMessagesToChatCompletions forwards service_tier verbatim', () => {
-  const result = translateMessagesToChatCompletions({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    service_tier: 'priority',
-  });
-
-  assertEquals(result.service_tier, 'priority');
-});
-
 test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no Chat-completions slot', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',

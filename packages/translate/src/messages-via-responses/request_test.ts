@@ -529,42 +529,6 @@ test('translateMessagesToResponses co-emits verbosity with json_schema format un
   assertEquals(result.text?.format?.type, 'json_schema');
 });
 
-test('translateMessagesToResponses maps thinking.display onto reasoning.summary (summarized → concise, omitted → omitted, full → detailed)', () => {
-  const summarized = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking: { type: 'enabled', display: 'summarized' },
-  });
-  const omitted = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking: { type: 'enabled', display: 'omitted' },
-  });
-  const full = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking: { type: 'enabled', display: 'full' },
-  });
-
-  assertEquals(summarized.reasoning?.summary, 'concise');
-  assertEquals(omitted.reasoning?.summary, 'omitted');
-  assertEquals(full.reasoning?.summary, 'detailed');
-});
-
-test('translateMessagesToResponses forwards service_tier verbatim', () => {
-  const result = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    service_tier: 'priority',
-  });
-
-  assertEquals(result.service_tier, 'priority');
-});
-
 test('translateMessagesToResponses drops Anthropic-only mode knobs the Responses wire cannot express', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',

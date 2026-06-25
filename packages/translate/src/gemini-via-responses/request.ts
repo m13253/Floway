@@ -152,18 +152,12 @@ const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: Gem
   if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
 
   const effort = geminiReasoningEffort(generationConfig.thinkingConfig);
-  const summary =
-    generationConfig.thinkingConfig?.includeThoughts === true
-      ? ('detailed' as const)
-      : generationConfig.thinkingConfig?.includeThoughts === false
-        ? ('omitted' as const)
-        : undefined;
-  if (effort || summary !== undefined) {
-    request.reasoning = {
-      ...(effort ? { effort } : {}),
-      ...(summary !== undefined && effort !== 'none' ? { summary } : {}),
-    };
-  }
+  if (!effort) return;
+
+  request.reasoning = {
+    effort,
+    ...(effort !== 'none' && generationConfig.thinkingConfig?.includeThoughts === true ? { summary: 'detailed' as const } : {}),
+  };
 };
 
 const buildTools = (payload: GeminiPayload): ResponsesTool[] | undefined => {
