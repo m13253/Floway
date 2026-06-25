@@ -1,13 +1,14 @@
 import type { TokenUsage } from '../../repo/types.ts';
-import { billableServiceTier, tokenUsage } from '../shared/telemetry/usage.ts';
+import { billableServiceTier, openAICacheTokensFromUsage, tokenUsage } from '../shared/telemetry/usage.ts';
 
 // `/v1/completions` shares OpenAI's CompletionUsage schema with
-// `/v1/chat/completions` — the same prompt-cache split lives under
-// `prompt_tokens_details` when the upstream reports it (vLLM, llama.cpp,
-// Fireworks, OpenRouter, xAI Grok all populate it; OpenAI's own text
-// models leave it absent). The bare `input` dimension subtracts cache_read
-// so the two input dimensions stay disjoint, matching what
-// tokenUsageFromChatCompletionsUsage does for chat.
+// `/v1/chat/completions`. Both routes hand off to the shared
+// `openAICacheTokensFromUsage` helper for the cache-read / cache-write
+// counts so the variant field names wild OpenAI-compatible upstreams
+// emit (DeepSeek's `prompt_cache_hit_tokens`, Moonshot's flat
+// `cached_tokens`, OpenRouter's `cache_write_tokens`, …) land in the
+// correct dimensions automatically. The bare `input` dimension subtracts
+// both cache counts so the three input dimensions stay disjoint.
 //
 // `service_tier` lives on the response root, not inside `usage`, and is
 // supplied separately by the caller. vLLM surfaces it on the
@@ -16,16 +17,16 @@ import { billableServiceTier, tokenUsage } from '../shared/telemetry/usage.ts';
 
 export const tokenUsageFromCompletionsUsage = (usage: unknown, serviceTier: string | null | undefined): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;
-  const { prompt_tokens: promptTokens, completion_tokens: completionTokens, prompt_tokens_details: details } = usage as {
+  const { prompt_tokens: promptTokens, completion_tokens: completionTokens } = usage as {
     prompt_tokens?: unknown;
     completion_tokens?: unknown;
-    prompt_tokens_details?: { cached_tokens?: unknown };
   };
   if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number') return null;
-  const cacheRead = typeof details?.cached_tokens === 'number' ? details.cached_tokens : 0;
+  const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(usage);
   return tokenUsage({
-    input: promptTokens - cacheRead,
+    input: promptTokens - cacheRead - cacheWrite,
     input_cache_read: cacheRead,
+    input_cache_write: cacheWrite,
     output: completionTokens,
     tier: billableServiceTier(serviceTier),
   });
