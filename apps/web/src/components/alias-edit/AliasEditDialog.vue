@@ -203,11 +203,6 @@ const save = async () => {
       if (error) { saveError.value = error.message; return; }
     }
     emit('saved');
-    // Also refresh the dashboard's /api/models cache so the new alias appears
-    // in the catalog. The settings.vue reloadAll handler does this too, but a
-    // direct call here keeps the modal-close semantics independent of the
-    // parent's reload wiring.
-    await modelsStore.load();
     open.value = false;
   } finally {
     saving.value = false;
