@@ -21,8 +21,15 @@ export interface UpstreamChatModelConfig {
     output: readonly Modality[];
   };
   reasoning?: {
-    supported_efforts: readonly string[];
-    default_effort: string;
+    // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
+    effort?: { supported: readonly string[]; default: string };
+    // Operator-supplied token budget. Bounds are optional; absent bounds mean
+    // "operator can supply a budget, but legal range is unknown".
+    budget_tokens?: { min?: number; max?: number };
+    // Model-controlled adaptive depth — the model decides how much reasoning to do.
+    adaptive?: boolean;
+    // Always-on reasoning — the model cannot be instructed to skip it.
+    mandatory?: boolean;
   };
 }
 
@@ -181,21 +188,64 @@ const inputModalitiesField = (value: unknown, label: string): readonly Modality[
   return modalities;
 };
 
+const optionalNonNegativeIntField = (value: unknown, label: string): number | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`Malformed ${label}: must be a non-negative integer`);
+  }
+  return value;
+};
+
 const reasoningField = (value: unknown, label: string): UpstreamChatModelConfig['reasoning'] => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  if (!Array.isArray(value.supported_efforts)) throw new Error(`Malformed ${label}.supported_efforts: must be an array`);
-  const supported: string[] = [];
-  for (const eff of value.supported_efforts) {
-    if (typeof eff !== 'string' || eff.length === 0) throw new Error(`Malformed ${label}.supported_efforts: every entry must be a non-empty string`);
-    if (!supported.includes(eff)) supported.push(eff);
+
+  const result: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
+
+  if (value.effort !== undefined) {
+    if (!isRecord(value.effort)) throw new Error(`Malformed ${label}.effort: must be an object`);
+    if (!Array.isArray(value.effort.supported)) throw new Error(`Malformed ${label}.effort.supported: must be an array`);
+    const supported: string[] = [];
+    for (const eff of value.effort.supported) {
+      if (typeof eff !== 'string' || eff.length === 0) throw new Error(`Malformed ${label}.effort.supported: every entry must be a non-empty string`);
+      if (!supported.includes(eff)) supported.push(eff);
+    }
+    if (supported.length === 0) throw new Error(`Malformed ${label}.effort.supported: must have at least one entry`);
+    if (typeof value.effort.default !== 'string' || value.effort.default.length === 0) {
+      throw new Error(`Malformed ${label}.effort.default: must be a non-empty string`);
+    }
+    if (!supported.includes(value.effort.default)) {
+      throw new Error(`Malformed ${label}.effort.default: ${JSON.stringify(value.effort.default)} not in effort.supported`);
+    }
+    result.effort = { supported, default: value.effort.default };
   }
-  if (typeof value.default_effort !== 'string' || value.default_effort.length === 0) {
-    throw new Error(`Malformed ${label}.default_effort: must be a non-empty string`);
+
+  if (value.budget_tokens !== undefined) {
+    if (!isRecord(value.budget_tokens)) throw new Error(`Malformed ${label}.budget_tokens: must be an object`);
+    const min = optionalNonNegativeIntField(value.budget_tokens.min, `${label}.budget_tokens.min`);
+    const max = optionalNonNegativeIntField(value.budget_tokens.max, `${label}.budget_tokens.max`);
+    if (min !== undefined && max !== undefined && max < min) {
+      throw new Error(`Malformed ${label}.budget_tokens: max must be >= min`);
+    }
+    result.budget_tokens = { ...(min !== undefined ? { min } : {}), ...(max !== undefined ? { max } : {}) };
   }
-  if (!supported.includes(value.default_effort)) {
-    throw new Error(`Malformed ${label}.default_effort: ${JSON.stringify(value.default_effort)} not in supported_efforts`);
+
+  if (value.adaptive !== undefined) {
+    if (typeof value.adaptive !== 'boolean') throw new Error(`Malformed ${label}.adaptive: must be a boolean`);
+    // Strip false — semantically equivalent to absent.
+    if (value.adaptive) result.adaptive = true;
   }
-  return { supported_efforts: supported, default_effort: value.default_effort };
+
+  if (value.mandatory !== undefined) {
+    if (typeof value.mandatory !== 'boolean') throw new Error(`Malformed ${label}.mandatory: must be a boolean`);
+    // Strip false — semantically equivalent to absent.
+    if (value.mandatory) result.mandatory = true;
+  }
+
+  if (result.effort === undefined && result.budget_tokens === undefined && result.adaptive === undefined && result.mandatory === undefined) {
+    throw new Error(`Malformed ${label}: must have at least one of effort, budget_tokens, adaptive, mandatory`);
+  }
+
+  return result;
 };
 
 export const chatField = (value: unknown, label: string): UpstreamChatModelConfig | undefined => {

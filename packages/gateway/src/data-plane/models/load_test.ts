@@ -17,7 +17,7 @@ describe('toPublicModel', () => {
   test('propagates chat metadata verbatim', () => {
     const chat = {
       modalities: { input: ['text', 'image'] as const, output: ['text'] as const },
-      reasoning: { supported_efforts: ['low', 'high'] as const, default_effort: 'low' },
+      reasoning: { effort: { supported: ['low', 'high'] as const, default: 'low' } },
     };
     expect(toPublicModel({ ...base, chat }).chat).toEqual(chat);
   });

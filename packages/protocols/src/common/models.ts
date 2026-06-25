@@ -93,14 +93,17 @@ export type Modality = 'text' | 'image';
 
 // Wire-level chat metadata, mirrored from UpstreamChatModelConfig in
 // @floway-dev/provider. Lives here so PublicModel stays self-contained.
+// Field names and semantics are intentionally identical to the provider type.
 export interface ChatModelInfo {
   modalities?: {
     input: readonly Modality[];
     output: readonly Modality[];
   };
   reasoning?: {
-    supported_efforts: readonly string[];
-    default_effort: string;
+    effort?: { supported: readonly string[]; default: string };
+    budget_tokens?: { min?: number; max?: number };
+    adaptive?: boolean;
+    mandatory?: boolean;
   };
 }
 

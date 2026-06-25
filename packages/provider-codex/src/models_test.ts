@@ -190,7 +190,7 @@ describe('codexRawToUpstreamModel', () => {
     }, noFlags);
     expect(m.chat).toEqual({
       modalities: { input: ['text', 'image'], output: ['text'] },
-      reasoning: { supported_efforts: ['low', 'medium', 'high', 'xhigh'], default_effort: 'medium' },
+      reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh'], default: 'medium' } },
     });
   });
 

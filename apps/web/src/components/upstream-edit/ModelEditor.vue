@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue';
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
-import type { BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import type { BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -26,6 +26,7 @@ const emit = defineEmits<{
   'patch-config': [patch: Partial<UpstreamModelConfig>];
   'set-mode': [next: 'auto' | 'manual'];
   remove: [];
+  'validity-change': [valid: boolean];
 }>();
 
 const kindOptions: { value: ModelKind; label: string }[] = [
@@ -250,6 +251,102 @@ const toggleFlagOverridesEnabled = () => {
 
 const updateFlagOverrides = (values: Record<string, boolean>) => {
   patch({ flagOverrides: { enabled: true, values } });
+};
+
+// ── Chat metadata ──────────────────────────────────────────────────────────
+
+// Known Codex CLI effort presets as of v0.137. Codex's wire type is open
+// (ReasoningEffort::Custom(String)) so any string is accepted upstream;
+// these are just the convenient quick-adds. See:
+// https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs
+const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ultra'] as const;
+
+// Free-typing input for adding a custom reasoning level not in the quick-add list.
+const reasoningLevelInput = ref('');
+
+// Resync input buffer when the active row changes.
+watch(() => props.row?.uiId, () => {
+  reasoningLevelInput.value = '';
+});
+
+const chatImageInput = computed<boolean>(
+  () => config.value?.chat?.modalities?.input.includes('image') ?? false,
+);
+
+// TODO (Task 18): Redesign this section to surface all four reasoning sub-blocks
+// (effort, budget_tokens, adaptive, mandatory). Currently only effort is editable.
+const supportedEfforts = computed<string[]>(
+  () => config.value?.chat?.reasoning?.effort?.supported ?? [],
+);
+
+// A chat row is invalid when effort reasoning exists but default is empty or not
+// in effort.supported. The save button must be blocked in that state.
+const isReasoningValid = computed<boolean>(() => {
+  const reasoning = config.value?.chat?.reasoning;
+  if (!reasoning) return true;
+  if (!reasoning.effort) return true;
+  return reasoning.effort.default !== '' && reasoning.effort.supported.includes(reasoning.effort.default);
+});
+
+watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediate: true });
+
+const buildNextChat = (partial: Partial<UpstreamChatConfig>): UpstreamChatConfig | undefined => {
+  const base = config.value?.chat ?? {};
+  const next: UpstreamChatConfig = { ...base, ...partial };
+
+  // Normalise: omit modalities when it would only carry the default (text-only) shape.
+  const hasImageInput = next.modalities?.input.includes('image') === true;
+  next.modalities = hasImageInput
+    ? { input: ['text', 'image'], output: ['text'] }
+    : undefined;
+
+  // Omit reasoning when the effort list is empty (other sub-blocks preserved by Task 18 redesign).
+  if (!next.reasoning?.effort || next.reasoning.effort.supported.length === 0) {
+    const { effort: _effort, ...rest } = next.reasoning ?? {};
+    next.reasoning = Object.keys(rest).length > 0 ? rest : undefined;
+  }
+
+  // Return undefined (omit chat key entirely) when nothing is configured.
+  if (!next.modalities && !next.reasoning) return undefined;
+  return next;
+};
+
+const toggleImageInput = (on: boolean) => {
+  if (!editable.value) return;
+  patch({ chat: buildNextChat({ modalities: on ? { input: ['text', 'image'], output: ['text'] } : undefined }) });
+};
+
+const addReasoningLevel = (level: string) => {
+  if (!editable.value || !config.value) return;
+  const trimmed = level.trim();
+  if (!trimmed) return;
+  const current = supportedEfforts.value;
+  if (current.includes(trimmed)) return;
+  const updated = [...current, trimmed];
+  const existing = config.value.chat?.reasoning?.effort;
+  patch({ chat: buildNextChat({ reasoning: { ...config.value.chat?.reasoning, effort: { supported: updated, default: existing?.default ?? '' } } }) });
+};
+
+const removeReasoningLevel = (level: string) => {
+  if (!editable.value || !config.value) return;
+  const updated = supportedEfforts.value.filter(e => e !== level);
+  const existingEffort = config.value.chat?.reasoning?.effort;
+  const nextDefault = existingEffort?.default === level ? '' : (existingEffort?.default ?? '');
+  const nextEffort = updated.length > 0 ? { supported: updated, default: nextDefault } : undefined;
+  patch({ chat: buildNextChat({ reasoning: nextEffort !== undefined ? { ...config.value.chat?.reasoning, effort: nextEffort } : (({ effort: _e, ...rest }) => Object.keys(rest).length > 0 ? rest : undefined)(config.value.chat?.reasoning ?? {}) }) });
+};
+
+const commitReasoningInput = () => {
+  const trimmed = reasoningLevelInput.value.trim();
+  if (!trimmed) return;
+  addReasoningLevel(trimmed);
+  reasoningLevelInput.value = '';
+};
+
+const setDefaultEffort = (value: string) => {
+  if (!editable.value || !config.value) return;
+  const current = supportedEfforts.value;
+  patch({ chat: buildNextChat({ reasoning: { ...config.value.chat?.reasoning, effort: { supported: current, default: value } } }) });
 };
 </script>
 
@@ -529,6 +626,104 @@ const updateFlagOverrides = (values: Record<string, boolean>) => {
                     />
                   </label>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="rowKind === 'chat'">
+          <div class="mb-3 flex items-baseline gap-3">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Chat</h3>
+            <span class="text-[11px] text-gray-500">modalities and reasoning capabilities</span>
+          </div>
+
+          <!-- Image input toggle -->
+          <div class="mb-4 space-y-2">
+            <span class="block text-xs font-medium text-gray-500">Input Modalities</span>
+            <div class="flex flex-wrap items-center gap-4">
+              <label class="flex cursor-not-allowed items-center gap-2">
+                <input type="checkbox" class="sr-only" checked disabled />
+                <span class="inline-flex h-4 w-4 items-center justify-center rounded border border-white/20 bg-white/10">
+                  <svg class="h-2.5 w-2.5 text-gray-400" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M2 6l3 3 5-5" />
+                  </svg>
+                </span>
+                <span class="text-xs text-gray-500">Text (always on)</span>
+              </label>
+              <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+                <Switch
+                  :model-value="chatImageInput"
+                  :disabled="!editable"
+                  @update:model-value="v => toggleImageInput(v === true)"
+                />
+                <span class="text-xs" :class="chatImageInput ? 'text-white' : 'text-gray-500'">Image</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Reasoning levels tag input -->
+          <div class="mb-4 space-y-2">
+            <span class="block text-xs font-medium text-gray-500">Supported Reasoning Levels</span>
+            <div v-if="supportedEfforts.length > 0" class="mb-2 flex flex-wrap gap-1.5">
+              <span
+                v-for="level in supportedEfforts"
+                :key="level"
+                class="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-2 py-0.5 font-mono text-[11px] text-gray-300"
+              >
+                {{ level }}
+                <button
+                  v-if="editable"
+                  type="button"
+                  class="ml-0.5 text-gray-500 transition-colors hover:text-accent-rose"
+                  :aria-label="`Remove ${level}`"
+                  @click="removeReasoningLevel(level)"
+                >
+                  <svg class="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 3 3 9M3 3l6 6" />
+                  </svg>
+                </button>
+              </span>
+            </div>
+            <div v-if="editable" class="flex flex-wrap gap-1.5">
+              <button
+                v-for="level in REASONING_LEVELS"
+                :key="level"
+                type="button"
+                class="rounded border px-2 py-0.5 font-mono text-[11px] transition-colors"
+                :class="supportedEfforts.includes(level)
+                  ? 'border-white/10 text-gray-600 cursor-default'
+                  : 'border-white/15 text-gray-400 hover:border-accent-cyan/40 hover:text-accent-cyan'"
+                :disabled="supportedEfforts.includes(level)"
+                @click="addReasoningLevel(level)"
+              >+ {{ level }}</button>
+            </div>
+            <div v-if="editable" class="flex max-w-xs gap-2">
+              <Input
+                v-model="reasoningLevelInput"
+                placeholder="custom level…"
+                class="font-mono"
+                @keydown.enter.prevent="commitReasoningInput"
+              />
+              <Button variant="secondary" size="sm" @click="commitReasoningInput">Add</Button>
+            </div>
+          </div>
+
+          <!-- Default reasoning level -->
+          <div class="space-y-2">
+            <span class="block text-xs font-medium text-gray-500">Default Reasoning Level</span>
+            <p v-if="rowKind === 'chat' && config.chat?.reasoning?.effort && !config.chat.reasoning.effort.default" class="text-[11px] text-accent-rose">
+              Default cleared — selected level is no longer in the list.
+            </p>
+            <div class="max-w-xs">
+              <Select
+                v-if="editable"
+                :model-value="config.chat?.reasoning?.effort?.default ?? ''"
+                :options="[{ value: '', label: '— none —' }, ...supportedEfforts.map(e => ({ value: e, label: e }))]"
+                :disabled="supportedEfforts.length === 0"
+                @update:model-value="v => setDefaultEffort(v as string)"
+              />
+              <div v-else class="text-xs text-gray-500">
+                {{ config.chat?.reasoning?.effort?.default || '—' }}
               </div>
             </div>
           </div>

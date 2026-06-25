@@ -111,7 +111,7 @@ export const codexRawToUpstreamModel = (raw: CodexRawModel, enabledFlags: Readon
     if (!raw.reasoning_efforts.includes(raw.default_reasoning_effort)) {
       throw new Error(`Codex model ${raw.id}: default_reasoning_level not in supported_reasoning_levels`);
     }
-    chat.reasoning = { supported_efforts: raw.reasoning_efforts, default_effort: raw.default_reasoning_effort };
+    chat.reasoning = { effort: { supported: raw.reasoning_efforts, default: raw.default_reasoning_effort } };
   }
   return {
     id: raw.id,

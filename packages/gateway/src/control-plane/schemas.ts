@@ -89,14 +89,32 @@ const modalitiesSchema = z.object({
   output: modalityArraySchema,
 });
 
-const reasoningSchema = z.object({
-  supported_efforts: z.array(z.string().min(1))
+const effortSchema = z.object({
+  supported: z.array(z.string().min(1))
     .min(1)
     .transform(arr => Array.from(new Set(arr))),
-  default_effort: z.string().min(1),
+  default: z.string().min(1),
 }).refine(
-  r => r.supported_efforts.includes(r.default_effort),
-  { message: 'default_effort must appear in supported_efforts' },
+  r => r.supported.includes(r.default),
+  { message: 'effort.default must appear in effort.supported' },
+);
+
+const budgetTokensSchema = z.object({
+  min: z.number().int().nonnegative().optional(),
+  max: z.number().int().nonnegative().optional(),
+}).refine(
+  r => r.min === undefined || r.max === undefined || r.max >= r.min,
+  { message: 'budget_tokens.max must be >= budget_tokens.min' },
+);
+
+const reasoningSchema = z.object({
+  effort: effortSchema.optional(),
+  budget_tokens: budgetTokensSchema.optional(),
+  adaptive: z.boolean().optional(),
+  mandatory: z.boolean().optional(),
+}).refine(
+  r => r.effort !== undefined || r.budget_tokens !== undefined || r.adaptive !== undefined || r.mandatory !== undefined,
+  { message: 'reasoning must have at least one of effort, budget_tokens, adaptive, mandatory' },
 );
 
 const chatSchema = z.object({
