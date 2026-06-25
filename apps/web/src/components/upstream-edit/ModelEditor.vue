@@ -748,12 +748,12 @@ const toggleMandatory = (on: boolean) => {
             <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
               <Switch :model-value="adaptiveEnabled" :disabled="!editable" @update:model-value="v => toggleAdaptive(v === true)" />
               <span class="text-xs" :class="adaptiveEnabled ? 'text-white' : 'text-gray-500'">Adaptive</span>
-              <Tooltip text="Model self-selects reasoning effort"><span class="text-[10px] text-gray-600">?</span></Tooltip>
+              <Tooltip content="Model self-selects reasoning effort"><span class="text-[10px] text-gray-600">?</span></Tooltip>
             </label>
             <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
               <Switch :model-value="mandatoryEnabled" :disabled="!editable" @update:model-value="v => toggleMandatory(v === true)" />
               <span class="text-xs" :class="mandatoryEnabled ? 'text-white' : 'text-gray-500'">Mandatory</span>
-              <Tooltip text="Reasoning is always applied; caller cannot opt out"><span class="text-[10px] text-gray-600">?</span></Tooltip>
+              <Tooltip content="Reasoning is always applied; caller cannot opt out"><span class="text-[10px] text-gray-600">?</span></Tooltip>
             </label>
           </div>
 
