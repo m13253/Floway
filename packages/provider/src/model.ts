@@ -1,5 +1,6 @@
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { UpstreamChatModelConfig } from './model-config.ts';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -84,6 +85,7 @@ export interface InternalModel {
   };
   kind: ModelKind;
   cost?: ModelPricing;
+  chat?: UpstreamChatModelConfig;
 }
 
 export interface UpstreamModel extends InternalModel {
