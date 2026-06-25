@@ -22,8 +22,6 @@ export interface ProxyFallbackEntry {
 // Mutable variant of @floway-dev/protocols/common ChatModelInfo. The editor
 // mutates these arrays in place during reasoning-level/modality edits, so
 // dropping `readonly` here is intentional — the wire shape stays readonly.
-// TODO (Task 18): Redesign the editor UI to handle all four reasoning sub-blocks
-// (effort, budget_tokens, adaptive, mandatory). For now only effort is surfaced.
 export interface UpstreamChatConfig {
   modalities?: { input: ('text' | 'image')[]; output: ('text' | 'image')[] };
   reasoning?: {
