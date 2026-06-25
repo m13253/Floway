@@ -1,4 +1,5 @@
 import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
+import { withResponsesCompactShim } from './compact-shim.ts';
 import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-to-user.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
@@ -15,8 +16,13 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 // early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
 //
 // Order matters: earlier entries wrap later ones.
-//   - withResponsesServerToolShim: runs outermost so it wraps the full
-//     multi-turn ReAct loop around the rest of the chain.
+//   - withResponsesCompactShim: runs outermost so the action pivot
+//     ('compact' → 'generate' for the inner summarization turn) is visible
+//     to every downstream interceptor + the provider terminal. Also
+//     responsible for inbound expansion of prior shim-encoded compaction
+//     items so the upstream sees the summarized history.
+//   - withResponsesServerToolShim: wraps the multi-turn ReAct loop around
+//     the rest of the chain.
 //   - withReasoningEncryptedContentCanonicalized: pins the final
 //     (post-retry) event stream's encrypted_content.
 //   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
@@ -35,6 +41,7 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered LAST
 //     so each gets the final say on the outbound wire body.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
+  withResponsesCompactShim,
   withResponsesServerToolShim([
     webSearchServerTool,
     imageGenerationServerTool,
