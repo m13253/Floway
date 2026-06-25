@@ -25,18 +25,17 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
 };
 
 const publicModelForAliasEmission = (alias: ModelAlias, emission: AliasListingEmission): PublicModel => {
-  const { provider, target } = emission;
-  const targetDisplayName = target.display_name ?? target.id;
+  const { provider, target, form } = emission;
+  const aliasLocalName = composeAliasDisplayName({
+    aliasDisplayName: alias.displayName,
+    targetDisplayName: target.display_name ?? target.id,
+    rules: alias.rules,
+  });
   const info: PublicModel = {
     id: aliasPublicId(alias, emission),
     object: 'model',
     type: 'model',
-    display_name: composeAliasDisplayName({
-      upstreamDisplayName: provider.name,
-      aliasDisplayName: alias.displayName,
-      targetDisplayName,
-      rules: alias.rules,
-    }),
+    display_name: form === 'prefixed' ? `${provider.name}: ${aliasLocalName}` : aliasLocalName,
     limits: target.limits ? { ...target.limits } : {},
     kind: target.kind,
     created: alias.createdAt,

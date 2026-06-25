@@ -765,7 +765,7 @@ test('/v1/models omits an alias whose target is not in any reachable upstream ca
   );
 });
 
-test('/v1/models emits the alias on each reachable upstream + listed form, with display_name composed from the upstream label', async () => {
+test('/v1/models emits the alias on each reachable upstream + listed form; prefixed entries carry the upstream label, unprefixed entries do not', async () => {
   const { repo, apiKey } = await setupAppTest();
 
   (repo.modelAliases as MemoryModelAliasesRepo).setAll([
@@ -814,7 +814,7 @@ test('/v1/models emits the alias on each reachable upstream + listed form, with 
       const bare = body.data.find(m => m.id === 'codex-auto-review');
       const prefixed = body.data.find(m => m.id === 'azure/codex-auto-review');
       if (!bare || !prefixed) throw new Error('expected both bare and prefixed alias entries');
-      assertEquals(bare.display_name, 'Azure: Codex Auto Review');
+      assertEquals(bare.display_name, 'Codex Auto Review');
       assertEquals(prefixed.display_name, 'Azure: Codex Auto Review');
     },
   );
@@ -865,7 +865,7 @@ test('/v1/models falls back to target display_name + rules summary when the alia
       const body = await response.json() as { data: Array<{ id: string; display_name: string }> };
       const entry = body.data.find(m => m.id === 'codex-auto-review');
       if (!entry) throw new Error('expected codex-auto-review alias entry');
-      assertEquals(entry.display_name, 'Azure: GPT-5.4 (low effort)');
+      assertEquals(entry.display_name, 'GPT-5.4 (low effort)');
     },
   );
 });
@@ -930,7 +930,7 @@ test('/v1/models honours alias upstreamIds — only emits on the named upstream'
       const body = await response.json() as { data: Array<{ id: string; display_name: string }> };
       const aliasRows = body.data.filter(m => m.id === 'codex-auto-review');
       assertEquals(aliasRows.length, 1);
-      assertEquals(aliasRows[0].display_name, 'Azure: gpt-5.4');
+      assertEquals(aliasRows[0].display_name, 'gpt-5.4');
     },
   );
 });

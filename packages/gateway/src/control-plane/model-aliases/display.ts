@@ -23,17 +23,16 @@ export const formatAliasRulesSummary = (rules: ModelAliasRules): string => {
   return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 };
 
-// Compose the final per-entry display name shown in `/v1/models`. The
-// upstream name always leads so an operator scanning the listing sees which
-// upstream each row belongs to before reading the alias-specific part.
+// Compose the alias-local display name — what the operator named the alias
+// (when set) or a synthesized target + rules summary. Independent of which
+// upstream is surfacing the alias; the prefixed listing form prepends the
+// upstream display name at the call site, mirroring the real-model path in
+// `registry.ts`.
 export const composeAliasDisplayName = (input: {
-  upstreamDisplayName: string;
   aliasDisplayName?: string;
   targetDisplayName: string;
   rules: ModelAliasRules;
 }): string => {
-  if (input.aliasDisplayName !== undefined) {
-    return `${input.upstreamDisplayName}: ${input.aliasDisplayName}`;
-  }
-  return `${input.upstreamDisplayName}: ${input.targetDisplayName}${formatAliasRulesSummary(input.rules)}`;
+  if (input.aliasDisplayName !== undefined) return input.aliasDisplayName;
+  return `${input.targetDisplayName}${formatAliasRulesSummary(input.rules)}`;
 };

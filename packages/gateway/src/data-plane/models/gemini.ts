@@ -84,16 +84,15 @@ const loadGeminiModels = async (
     if (!alias.visibleInModelsList) continue;
     for (const emission of aliasListingEmissions(alias, providers, rawCatalogs)) {
       if (emission.target.kind !== 'chat') continue;
-      const targetDisplayName = emission.target.display_name ?? emission.target.id;
+      const aliasLocalName = composeAliasDisplayName({
+        aliasDisplayName: alias.displayName,
+        targetDisplayName: emission.target.display_name ?? emission.target.id,
+        rules: alias.rules,
+      });
       aliasEntries.push(toGeminiModel({
         ...emission.target,
         id: aliasPublicId(alias, emission),
-        display_name: composeAliasDisplayName({
-          upstreamDisplayName: emission.provider.name,
-          aliasDisplayName: alias.displayName,
-          targetDisplayName,
-          rules: alias.rules,
-        }),
+        display_name: emission.form === 'prefixed' ? `${emission.provider.name}: ${aliasLocalName}` : aliasLocalName,
         kind: 'chat',
         limits: emission.target.limits ?? {},
       }));

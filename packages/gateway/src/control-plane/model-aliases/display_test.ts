@@ -45,31 +45,28 @@ describe('composeAliasDisplayName', () => {
   test('uses alias displayName when set, suppressing the rules summary', () => {
     expect(
       composeAliasDisplayName({
-        upstreamDisplayName: 'Azure',
         aliasDisplayName: 'Codex Auto Review',
         targetDisplayName: 'GPT-5.4',
         rules: { reasoning: { effort: 'low' } },
       }),
-    ).toBe('Azure: Codex Auto Review');
+    ).toBe('Codex Auto Review');
   });
 
   test('falls back to target displayName with rules suffix when alias displayName is missing', () => {
     expect(
       composeAliasDisplayName({
-        upstreamDisplayName: 'Azure',
         targetDisplayName: 'GPT-5.4',
         rules: { reasoning: { effort: 'low' } },
       }),
-    ).toBe('Azure: GPT-5.4 (low effort)');
+    ).toBe('GPT-5.4 (low effort)');
   });
 
   test('omits the rules suffix when rules are empty', () => {
     expect(
       composeAliasDisplayName({
-        upstreamDisplayName: 'Azure',
         targetDisplayName: 'GPT-5.4',
         rules: {},
       }),
-    ).toBe('Azure: GPT-5.4');
+    ).toBe('GPT-5.4');
   });
 });
