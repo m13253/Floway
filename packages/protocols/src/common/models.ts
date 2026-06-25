@@ -89,6 +89,21 @@ export const resolveEffectivePricing = (pricing: ModelPricing | null, tier: stri
 // not pre-declare for future capabilities.
 export type ModelKind = 'chat' | 'embedding' | 'image';
 
+export type Modality = 'text' | 'image';
+
+// Wire-level chat metadata, mirrored from UpstreamChatModelConfig in
+// @floway-dev/provider. Lives here so PublicModel stays self-contained.
+export interface ChatModelInfo {
+  modalities?: {
+    input: readonly Modality[];
+    output: readonly Modality[];
+  };
+  reasoning?: {
+    supported_efforts: readonly string[];
+    default_effort: string;
+  };
+}
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -110,6 +125,7 @@ export interface PublicModel {
   };
   kind: ModelKind;
   cost?: ModelPricing;
+  chat?: ChatModelInfo;
 }
 
 export interface PublicModelsResponse {
