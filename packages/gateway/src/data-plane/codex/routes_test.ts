@@ -464,7 +464,7 @@ describe('codex 1p namespace', () => {
       expect(autoReview?.max_context_window).toBe(272000);
     });
 
-    it('returns an empty catalog when the registry has no overlapping slugs', async () => {
+    it('synthesizes a catalog entry for registry chat models with no bundled match', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
       const body = await withMockedFetch(
@@ -477,7 +477,10 @@ describe('codex 1p namespace', () => {
           return await response.json() as CodexModelsResponse;
         },
       );
-      expect(body.models).toEqual([]);
+      // claude-sonnet-4 is not in the bundled codex catalog, so it gets a
+      // synthesized entry using the codex-shaped baseline from synthesize.ts.
+      expect(body.models).toHaveLength(1);
+      expect(body.models[0].slug).toBe('claude-sonnet-4');
     });
 
     it('serves cached responses without re-running the registry on subsequent calls', async () => {

@@ -7,11 +7,12 @@
 // (`{"object":"list","data":[...]}`) we serve at `/v1/models`.
 //
 // Pipeline: codex publishes a bundled catalog per release (see catalog.ts);
-// we filter that catalog down to the slugs the registry actually advertises
-// (so the codex client never sees a model the gateway can't serve), then
-// rewrite each entry's `context_window` / `max_context_window` from the
-// registry (see context-window.ts) so the codex client sees the same
-// limits the data plane will actually enforce.
+// for each chat-kind model the registry advertises, we either reuse its
+// bundled entry (found via segment-based slug matching) or synthesize a new
+// one (see synthesize.ts). Bundled entries have their slug overridden to the
+// registry public id and their context_window / max_context_window rewritten
+// from the registry (see context-window.ts) so the codex client sees the
+// same limits the data plane will actually enforce.
 //
 // Latency: codex aborts the catalog fetch after 5 s
 // (`MODELS_REFRESH_TIMEOUT` in codex-rs/model-provider/src/models_endpoint.rs)
@@ -26,15 +27,16 @@
 import type { Context } from 'hono';
 
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
-import { parseCodexVersion, resolveCodexCatalog, type CodexCatalog } from './catalog.ts';
+import { parseCodexVersion, resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
+import { synthesizeCatalogEntry } from './synthesize.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher } from '@floway-dev/provider';
+import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
 // Five minutes is short enough to pick up an upstream catalog change within
 // one or two codex sessions but long enough that an active user only ever
@@ -50,35 +52,73 @@ const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | nul
   return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
 };
 
+// Internal: pure function over already-resolved inputs. Exported as
+// `computeCatalogForTest` so tests can supply fixtures without mocking
+// fetchCodexCatalog / getInternalModels / scheduler. Production path
+// (`codexModels` handler) still composes these via `computeCatalog`.
+export const computeCatalogForTest = (
+  bundled: CodexCatalog,
+  internalModels: readonly InternalModel[],
+): CodexCatalog => {
+  const bundledBySlug = new Map<string, CatalogModel>();
+  for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
+
+  const matchBundled = (publicId: string): CatalogModel | null => {
+    for (const seg of publicId.toLowerCase().split(/[/:]/)) {
+      if (seg === '') continue;
+      const hit = bundledBySlug.get(seg);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
+  const models: CatalogModel[] = [];
+  let aliasActive = false;
+  for (const im of internalModels) {
+    if (im.kind !== 'chat') continue;
+    const hit = matchBundled(im.id);
+    if (hit) {
+      // Bundled reuse: clone, override slug + display_name with the public id /
+      // registry display name so the Codex picker selects the right value.
+      const cloned: CatalogModel = { ...hit, slug: im.id };
+      if (im.display_name !== undefined) cloned.display_name = im.display_name;
+      models.push(cloned);
+      // The alias entry itself does not trigger an extra alias append. Only a
+      // registry model whose public id is exactly the alias target triggers it
+      // — a prefixed id like `azure/gpt-5.4` routes through the target but
+      // the Codex CLI's auto-review hook only fires when it can send the bare
+      // `codex-auto-review` slug, so the bare target must appear in the
+      // registry.
+      if (im.id.toLowerCase() === CODEX_AUTO_REVIEW_TARGET) aliasActive = true;
+    } else {
+      models.push(synthesizeCatalogEntry(im) as CatalogModel);
+    }
+  }
+  if (aliasActive) {
+    const aliasEntry = bundledBySlug.get(CODEX_AUTO_REVIEW_ALIAS);
+    if (aliasEntry) models.push({ ...aliasEntry });   // slug stays as alias literal
+  }
+  const slugContextWindow = new Map<string, number>();
+  for (const m of internalModels) {
+    const limit = m.limits.max_context_window_tokens;
+    if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
+  }
+  const contextWindowOf: ContextWindowResolver = slug =>
+    slugContextWindow.get(slug === CODEX_AUTO_REVIEW_ALIAS ? CODEX_AUTO_REVIEW_TARGET : slug) ?? null;
+  return applyContextWindowFromRegistry({ models }, contextWindowOf);
+};
+
 const computeCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, internalModels] = await Promise.all([
+  const [bundled, internalModels] = await Promise.all([
     resolveCodexCatalog(userAgent),
     getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
   ]);
-  const slugContextWindow = new Map<string, number>();
-  for (const m of internalModels) {
-    const limit = m.limits.max_context_window_tokens;
-    if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
-  }
-  const registrySlugs = new Set(internalModels.map(m => m.id));
-  const filtered: CodexCatalog = {
-    models: catalog.models.filter(m => {
-      if (registrySlugs.has(m.slug)) return true;
-      if (m.slug === CODEX_AUTO_REVIEW_ALIAS && registrySlugs.has(CODEX_AUTO_REVIEW_TARGET)) return true;
-      return false;
-    }),
-  };
-  // codex-auto-review has no upstream of its own and gets rewritten to
-  // CODEX_AUTO_REVIEW_TARGET at request time, so its catalog entry should
-  // advertise the target's actual window — bundled's value would otherwise
-  // leak the OpenAI 1p limits through the alias.
-  const contextWindowOf: ContextWindowResolver = slug => slugContextWindow.get(slug === CODEX_AUTO_REVIEW_ALIAS ? CODEX_AUTO_REVIEW_TARGET : slug) ?? null;
-  return applyContextWindowFromRegistry(filtered, contextWindowOf);
+  return computeCatalogForTest(bundled, internalModels);
 };
 
 export const codexModels = async (c: Context): Promise<Response> => {

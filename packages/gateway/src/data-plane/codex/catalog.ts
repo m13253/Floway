@@ -20,7 +20,7 @@
 
 import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
 
-interface CatalogModel {
+export interface CatalogModel {
   slug: string;
   [key: string]: unknown;
 }
