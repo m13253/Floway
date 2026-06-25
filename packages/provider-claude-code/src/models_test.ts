@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import {
   aliasFromApiId,
   buildClaudeCodeCatalog,
+  chatFromCapabilities,
   claudeCodeResolveRequestedModelId,
   type ClaudeCodeApiModel,
 } from './models.ts';
@@ -29,6 +30,128 @@ describe('aliasFromApiId', () => {
     expect(aliasFromApiId('claude-opus-4-7')).toBe('claude-opus-4-7');
     expect(aliasFromApiId('claude-fable-5')).toBe('claude-fable-5');
     expect(aliasFromApiId('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
+  });
+});
+
+describe('chatFromCapabilities', () => {
+  // Case 1: effort.supported=false, thinking.types.enabled.supported=true only (mirrors Sonnet 4.5)
+  test('effort disabled + enabled thinking → only budget_tokens in reasoning', () => {
+    const chat = chatFromCapabilities({
+      effort: { supported: false },
+      thinking: { types: { enabled: { supported: true } } },
+    });
+    expect(chat).toEqual({ reasoning: { budget_tokens: {} } });
+  });
+
+  // Case 2: effort with 4 levels + xhigh=false + max=true, both thinking types (mirrors Opus 4.6)
+  test('effort with low/medium/high/max + both thinking types → full reasoning', () => {
+    const chat = chatFromCapabilities({
+      effort: {
+        supported: true,
+        low: { supported: true },
+        medium: { supported: true },
+        high: { supported: true },
+        xhigh: { supported: false },
+        max: { supported: true },
+      },
+      thinking: { types: { enabled: { supported: true }, adaptive: { supported: true } } },
+    });
+    expect(chat).toEqual({
+      reasoning: {
+        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'high' },
+        budget_tokens: {},
+        adaptive: true,
+      },
+    });
+  });
+
+  // Case 3: effort with all 5 levels true, only adaptive thinking (mirrors Opus 4.7)
+  test('effort with low/medium/high/xhigh/max + only adaptive thinking → effort + adaptive', () => {
+    const chat = chatFromCapabilities({
+      effort: {
+        supported: true,
+        low: { supported: true },
+        medium: { supported: true },
+        high: { supported: true },
+        xhigh: { supported: true },
+        max: { supported: true },
+      },
+      thinking: { types: { adaptive: { supported: true } } },
+    });
+    expect(chat).toEqual({
+      reasoning: {
+        effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'high' },
+        adaptive: true,
+      },
+    });
+  });
+
+  // Case 4: no image_input → no modalities
+  test('no image_input → no modalities key', () => {
+    const chat = chatFromCapabilities({ effort: { supported: false } });
+    expect(chat).toBeUndefined();
+  });
+
+  // Case 5: image_input + effort + enabled + adaptive → full chat object
+  test('image_input=true + effort + both thinking types → full chat', () => {
+    const chat = chatFromCapabilities({
+      image_input: { supported: true },
+      effort: {
+        supported: true,
+        low: { supported: true },
+        medium: { supported: true },
+        high: { supported: true },
+      },
+      thinking: { types: { enabled: { supported: true }, adaptive: { supported: true } } },
+    });
+    expect(chat).toEqual({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: {
+        effort: { supported: ['low', 'medium', 'high'], default: 'high' },
+        budget_tokens: {},
+        adaptive: true,
+      },
+    });
+  });
+
+  // Case 6: no capabilities field → no chat key
+  test('undefined capabilities → undefined', () => {
+    expect(chatFromCapabilities(undefined)).toBeUndefined();
+  });
+
+  // Case 7: image_input.supported = false → no modalities
+  test('image_input.supported=false → no modalities', () => {
+    const chat = chatFromCapabilities({
+      image_input: { supported: false },
+      thinking: { types: { enabled: { supported: true } } },
+    });
+    expect(chat).toEqual({ reasoning: { budget_tokens: {} } });
+  });
+
+  // Case 8: default selection — 'high' preferred; fallback to first
+  test('effort default: high when in supported list', () => {
+    const chat = chatFromCapabilities({
+      effort: {
+        supported: true,
+        low: { supported: true },
+        medium: { supported: true },
+        high: { supported: true },
+      },
+      thinking: { types: { enabled: { supported: true } } },
+    });
+    expect(chat!.reasoning!.effort!.default).toBe('high');
+  });
+
+  test('effort default: first item when high is not supported', () => {
+    const chat = chatFromCapabilities({
+      effort: {
+        supported: true,
+        low: { supported: true },
+        medium: { supported: true },
+      },
+      thinking: { types: { enabled: { supported: true } } },
+    });
+    expect(chat!.reasoning!.effort!.default).toBe('low');
   });
 });
 
@@ -83,6 +206,43 @@ describe('buildClaudeCodeCatalog', () => {
     const built = buildClaudeCodeCatalog(SAMPLE_API_MODELS, flags);
     for (const m of built) {
       expect(m.enabledFlags).toBe(flags);
+    }
+  });
+
+  test('populates chat from capabilities when present', () => {
+    const withCaps: ClaudeCodeApiModel[] = [
+      {
+        id: 'claude-opus-4-6-20251201',
+        display_name: 'Claude Opus 4.6',
+        max_input_tokens: 200_000,
+        capabilities: {
+          image_input: { supported: true },
+          effort: {
+            supported: true,
+            low: { supported: true },
+            medium: { supported: true },
+            high: { supported: true },
+            max: { supported: true },
+          },
+          thinking: { types: { enabled: { supported: true }, adaptive: { supported: true } } },
+        },
+      },
+    ];
+    const built = buildClaudeCodeCatalog(withCaps, new Set());
+    expect(built[0]!.chat).toEqual({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: {
+        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'high' },
+        budget_tokens: {},
+        adaptive: true,
+      },
+    });
+  });
+
+  test('omits chat key when capabilities absent', () => {
+    const built = buildClaudeCodeCatalog(SAMPLE_API_MODELS, new Set());
+    for (const m of built) {
+      expect(m.chat).toBeUndefined();
     }
   });
 });
