@@ -73,6 +73,37 @@ const pricingDimensionShape = {
   output_image: z.number().nonnegative().optional(),
 };
 
+// Modality arrays: both input and output require at least one entry and
+// deduplicate via transform. Input additionally requires 'text' to be present
+// (a multimodal model must accept text); output has no such constraint (an
+// image-generation model may emit only images).
+const modalityArraySchema = z.array(z.enum(['text', 'image']))
+  .min(1)
+  .transform(arr => Array.from(new Set(arr)));
+
+const inputModalityArraySchema = modalityArraySchema
+  .refine(arr => arr.includes('text'), { message: "must include 'text'" });
+
+const modalitiesSchema = z.object({
+  input: inputModalityArraySchema,
+  output: modalityArraySchema,
+});
+
+const reasoningSchema = z.object({
+  supported_efforts: z.array(z.string().min(1))
+    .min(1)
+    .transform(arr => Array.from(new Set(arr))),
+  default_effort: z.string().min(1),
+}).refine(
+  r => r.supported_efforts.includes(r.default_effort),
+  { message: 'default_effort must appear in supported_efforts' },
+);
+
+const chatSchema = z.object({
+  modalities: modalitiesSchema.optional(),
+  reasoning: reasoningSchema.optional(),
+});
+
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure and custom upstreams share this per-model entry; the canonical
 // per-model endpoint validation lives in the runtime validator.
@@ -102,7 +133,11 @@ const upstreamModelSchema = z.object({
     max_prompt_tokens: z.number().optional(),
     max_output_tokens: z.number().optional(),
   }).optional(),
-});
+  chat: chatSchema.optional(),
+}).refine(
+  m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
+  { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
+);
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
