@@ -366,20 +366,13 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       // best-effort, so the pre-check here is what makes Fast Mode honest.
       // https://docs.claude.com/en/build-with-claude/fast-mode
       //
-      // NOTE: Anthropic does not publish the exact `error.message` string for
-      // this case, so the wording below is the closest match to their
-      // `<param>: <reason>` lowercase-terse house style and is not byte-
-      // identical to upstream. Replace with the real string once a live
-      // probe captures it.
+      // The `error.message` is byte-identical to the string Anthropic emits
+      // on the real wire, recorded verbatim from a live response by an
+      // independent gateway's regression test:
+      // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
       if (body.speed === 'fast') {
         const providerData = model.providerData as CopilotProviderData;
         if (!copilotModelSupportsFastMode(providerData.rawModels)) {
-          // The provider contract requires at least one
-          // `opts.recordUpstreamLatency` wrap per call; the gateway throws
-          // on a missing wrap. We never reached the upstream on this branch,
-          // so register a zero-latency marker — the telemetry row faithfully
-          // reads "we did not call anyone".
-          await opts.recordUpstreamLatency(Promise.resolve());
           return {
             ok: false,
             response: Response.json(
@@ -387,7 +380,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
                 type: 'error',
                 error: {
                   type: 'invalid_request_error',
-                  message: `speed: fast mode is not supported for model ${model.id}`,
+                  message: `'${model.id}' does not support the \`speed\` parameter.`,
                 },
               },
               { status: 400 },

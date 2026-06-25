@@ -54,7 +54,7 @@ export const messagesAttempt = {
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
+        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(

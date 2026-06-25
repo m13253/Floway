@@ -52,7 +52,15 @@ export const recordRequestPerformance = (
 // returns; `durationMs()` throws when the provider returned without ever
 // wrapping. Kept separate from `UpstreamCallOptions` so future per-call hooks
 // added to the options bag don't expand the recorder's surface.
-export const createUpstreamLatencyRecorder = () => {
+//
+// The throw on missing wrap is the developer guard for the success path
+// (a real upstream call that forgot to instrument latency). Short-circuit
+// paths that return `ok: false` without ever talking to the upstream MUST
+// NOT call `durationMs()` — there's nothing to measure. Helpers that route
+// based on `ok` (e.g. `providerStreamResultToExecuteResult`) consume the
+// recorder lazily so the guard fires only on the success branch where the
+// duration is actually consumed.
+export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
   let last: number | undefined;
   return {
     record: <T>(promise: Promise<T>): Promise<T> => {
@@ -69,3 +77,8 @@ export const createUpstreamLatencyRecorder = () => {
     },
   };
 };
+
+export interface UpstreamLatencyRecorder {
+  record: <T>(promise: Promise<T>) => Promise<T>;
+  durationMs: () => number;
+}
