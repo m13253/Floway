@@ -393,12 +393,11 @@ const pushInterpretation = (
   lookupId: string,
   aliases: readonly ModelAlias[],
 ): void => {
-  const hit = matchAlias(lookupId, provider.upstream, aliases);
-  if (!hit) {
+  const alias = matchAlias(lookupId, provider.upstream, aliases);
+  if (!alias) {
     out.push({ provider, lookupId });
     return;
   }
-  const { alias } = hit;
   const aliasInterp: ModelInterpretation = {
     provider,
     lookupId: alias.targetModelId,

@@ -17,7 +17,7 @@ const make = (overrides: Partial<ModelAlias>): ModelAlias => ({
 describe('matchAlias', () => {
   test('matches by exact lookupId when alias has no upstream filter', () => {
     const aliases = [make({ alias: 'codex-auto-review', targetModelId: 'gpt-5.4' })];
-    expect(matchAlias('codex-auto-review', 'up-1', aliases)?.alias.alias).toBe('codex-auto-review');
+    expect(matchAlias('codex-auto-review', 'up-1', aliases)?.alias).toBe('codex-auto-review');
   });
 
   test('does not match when lookupId differs', () => {
@@ -46,7 +46,7 @@ describe('matchAlias', () => {
       make({ alias: 'a', targetModelId: 'first', rules: { reasoning: { effort: 'low' } } }),
       make({ alias: 'a', targetModelId: 'second' }),
     ];
-    expect(matchAlias('a', 'up-x', aliases)?.alias).toEqual(aliases[0]);
+    expect(matchAlias('a', 'up-x', aliases)).toEqual(aliases[0]);
   });
 
   test('returns undefined for an empty alias list', () => {
