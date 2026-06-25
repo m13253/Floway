@@ -286,11 +286,11 @@ const mandatoryEnabled = computed(() => config.value?.chat?.reasoning?.mandatory
 const anyControlledEnabled = computed(() => effortEnabled.value || budgetTokensEnabled.value || adaptiveEnabled.value);
 const controlledDisabled = computed(() => !editable.value || mandatoryEnabled.value);
 const mandatoryDisabled = computed(() => !editable.value || anyControlledEnabled.value);
-const presetEffortLevels = computed(() => REASONING_LEVELS.filter(level => !supportedEfforts.value.includes(level)));
 
 const supportedEfforts = computed<string[]>(
   () => config.value?.chat?.reasoning?.effort?.supported ?? [],
 );
+const presetEffortLevels = computed(() => REASONING_LEVELS.filter(level => !supportedEfforts.value.includes(level)));
 
 // ── Validity ───────────────────────────────────────────────────────────────
 
@@ -343,8 +343,8 @@ const buildNextReasoning = (
   // Drop keys explicitly set to undefined.
   const cleaned = Object.fromEntries(
     Object.entries(merged).filter(([, v]) => v !== undefined),
-  ) as UpstreamChatConfig['reasoning'];
-  return cleaned && Object.keys(cleaned).length > 0 ? cleaned : undefined;
+  ) as NonNullable<UpstreamChatConfig['reasoning']>;
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
 };
 
 const toggleImageInput = (on: boolean) => {

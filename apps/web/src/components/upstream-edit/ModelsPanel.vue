@@ -44,9 +44,11 @@ const lockedUpstreamId = reactive(new Set<string>());
 // are dropped only when the row itself is removed.
 const rowValidity = reactive(new Map<string, boolean>());
 
+const anyInvalid = computed(() => Array.from(rowValidity.values()).some(v => !v));
+watch(anyInvalid, v => emit('update:invalid', v), { immediate: true });
+
 const onRowValidityChange = (uiId: string, valid: boolean) => {
   rowValidity.set(uiId, valid);
-  emit('update:invalid', Array.from(rowValidity.values()).some(v => !v));
 };
 
 // Drop validity state for rows that are removed so stale entries do not block save.
@@ -55,7 +57,6 @@ watch(rows, next => {
   for (const id of rowValidity.keys()) {
     if (!live.has(id)) rowValidity.delete(id);
   }
-  emit('update:invalid', Array.from(rowValidity.values()).some(v => !v));
 }, { deep: false });
 
 // Reconcile the unified row list from the persisted manual models and the

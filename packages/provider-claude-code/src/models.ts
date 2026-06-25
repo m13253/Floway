@@ -74,14 +74,14 @@ const assertApiModel = (value: unknown): ClaudeCodeApiModel => {
     id,
     display_name,
     max_input_tokens,
-    ...(capabilities !== undefined ? { capabilities: parseCapabilities(capabilities, id) } : {}),
+    ...(capabilities !== undefined ? { capabilities: parseCapabilities(capabilities) } : {}),
   };
 };
 
 // Parses the `capabilities` block from the Anthropic /v1/models response.
 // Unknown sub-fields are silently skipped — Anthropic adds capabilities
 // forward-compatibly, and we'd rather miss a future field than fail the catalog refresh.
-const parseCapabilities = (raw: unknown, _modelId: string): ClaudeCodeApiModel['capabilities'] => {
+const parseCapabilities = (raw: unknown): ClaudeCodeApiModel['capabilities'] => {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const cap = raw as Record<string, unknown>;
   const out: NonNullable<ClaudeCodeApiModel['capabilities']> = {};
@@ -110,6 +110,7 @@ const parseCapabilities = (raw: unknown, _modelId: string): ClaudeCodeApiModel['
     if (thinking.types !== undefined) out.thinking = thinking;
   }
 
+  // `effort.supported` is required to interpret the block; skip otherwise.
   if (typeof cap.effort === 'object' && cap.effort !== null) {
     const eff = cap.effort as Record<string, unknown>;
     if (typeof eff.supported === 'boolean') {
@@ -122,8 +123,6 @@ const parseCapabilities = (raw: unknown, _modelId: string): ClaudeCodeApiModel['
         }
       }
       out.effort = effort;
-    } else if (typeof eff.supported !== 'boolean') {
-      // `effort.supported` is required to interpret the block; skip if absent.
     }
   }
 
@@ -148,12 +147,10 @@ export const chatFromCapabilities = (
 
   const chat: UpstreamChatModelConfig = {};
 
-  // Modalities — image input maps to text+image in / text out.
   if (capabilities.image_input?.supported === true) {
     chat.modalities = { input: ['text', 'image'], output: ['text'] };
   }
 
-  // Reasoning capabilities.
   const reasoning: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
 
   const eff = capabilities.effort;

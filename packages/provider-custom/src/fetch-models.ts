@@ -102,9 +102,7 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   try {
     const chat = chatField(value.chat, `${value.id}.chat`);
     if (chat !== undefined) model.chat = chat;
-  } catch {
-    // Permissive: if chat field is malformed, skip it and continue.
-  }
+  } catch { /* skip */ }
   return model;
 };
 
