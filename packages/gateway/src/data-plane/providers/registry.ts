@@ -20,6 +20,10 @@ interface ProviderModelsResult {
   // order as the input `providers` list so the model-missing renderer can
   // surface a stable, dashboard-aligned list.
   failedUpstreams: string[];
+  // Raw per-upstream catalogs collected during the fan-out. Aliases consume
+  // this to enumerate per-upstream entries by addressable form without paying
+  // a second round-trip.
+  rawCatalogs: Map<string, readonly UpstreamModel[]>;
 }
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
@@ -143,6 +147,7 @@ const collectProviderModels = async (
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, ResolvedModel>();
+  const rawCatalogs = new Map<string, readonly UpstreamModel[]>();
   let sawSuccess = false;
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
@@ -174,6 +179,7 @@ const collectProviderModels = async (
     }
     sawSuccess = true;
     const { instance, models: providedModels } = result.value;
+    rawCatalogs.set(instance.upstream, providedModels);
     // Operator-disabled public model ids vanish entirely for this upstream:
     // dropped before they reach the catalog map, so they appear in no /models
     // listing and resolve to nothing for routing. The disable is per-upstream,
@@ -208,7 +214,7 @@ const collectProviderModels = async (
     }
   }
 
-  return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
+  return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams, rawCatalogs };
 };
 
 // Public-facing model-id ordering, applied in getModels() to every list that
@@ -262,6 +268,35 @@ export const getModels = async (
   if (sawSuccess) return models.sort((a, b) => compareModelIds(a.id, b.id));
   if (lastError) throw lastError;
   return [];
+};
+
+// Returns the merged public model list AND the per-upstream raw catalogs and
+// provider instances. Listing surfaces (`/v1/models`, Gemini `/models`) use the
+// extra channels to synthesize alias entries that reflect which upstreams can
+// actually serve each alias's target and in which addressable form. Computing
+// both off the same `collectProviderModels` pass keeps catalog fetches to one
+// round per upstream regardless of how many alias rows reference each target.
+export interface PublicModelsListing {
+  models: ResolvedModel[];
+  providers: readonly ModelProviderInstance[];
+  rawCatalogs: ReadonlyMap<string, readonly UpstreamModel[]>;
+}
+
+export const getModelsForListing = async (
+  upstreamFilter: readonly string[] | null,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<PublicModelsListing> => {
+  const providers = await listModelProviders(upstreamFilter);
+  if (providers.length === 0) {
+    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
+  }
+
+  const { models, sawSuccess, lastError, rawCatalogs } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
+
+  if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), providers, rawCatalogs };
+  if (lastError) throw lastError;
+  return { models: [], providers, rawCatalogs };
 };
 
 export const getInternalModels = async (

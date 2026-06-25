@@ -22,6 +22,7 @@ test('loadAllAliases reads the seed row from a freshly migrated database', async
     rules: { reasoning: { effort: 'low' } },
     visibleInModelsList: true,
     onConflict: 'real-only',
+    displayName: 'Codex Auto Review',
   });
 });
 
@@ -70,6 +71,28 @@ test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_mo
     onConflict: 'both-alias-first',
     createdAt: 1_700_000_001,
   });
+});
+
+test('loadAllAliases reads display_name and omits the field when SQL stored NULL', async () => {
+  const db = await createSqliteTestDb();
+  await db.exec('DELETE FROM model_aliases');
+  await db
+    .prepare(
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind('with-label', 'gpt-5.4', '[]', '{}', 1, 'real-only', 'Pretty Label', 1_700_000_000)
+    .run();
+  await db
+    .prepare(
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind('no-label', 'gpt-5.4', '[]', '{}', 1, 'real-only', null, 1_700_000_001)
+    .run();
+
+  const byAlias = new Map((await loadAllAliases(db)).map(entry => [entry.alias, entry]));
+  assertEquals(byAlias.get('with-label')?.displayName, 'Pretty Label');
+  // SQL NULL becomes undefined on the typed row so callers can branch on `=== undefined`.
+  assertEquals('displayName' in (byAlias.get('no-label') ?? {}), false);
 });
 
 test('loadAllAliases surfaces malformed rules_json as a descriptive error', async () => {

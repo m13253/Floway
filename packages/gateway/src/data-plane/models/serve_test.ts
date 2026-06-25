@@ -711,7 +711,7 @@ test('/v1/models omits aliases marked visibleInModelsList=false', async () => {
   );
 });
 
-test('/v1/models lists an alias whose target is not present on any upstream (no silent hide)', async () => {
+test('/v1/models omits an alias whose target is not in any reachable upstream catalog', async () => {
   const { repo, apiKey } = await setupAppTest();
 
   (repo.modelAliases as MemoryModelAliasesRepo).setAll([
@@ -755,12 +755,182 @@ test('/v1/models lists an alias whose target is not present on any upstream (no 
     },
     async () => {
       const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
-      const body = await response.json() as { data: Array<{ id: string; aliasedFrom?: { targetModelId: string }; owned_by?: string }> };
-      const orphan = body.data.find(m => m.id === 'orphan-alias');
-      if (!orphan) throw new Error('expected orphan-alias entry');
-      assertEquals(orphan.aliasedFrom?.targetModelId, 'never-resolves');
-      // No matching real entry → owner falls back to the alias's primary upstream id.
-      assertEquals(orphan.owned_by, 'up_oai');
+      const body = await response.json() as { data: Array<{ id: string }> };
+      // Per-upstream alias enumeration: an alias whose target cannot be served
+      // by any reachable upstream produces zero entries — there is no surface
+      // form to attach the alias to. A request for `orphan-alias` still
+      // returns the canonical user-facing model-missing error.
+      assertEquals(body.data.map(m => m.id).includes('orphan-alias'), false);
+    },
+  );
+});
+
+test('/v1/models emits the alias on each reachable upstream + listed form, with display_name composed from the upstream label', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      displayName: 'Codex Auto Review',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_azure',
+    name: 'Azure',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://azure.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-azure',
+      endpoints: { chatCompletions: {} },
+    },
+    modelPrefix: { prefix: 'azure/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/v1/models' && url.hostname === 'azure.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4', display_name: 'GPT-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string; display_name: string; aliasedFrom?: unknown }> };
+      // Both addressable forms appear because the upstream listed both.
+      const bare = body.data.find(m => m.id === 'codex-auto-review');
+      const prefixed = body.data.find(m => m.id === 'azure/codex-auto-review');
+      if (!bare || !prefixed) throw new Error('expected both bare and prefixed alias entries');
+      assertEquals(bare.display_name, 'Azure: Codex Auto Review');
+      assertEquals(prefixed.display_name, 'Azure: Codex Auto Review');
+    },
+  );
+});
+
+test('/v1/models falls back to target display_name + rules summary when the alias has no displayName', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_azure',
+    name: 'Azure',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://azure.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-azure',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/v1/models' && url.hostname === 'azure.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4', display_name: 'GPT-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string; display_name: string }> };
+      const entry = body.data.find(m => m.id === 'codex-auto-review');
+      if (!entry) throw new Error('expected codex-auto-review alias entry');
+      assertEquals(entry.display_name, 'Azure: GPT-5.4 (low effort)');
+    },
+  );
+});
+
+test('/v1/models honours alias upstreamIds — only emits on the named upstream', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: ['up_azure'],
+      rules: {},
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_azure',
+    name: 'Azure',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://azure.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-azure',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_other',
+    name: 'Other',
+    sortOrder: 200,
+    config: {
+      baseUrl: 'https://other.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-other',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') return jsonResponse(copilotModels([]));
+      // Both upstreams expose gpt-5.4 — but the alias is restricted to up_azure.
+      if (url.pathname === '/v1/models' && url.hostname === 'azure.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }] });
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'other.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string; display_name: string }> };
+      const aliasRows = body.data.filter(m => m.id === 'codex-auto-review');
+      assertEquals(aliasRows.length, 1);
+      assertEquals(aliasRows[0].display_name, 'Azure: gpt-5.4');
     },
   );
 });

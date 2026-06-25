@@ -449,7 +449,7 @@ test('/v1beta/models appends visible aliases as synthetic Gemini model entries',
       const body = await response.json() as { models: Array<{ name: string; displayName: string; supportedGenerationMethods: string[] }> };
       const aliasEntry = body.models.find(m => m.name === 'models/codex-auto-review');
       if (!aliasEntry) throw new Error('expected codex-auto-review alias entry');
-      assertEquals(aliasEntry.displayName, 'codex-auto-review');
+      assertEquals(aliasEntry.displayName, 'GitHub Copilot (tester): GPT Gemini List (low effort)');
       assertEquals(aliasEntry.supportedGenerationMethods, ['generateContent', 'streamGenerateContent', 'countTokens']);
     },
   );

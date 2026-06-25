@@ -1,5 +1,7 @@
+import { aliasListingEmissions, aliasPublicId, type AliasListingEmission } from './alias-listing.ts';
+import { composeAliasDisplayName } from '../../control-plane/model-aliases/display.ts';
 import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { getModelsForListing } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
@@ -22,20 +24,21 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   return info;
 };
 
-// Synthesize one PublicModel for each visible alias, appended after the real
-// entries. The owner falls back to the alias-target's `owned_by` on whichever
-// real entry resolves it; if the target isn't present on any reachable
-// upstream, the entry still appears (operator-declared; the listing reflects
-// operator intent) with a `floway` owner so the row is unambiguous.
-export const toPublicModelFromAlias = (alias: ModelAlias, byId: ReadonlyMap<string, InternalModel>): PublicModel => {
-  const target = byId.get(alias.targetModelId);
+const publicModelForAliasEmission = (alias: ModelAlias, emission: AliasListingEmission): PublicModel => {
+  const { provider, target } = emission;
+  const targetDisplayName = target.display_name ?? target.id;
   const info: PublicModel = {
-    id: alias.alias,
+    id: aliasPublicId(alias, emission),
     object: 'model',
     type: 'model',
-    display_name: alias.alias,
-    limits: target?.limits ? { ...target.limits } : {},
-    kind: target?.kind ?? 'chat',
+    display_name: composeAliasDisplayName({
+      upstreamDisplayName: provider.name,
+      aliasDisplayName: alias.displayName,
+      targetDisplayName,
+      rules: alias.rules,
+    }),
+    limits: target.limits ? { ...target.limits } : {},
+    kind: target.kind,
     created: alias.createdAt,
     created_at: new Date(alias.createdAt * 1000).toISOString(),
     aliasedFrom: {
@@ -45,7 +48,8 @@ export const toPublicModelFromAlias = (alias: ModelAlias, byId: ReadonlyMap<stri
       onConflict: alias.onConflict,
     },
   };
-  info.owned_by = target?.owned_by ?? alias.upstreamIds[0] ?? 'floway';
+  info.owned_by = target.owned_by ?? provider.upstream;
+  if (target.cost) info.cost = target.cost;
   return info;
 };
 
@@ -55,14 +59,19 @@ export const loadModels = async (
   scheduler: BackgroundScheduler,
   aliases: readonly ModelAlias[],
 ): Promise<PublicModelsResponse> => {
-  const internal = await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler);
-  const realEntries = internal.map(toPublicModel);
-  const byId = new Map<string, InternalModel>(internal.map(m => [m.id, m]));
-  // Visible aliases append in `loadAllAliases` order, after every real entry.
-  // The spec's no-silent-hide policy keeps disabled-target aliases visible —
-  // the user-facing failure on call is the canonical signal, not the
-  // listing.
-  const aliasEntries = aliases.filter(a => a.visibleInModelsList).map(a => toPublicModelFromAlias(a, byId));
+  const { models, providers, rawCatalogs } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler);
+  const realEntries = models.map(toPublicModel);
+  // Per-upstream alias enumeration: for each visible alias, emit one entry per
+  // (provider, addressable form) pair where the provider can resolve the
+  // alias's target. Upstreams that do not carry the target produce no entry —
+  // the alias listing is strictly anchored to "can be served from here".
+  const aliasEntries: PublicModel[] = [];
+  for (const alias of aliases) {
+    if (!alias.visibleInModelsList) continue;
+    for (const emission of aliasListingEmissions(alias, providers, rawCatalogs)) {
+      aliasEntries.push(publicModelForAliasEmission(alias, emission));
+    }
+  }
   const data = [...realEntries, ...aliasEntries];
   return {
     object: 'list',

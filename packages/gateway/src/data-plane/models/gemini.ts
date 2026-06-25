@@ -1,6 +1,8 @@
 import type { Context } from 'hono';
 
+import { aliasListingEmissions, aliasPublicId } from './alias-listing.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
+import { composeAliasDisplayName } from '../../control-plane/model-aliases/display.ts';
 import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -8,7 +10,7 @@ import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { getModelsForListing } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
@@ -70,25 +72,32 @@ const loadGeminiModels = async (
   scheduler: BackgroundScheduler,
   aliases: readonly ModelAlias[],
 ): Promise<GeminiModel[]> => {
-  const models = await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler);
+  const { models, providers, rawCatalogs } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler);
   // Only chat models are representable in the Gemini /models shape.
   const realChatEntries = models.filter(model => model.kind === 'chat').map(toGeminiModel);
-  // Visible aliases append in `loadAllAliases` order; the Gemini surface
-  // carries no `aliasedFrom` extension (Gemini's `Model` resource is closed)
-  // so the entry advertises the alias id plus the target's display fields.
-  const byId = new Map<string, InternalModel>(models.map(m => [m.id, m]));
+  // Per-upstream alias enumeration mirrors `/v1/models`. Each emission becomes
+  // one Gemini Model entry whose id and displayName reflect that specific
+  // (provider, addressable form) pair; targets of the wrong kind never reach
+  // here because they were already filtered out of the catalog walk.
   const aliasEntries: GeminiModel[] = [];
   for (const alias of aliases) {
     if (!alias.visibleInModelsList) continue;
-    const target = byId.get(alias.targetModelId);
-    if (target && target.kind !== 'chat') continue;
-    aliasEntries.push(toGeminiModel({
-      ...(target ?? {} as InternalModel),
-      id: alias.alias,
-      display_name: alias.alias,
-      kind: 'chat',
-      limits: target?.limits ?? {},
-    }));
+    for (const emission of aliasListingEmissions(alias, providers, rawCatalogs)) {
+      if (emission.target.kind !== 'chat') continue;
+      const targetDisplayName = emission.target.display_name ?? emission.target.id;
+      aliasEntries.push(toGeminiModel({
+        ...emission.target,
+        id: aliasPublicId(alias, emission),
+        display_name: composeAliasDisplayName({
+          upstreamDisplayName: emission.provider.name,
+          aliasDisplayName: alias.displayName,
+          targetDisplayName,
+          rules: alias.rules,
+        }),
+        kind: 'chat',
+        limits: emission.target.limits ?? {},
+      }));
+    }
   }
   return [...realChatEntries, ...aliasEntries];
 };

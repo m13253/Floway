@@ -3,45 +3,12 @@ import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
-import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
-
-// Codex sends auto-review requests over the Responses wire API as a
-// `codex-auto-review` model id; rewrite at the entry so downstream routing,
-// performance telemetry, and usage accounting all see the real model name
-// (and the `low` reasoning effort the alias implies — generate only;
-// compact carries no `reasoning` field).
-//
-// This shim predates the operator-managed alias table seeded by migration
-// `0046_model_aliases.sql`. The two paths overlap on `/v1/responses` —
-// rewriting at this entry swaps the inbound `model` to `gpt-5.4` BEFORE the
-// alias matcher in `enumerateProviderCandidates` runs, so the alias row
-// never matches for this surface. The carveout is deliberate: the seeded
-// alias is stored with `on_conflict='real-only'`, which means on a Codex
-// upstream that exposes a real `codex-auto-review` model the alias would
-// silently lose to the real id and the `reasoning.effort=low` rule would
-// never apply — breaking parity with Codex CLI's native auto-review
-// behavior. Other inbound surfaces (`/v1/messages`, `/v1/chat/completions`,
-// `/v1beta/…`) carry no entry-level shim and reach the alias matcher
-// unchanged; they observe `real-only` semantics as designed.
-//
-// The shim is a temporary carveout pending a follow-up that either deletes
-// it after a deliberate Codex behavior change (e.g. switching to
-// `both-alias-first`) or migrates the entire surface to the alias table.
-const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoningEffort: boolean): ResponsesPayload => {
-  if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
-  if (!stampReasoningEffort) return { ...payload, model: CODEX_AUTO_REVIEW_TARGET };
-  return {
-    ...payload,
-    model: CODEX_AUTO_REVIEW_TARGET,
-    reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
-  };
-};
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -77,15 +44,15 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
-const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
-  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+const parsePayload = (requestBody: RequestBody): ResponsesPayload =>
+  JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload;
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
     let ctx: GatewayCtx | undefined;
     try {
-      const payload = parsePayload(requestBody, true);
+      const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
       ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
@@ -106,7 +73,7 @@ export const responsesHttp = {
     const requestBody = await readRequestBody(c);
     let ctx: GatewayCtx | undefined;
     try {
-      const payload = parsePayload(requestBody, false);
+      const payload = parsePayload(requestBody);
       ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });

@@ -8,6 +8,7 @@ interface ModelAliasRow {
   rules_json: string;
   visible_in_models_list: number;
   on_conflict: OnConflict;
+  display_name: string | null;
   created_at: number;
 }
 
@@ -17,7 +18,7 @@ interface ModelAliasRow {
 // emit alias entries in a stable, operator-predictable order across runtimes.
 export const loadAllAliases = async (db: SqlDatabase): Promise<readonly ModelAlias[]> => {
   const { results } = await db
-    .prepare('SELECT alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at FROM model_aliases ORDER BY alias')
+    .prepare('SELECT alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at FROM model_aliases ORDER BY alias')
     .all<ModelAliasRow>();
   return results.map(toModelAlias);
 };
@@ -29,6 +30,7 @@ const toModelAlias = (row: ModelAliasRow): ModelAlias => ({
   rules: parseJsonField<ModelAlias['rules']>(row.alias, 'rules_json', row.rules_json),
   visibleInModelsList: row.visible_in_models_list === 1,
   onConflict: row.on_conflict,
+  ...(row.display_name !== null ? { displayName: row.display_name } : {}),
   createdAt: row.created_at,
 });
 

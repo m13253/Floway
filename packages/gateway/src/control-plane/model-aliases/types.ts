@@ -23,6 +23,11 @@ export type ModelAlias = {
   readonly rules: ModelAliasRules;
   readonly visibleInModelsList: boolean;
   readonly onConflict: OnConflict;
+  // Operator-set human-readable label shown after the upstream display name in
+  // `/v1/models` entries (e.g. "Azure: Codex Auto Review"). When unset, the
+  // listing falls back to the alias target's display name plus a rules-summary
+  // suffix; see `data-plane/model-aliases/display.ts`.
+  readonly displayName?: string;
   // Unix epoch seconds stamped at row insertion. Surfaced on the
   // `/v1/models` synthesized alias entry so callers see when an alias was
   // declared, matching the `created` semantics of the real entries.
