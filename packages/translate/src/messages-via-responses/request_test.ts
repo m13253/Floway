@@ -502,3 +502,57 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
     'does not accept role tool',
   );
 });
+
+test('translateMessagesToResponses maps speed:fast to service_tier:fast on the outbound Responses payload', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    speed: 'fast',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'fast');
+});
+
+test('translateMessagesToResponses omits service_tier when speed is absent', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertFalse('service_tier' in result);
+});
+
+test('translateMessagesToResponses drops speed values other than fast without emitting service_tier', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    speed: 'standard',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertFalse('service_tier' in result);
+});
+
+test('translateMessagesToResponses forwards Anthropic service_tier to Responses when speed is absent', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'auto',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'auto');
+});
+
+test('translateMessagesToResponses forwards service_tier:standard_only to Responses when speed is absent', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'standard_only',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'standard_only');
+});

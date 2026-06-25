@@ -213,6 +213,12 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
+  // `speed: 'fast'` maps to Responses `service_tier: 'fast'`; other non-fast
+  // `speed` values have no OpenAI equivalent and are dropped. When `speed` is
+  // absent, Anthropic's own `service_tier` ('auto'/'standard_only') is passed
+  // through verbatim for symmetry with the forward direction.
+  const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
+
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, or `reasoning.summary` when the
   // Messages source did not express those knobs.
@@ -229,6 +235,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
     stream: true,
     ...(reasoning ? { reasoning } : {}),
     ...(text ? { text } : {}),
+    ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };
 
