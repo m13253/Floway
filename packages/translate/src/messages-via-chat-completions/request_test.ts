@@ -513,7 +513,7 @@ test('translateMessagesToChatCompletions drops speed values other than fast with
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToChatCompletions does not forward Anthropic service_tier to Chat Completions', () => {
+test('translateMessagesToChatCompletions forwards Anthropic service_tier to Chat Completions when speed is absent', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -521,5 +521,16 @@ test('translateMessagesToChatCompletions does not forward Anthropic service_tier
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertFalse('service_tier' in result);
+  assertEquals(result.service_tier, 'auto');
+});
+
+test('translateMessagesToChatCompletions forwards service_tier:standard_only to Chat Completions when speed is absent', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'standard_only',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'standard_only');
 });

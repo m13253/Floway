@@ -535,7 +535,7 @@ test('translateMessagesToResponses drops speed values other than fast without em
   assertFalse('service_tier' in result);
 });
 
-test('translateMessagesToResponses does not forward Anthropic service_tier to Responses', () => {
+test('translateMessagesToResponses forwards Anthropic service_tier to Responses when speed is absent', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -543,5 +543,16 @@ test('translateMessagesToResponses does not forward Anthropic service_tier to Re
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertFalse('service_tier' in result);
+  assertEquals(result.service_tier, 'auto');
+});
+
+test('translateMessagesToResponses forwards service_tier:standard_only to Responses when speed is absent', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    service_tier: 'standard_only',
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.service_tier, 'standard_only');
 });

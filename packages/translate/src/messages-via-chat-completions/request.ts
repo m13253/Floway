@@ -279,10 +279,10 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
   const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
 
   // `speed: 'fast'` maps to Chat Completions `service_tier: 'fast'`; other
-  // values of `speed` have no OpenAI equivalent and are dropped. Anthropic's own
-  // `service_tier` field ('auto'/'standard_only') carries different semantics
-  // than OpenAI's and is not forwarded.
-  const serviceTier = payload.speed === 'fast' ? 'fast' : undefined;
+  // non-fast `speed` values have no OpenAI equivalent and are dropped. When
+  // `speed` is absent, Anthropic's own `service_tier` ('auto'/'standard_only')
+  // is passed through verbatim for symmetry with the forward direction.
+  const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
 
   return {
     model: payload.model,
