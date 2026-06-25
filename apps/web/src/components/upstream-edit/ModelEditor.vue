@@ -280,11 +280,6 @@ const budgetTokensEnabled = computed(() => config.value?.chat?.reasoning?.budget
 const adaptiveEnabled = computed(() => config.value?.chat?.reasoning?.adaptive === true);
 const mandatoryEnabled = computed(() => config.value?.chat?.reasoning?.mandatory === true);
 
-// Auto-show the reasoning group header when any sub-block is enabled.
-const reasoningExpanded = computed(
-  () => effortEnabled.value || budgetTokensEnabled.value || adaptiveEnabled.value || mandatoryEnabled.value,
-);
-
 const supportedEfforts = computed<string[]>(
   () => config.value?.chat?.reasoning?.effort?.supported ?? [],
 );
@@ -295,7 +290,6 @@ const supportedEfforts = computed<string[]>(
 // - effort is enabled but supported list is empty
 // - effort is enabled but default is empty or not in supported
 // - budget_tokens is enabled but max < min (when both are set)
-// - reasoning block is "on" (at least one toggle) but produces empty {}
 const isReasoningValid = computed<boolean>(() => {
   const reasoning = config.value?.chat?.reasoning;
 
@@ -308,12 +302,6 @@ const isReasoningValid = computed<boolean>(() => {
   if (budgetTokensEnabled.value) {
     const bt = reasoning?.budget_tokens;
     if (bt?.min !== undefined && bt?.max !== undefined && bt.max < bt.min) return false;
-  }
-
-  // If at least one toggle is on but reasoning reduces to empty object → invalid.
-  if (reasoningExpanded.value && reasoning !== undefined) {
-    const hasAnyKey = Object.keys(reasoning).some(k => reasoning[k as keyof typeof reasoning] !== undefined);
-    if (!hasAnyKey) return false;
   }
 
   return true;

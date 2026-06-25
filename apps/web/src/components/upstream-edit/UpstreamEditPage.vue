@@ -363,7 +363,7 @@ const save = async () => {
   const trimmedName = name.value.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
-  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check the Default Reasoning Level'; return; }
+  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check model reasoning settings'; return; }
 
   saving.value = true;
   try {
