@@ -13,18 +13,30 @@ export interface UpstreamModelFlagOverrides {
   values: Record<string, boolean>;
 }
 
+export type Modality = 'text' | 'image';
+
+export interface UpstreamChatModelConfig {
+  modalities?: {
+    input: readonly Modality[];
+    output: readonly Modality[];
+  };
+  reasoning?: {
+    supported_efforts: readonly string[];
+    default_effort: string;
+  };
+}
+
 export interface UpstreamModelConfig {
-  upstreamModelId: string;
-  publicModelId?: string;
-  // Required metadata mirroring our public model definition. Routing is driven
-  // by `endpoints` (the structured capability map: a present key means the model
-  // is served by that endpoint); `kind` decides which fields the dashboard form
-  // surfaces and is derived from `endpoints` when an entry omits it.
+  // Mirrors of fields that flow through to PublicModel (snake_case for parity).
   kind: ModelKind;
   endpoints: ModelEndpoints;
   display_name?: string;
   limits?: UpstreamModelLimits;
   cost?: ModelPricing;
+  chat?: UpstreamChatModelConfig;
+  // Floway-internal (camelCase, not surfaced on PublicModel).
+  upstreamModelId: string;
+  publicModelId?: string;
   flagOverrides?: UpstreamModelFlagOverrides;
 }
 
@@ -148,6 +160,53 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 
 const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
 
+const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
+
+const modalityArrayField = (value: unknown, label: string): readonly Modality[] => {
+  if (!Array.isArray(value)) throw new Error(`Malformed ${label}: must be an array`);
+  const out: Modality[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string' || !MODALITY_VALUES.has(entry as Modality)) {
+      throw new Error(`Malformed ${label}: unknown modality ${JSON.stringify(entry)}`);
+    }
+    if (!out.includes(entry as Modality)) out.push(entry as Modality);
+  }
+  if (!out.includes('text')) throw new Error(`Malformed ${label}: must include 'text'`);
+  return out;
+};
+
+const reasoningField = (value: unknown, label: string): UpstreamChatModelConfig['reasoning'] => {
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  if (!Array.isArray(value.supported_efforts)) throw new Error(`Malformed ${label}.supported_efforts: must be an array`);
+  const supported: string[] = [];
+  for (const eff of value.supported_efforts) {
+    if (typeof eff !== 'string' || eff.length === 0) throw new Error(`Malformed ${label}.supported_efforts: every entry must be a non-empty string`);
+    if (!supported.includes(eff)) supported.push(eff);
+  }
+  if (typeof value.default_effort !== 'string' || value.default_effort.length === 0) {
+    throw new Error(`Malformed ${label}.default_effort: must be a non-empty string`);
+  }
+  if (!supported.includes(value.default_effort)) {
+    throw new Error(`Malformed ${label}.default_effort: ${JSON.stringify(value.default_effort)} not in supported_efforts`);
+  }
+  return { supported_efforts: supported, default_effort: value.default_effort };
+};
+
+export const chatField = (value: unknown, label: string): UpstreamChatModelConfig | undefined => {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
+  const out: UpstreamChatModelConfig = {};
+  if (value.modalities !== undefined) {
+    if (!isRecord(value.modalities)) throw new Error(`Malformed ${label}.modalities: must be an object`);
+    out.modalities = {
+      input: modalityArrayField(value.modalities.input, `${label}.modalities.input`),
+      output: modalityArrayField(value.modalities.output, `${label}.modalities.output`),
+    };
+  }
+  if (value.reasoning !== undefined) out.reasoning = reasoningField(value.reasoning, `${label}.reasoning`);
+  return out;
+};
+
 // kind is a pure function of the routing endpoints, so an entry that omits it
 // (an import, or hand-edited JSON) derives one rather than failing. The editor
 // always writes an explicit kind, keeping it consistent with the endpoints.
@@ -163,14 +222,20 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const cost = pricingField(value.cost, `${label}.cost`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
+  const kind = kindField(value.kind, endpoints, `${label}.kind`);
+  const chat = chatField(value.chat, `${label}.chat`);
+  if (chat !== undefined && kind !== 'chat') {
+    throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
+  }
   return {
-    upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
-    ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
-    kind: kindField(value.kind, endpoints, `${label}.kind`),
+    kind,
     endpoints,
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
     ...(cost ? { cost } : {}),
+    ...(chat ? { chat } : {}),
+    upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
+    ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),
   };
 };

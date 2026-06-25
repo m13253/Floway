@@ -1,6 +1,6 @@
-import { test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
-import { pricingField } from './model-config.ts';
+import { chatField, modelsField, pricingField } from './model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('pricingField parses bare dimensions and drops empty objects', () => {
@@ -53,4 +53,72 @@ test('pricingField rejects non-object tiers, empty names, and negative rates', (
   assertThrows(() => pricingField({ tiers: { '': { input: 5 } } }, 'cost'), Error, 'tier name');
   assertThrows(() => pricingField({ tiers: { fast: 1 } }, 'cost'), Error, 'tiers.fast');
   assertThrows(() => pricingField({ tiers: { fast: { input: -1 } } }, 'cost'), Error, 'non-negative');
+});
+
+describe('chatField', () => {
+  test('returns undefined when value is undefined', () => {
+    expect(chatField(undefined, 'm.chat')).toBeUndefined();
+  });
+
+  test('parses a full chat block', () => {
+    const chat = chatField({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { supported_efforts: ['low', 'medium', 'high'], default_effort: 'medium' },
+    }, 'm.chat');
+    expect(chat).toEqual({
+      modalities: { input: ['text', 'image'], output: ['text'] },
+      reasoning: { supported_efforts: ['low', 'medium', 'high'], default_effort: 'medium' },
+    });
+  });
+
+  test('rejects unknown modality value', () => {
+    expect(() => chatField({ modalities: { input: ['video'], output: ['text'] } }, 'm.chat'))
+      .toThrow(/modalities\.input/);
+  });
+
+  test('rejects modalities missing text', () => {
+    expect(() => chatField({ modalities: { input: ['image'], output: ['text'] } }, 'm.chat'))
+      .toThrow(/must include 'text'/);
+  });
+
+  test('deduplicates modality entries', () => {
+    const chat = chatField({ modalities: { input: ['text', 'text', 'image'], output: ['text'] } }, 'm.chat');
+    expect(chat?.modalities?.input).toEqual(['text', 'image']);
+  });
+
+  test('rejects empty reasoning effort string', () => {
+    expect(() => chatField({ reasoning: { supported_efforts: ['low', ''], default_effort: 'low' } }, 'm.chat'))
+      .toThrow(/supported_efforts/);
+  });
+
+  test('rejects default_effort not in supported_efforts', () => {
+    expect(() => chatField({ reasoning: { supported_efforts: ['low', 'high'], default_effort: 'medium' } }, 'm.chat'))
+      .toThrow(/default_effort/);
+  });
+
+  test('rejects reasoning without default_effort', () => {
+    expect(() => chatField({ reasoning: { supported_efforts: ['low'] } }, 'm.chat'))
+      .toThrow(/default_effort/);
+  });
+});
+
+describe('modelsField chat integration', () => {
+  test('rejects chat on non-chat kind', () => {
+    expect(() => modelsField([{
+      upstreamModelId: 'm',
+      kind: 'embedding',
+      endpoints: { embeddings: {} },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    }], 'p')).toThrow(/chat .* only allowed when kind/);
+  });
+
+  test('accepts chat on chat kind', () => {
+    const [m] = modelsField([{
+      upstreamModelId: 'm',
+      kind: 'chat',
+      endpoints: { chatCompletions: {} },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    }], 'p');
+    expect(m.chat?.modalities?.input).toEqual(['text']);
+  });
 });
