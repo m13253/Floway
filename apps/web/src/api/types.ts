@@ -27,8 +27,8 @@ export interface UpstreamChatConfig {
   reasoning?: {
     effort?: { supported: string[]; default: string };
     budget_tokens?: { min?: number; max?: number };
-    adaptive?: boolean;
-    mandatory?: boolean;
+    adaptive?: true;
+    mandatory?: true;
   };
 }
 

@@ -110,8 +110,8 @@ const budgetTokensSchema = z.object({
 const reasoningSchema = z.object({
   effort: effortSchema.optional(),
   budget_tokens: budgetTokensSchema.optional(),
-  adaptive: z.boolean().optional(),
-  mandatory: z.boolean().optional(),
+  adaptive: z.literal(true).optional(),
+  mandatory: z.literal(true).optional(),
 }).refine(
   r => r.effort !== undefined || r.budget_tokens !== undefined || r.adaptive !== undefined || r.mandatory !== undefined,
   { message: 'reasoning must have at least one of effort, budget_tokens, adaptive, mandatory' },

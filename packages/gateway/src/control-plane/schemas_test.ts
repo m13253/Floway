@@ -57,13 +57,20 @@ describe('upstreamModelSchema chat', () => {
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 
-  test('accepts reasoning with adaptive: false alongside mandatory: true', () => {
+  test('rejects reasoning with adaptive: false', () => {
+    const body = structuredClone(baseAzure);
+    (body.config.models[0] as Record<string, unknown>).chat = {
+      reasoning: { adaptive: false },
+    };
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
+  });
+
+  test('rejects reasoning with adaptive: false even alongside mandatory: true', () => {
     const body = structuredClone(baseAzure);
     (body.config.models[0] as Record<string, unknown>).chat = {
       reasoning: { adaptive: false, mandatory: true },
     };
-    // The control-plane schema accepts false booleans; the runtime parser strips them.
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
+    expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
   test('rejects empty reasoning (no sub-block)', () => {
