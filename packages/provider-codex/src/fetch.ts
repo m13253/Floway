@@ -37,6 +37,12 @@ export interface CallCodexResponsesOptions {
   signal?: AbortSignal;
   effects: CodexCallEffects;
   call: UpstreamCallOptions;
+  // Extra headers merged after the built-in auth/UA/accept/content-type set.
+  // Built-ins are applied first; additionalHeaders entries are applied second,
+  // so a caller can deliberately override any built-in header (e.g. user-agent
+  // for testing). Non-compaction call sites pass nothing, leaving the built-ins
+  // unchanged.
+  additionalHeaders?: Record<string, string>;
 }
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
@@ -100,6 +106,10 @@ const performUpstreamCall = async (
   headers.set('user-agent', CODEX_USER_AGENT);
   headers.set('accept', 'text/event-stream');
   headers.set('content-type', 'application/json');
+
+  if (opts.additionalHeaders) {
+    for (const [k, v] of Object.entries(opts.additionalHeaders)) headers.set(k, v);
+  }
 
   const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',

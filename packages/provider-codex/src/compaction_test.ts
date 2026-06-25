@@ -87,6 +87,21 @@ describe('callCodexResponsesCompact', () => {
     expect(result.result.object).toBe('response.compaction');
     expect(result.result.output).toHaveLength(2);
     expect(result.result.output[1]).toMatchObject({ id: 'cmp_x', type: 'compaction', encrypted_content: 'FULL_BLOB' });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const sentHeaders = new Headers((init as RequestInit).headers);
+    expect(sentHeaders.get('x-codex-beta-features')).toBe('remote_compaction_v2');
+    const metadata = JSON.parse(sentHeaders.get('x-codex-turn-metadata') ?? '{}');
+    expect(metadata).toEqual({
+      request_kind: 'compaction',
+      compaction: {
+        trigger: 'manual',
+        reason: 'user_requested',
+        implementation: 'responses_compaction_v2',
+        phase: 'standalone_turn',
+        strategy: 'memento',
+      },
+    });
   });
 
   test('errors if upstream returns zero compaction items', async () => {

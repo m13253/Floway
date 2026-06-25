@@ -199,6 +199,19 @@ describe('callCodexResponses — upstream classification', () => {
     expect(body.stream).toBe(true);
   });
 
+  test('plain call carries no compaction beta headers', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: 'hi', stream: true } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
+      headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+    const sentHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(sentHeaders.get('x-codex-beta-features')).toBeNull();
+    expect(sentHeaders.get('x-codex-turn-metadata')).toBeNull();
+  });
+
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));

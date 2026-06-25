@@ -47,3 +47,9 @@ export const CODEX_CLI_VERSION = '0.137.0';
 // constraint at the top of this file.
 export const CODEX_ORIGINATOR = 'codex_cli_rs';
 export const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
+
+// Beta-feature flag the Codex CLI sets on every request once
+// `[features].remote_compaction_v2 = true` (the default in 0.137+). Floway only
+// ever uses the v2 compaction path, so we set it on the compaction call only;
+// see compaction.ts for wire details + upstream source permalinks.
+export const CODEX_REMOTE_COMPACTION_BETA = 'remote_compaction_v2';

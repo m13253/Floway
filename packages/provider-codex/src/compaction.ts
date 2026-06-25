@@ -1,3 +1,4 @@
+import { CODEX_REMOTE_COMPACTION_BETA } from './constants.ts';
 import { type CallCodexResponsesOptions, callCodexResponses } from './fetch.ts';
 import type { ResponsesCompactPayload, ResponsesInputItem, ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
 import { COMPACTION_TRIGGER, compactionResponse } from '@floway-dev/provider';
@@ -20,6 +21,16 @@ export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponse
 // /responses call (refresh + 429 quota + 401 retry), drain the SSE frames,
 // and reshape via the shared `compactionResponse` helper so the envelope
 // matches the Copilot path.
+//
+// Two Codex v2 compaction headers are set on every call here:
+// - `x-codex-beta-features: remote_compaction_v2` — activates the v2 path;
+//   the Codex CLI enables this on every request when
+//   `[features].remote_compaction_v2 = true` (default since 0.137.0).
+//   Source: codex-rs/core/src/compact_remote_v2.rs (x-codex-beta-features
+//   literal), codex-rs/core/tests/responses_headers.rs (test coverage).
+// - `x-codex-turn-metadata` — JSON telemetry+routing hint with the
+//   compaction-specific field set; shape verified from
+//   codex-rs/core/src/compact_remote_v2.rs.
 export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<CodexCompactionCallResult> => {
   const originalInput: ResponsesInputItem[] = typeof opts.body.input === 'string'
     ? [{ type: 'message', role: 'user', content: opts.body.input }]
@@ -27,7 +38,26 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
   const triggerInput: ResponsesInputItem[] = [...originalInput, COMPACTION_TRIGGER];
 
   const triggeredBody: Omit<ResponsesPayload, 'model'> = { ...opts.body, input: triggerInput };
-  const result = await callCodexResponses({ ...opts, body: triggeredBody });
+
+  const turnMetadata = {
+    request_kind: 'compaction',
+    compaction: {
+      trigger: 'manual',
+      reason: 'user_requested',
+      implementation: 'responses_compaction_v2',
+      phase: 'standalone_turn',
+      strategy: 'memento',
+    },
+  };
+  const result = await callCodexResponses({
+    ...opts,
+    body: triggeredBody,
+    additionalHeaders: {
+      'x-codex-beta-features': CODEX_REMOTE_COMPACTION_BETA,
+      'x-codex-turn-metadata': JSON.stringify(turnMetadata),
+      ...opts.additionalHeaders,
+    },
+  });
 
   if (!result.ok) return { ok: false, response: result.response, modelKey: opts.model.id };
 
