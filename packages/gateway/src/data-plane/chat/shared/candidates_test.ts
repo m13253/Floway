@@ -260,7 +260,7 @@ describe('enumerateProviderCandidates', () => {
   });
 
   // When every upstream's catalog rejects, the request gets an empty candidate
-  // list and sawModel=false — the LLM serve sites turn that into model-missing
+  // list and sawModel=false — the chat serve sites turn that into model-missing
   // with the failed-upstream parenthetical attached.
   test('all upstreams rejecting yields no candidates, sawModel=false, and every name in failedUpstreams', async () => {
     clearInFlightForTesting();

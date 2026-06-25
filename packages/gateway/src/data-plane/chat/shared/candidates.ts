@@ -21,7 +21,7 @@ export const enumerateProviderCandidates = async ({
   pickTarget: (endpoints: ModelEndpoints) => ChatTargetApi | null;
   // Threaded into `resolveModelForProvider` so the per-upstream catalog
   // lookup hits the SWR-cached `fetchUpstreamModelsCached` instead of
-  // round-tripping to the upstream on every LLM serve.
+  // round-tripping to the upstream on every chat serve.
   scheduler: BackgroundScheduler;
   // Current colo for this request — see GatewayCtx.currentColo. Threaded
   // into the per-request fetcher so colo-scoped fallback entries can be
