@@ -117,21 +117,33 @@ export const geminiFunctionResponsePart = (part: GeminiPart, ids: GeminiToolCall
   return { response, id: unmatched?.shift() ?? id };
 };
 
-export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): 'low' | 'medium' | 'high' | undefined => {
+// Reasoning effort is freeform on the inbound IRs (per Goal 2: never gate
+// operator-typed values), but the gateway publishes a canonical closed set so
+// translate-side mappers can normalize without rewriting unknown values.
+// References:
+// - docs/superpowers/specs/2026-06-25-model-aliases-design.md (Translate Layer)
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): ReasoningEffort | undefined => {
   switch (thinkingConfig?.thinkingLevel) {
   case 'minimal':
+    return 'minimal';
   case 'low':
     return 'low';
   case 'medium':
     return 'medium';
   case 'high':
     return 'high';
+  case 'xhigh':
+    return 'xhigh';
+  case 'max':
+    return 'max';
   default:
     return undefined;
   }
 };
 
-export const geminiReasoningEffort = (thinkingConfig?: GeminiThinkingConfig): 'none' | 'low' | 'medium' | 'high' | null => {
+export const geminiReasoningEffort = (thinkingConfig?: GeminiThinkingConfig): ReasoningEffort | null => {
   if (!thinkingConfig) return null;
 
   if (thinkingConfig.thinkingBudget !== undefined) {

@@ -161,6 +161,14 @@ const applyThinkingConfig = (request: MessagesPayload, thinkingConfig?: GeminiTh
     }
   }
 
+  // `includeThoughts` materializes onto `thinking.display`: true → summarized
+  // (Anthropic redacts to a single-block summary), false → omitted (no
+  // thinking surface at all). Skip when the source did not express either.
+  if (thinkingConfig.includeThoughts !== undefined && request.thinking?.type !== 'disabled') {
+    const display = thinkingConfig.includeThoughts === true ? ('summarized' as const) : ('omitted' as const);
+    request.thinking = request.thinking ? { ...request.thinking, display } : { type: 'enabled', display };
+  }
+
   const effort = geminiThinkingLevelEffort(thinkingConfig);
   // Spread to merge with any output_config fields a sibling helper has
   // already written (e.g. structured-output `format` from
@@ -195,6 +203,11 @@ const applyGenerationConfig = (request: MessagesPayload, generationConfig: Gemin
       format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> },
     };
   }
+
+  // `serviceTier` extension flows verbatim onto the Messages-native slot;
+  // `verbosity` has no Anthropic equivalent and stays as inbound residue
+  // that the sanitizer strips after translation.
+  if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
 
   applyThinkingConfig(request, generationConfig.thinkingConfig);
 };
@@ -259,6 +272,11 @@ export const buildTargetRequest = (
   });
 
   applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
+
+  // Top-level Gemini Floway extensions: `anthropicSpeed` is the only one
+  // with a Messages-natural slot. `anthropicBeta` is header-bound at the
+  // gateway boundary (Task 5) since translate functions do not own headers.
+  if (payload.anthropicSpeed != null) request.speed = payload.anthropicSpeed;
 
   const tools = buildTools(payload);
   if (tools) request.tools = tools;

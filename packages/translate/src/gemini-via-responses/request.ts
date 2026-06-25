@@ -132,6 +132,7 @@ const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: Gem
 
   if (generationConfig.responseSchema !== undefined) {
     request.text = {
+      ...request.text,
       format: {
         type: 'json_schema',
         json_schema: {
@@ -141,16 +142,28 @@ const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: Gem
       },
     };
   } else if (generationConfig.responseMimeType === 'application/json') {
-    request.text = { format: { type: 'json_object' } };
+    request.text = { ...request.text, format: { type: 'json_object' } };
   }
 
-  const effort = geminiReasoningEffort(generationConfig.thinkingConfig);
-  if (!effort) return;
+  // `verbosity` extension rides under `text` alongside the structured-output
+  // format, matching the native Responses placement.
+  if (generationConfig.verbosity != null) request.text = { ...request.text, verbosity: generationConfig.verbosity };
 
-  request.reasoning = {
-    effort,
-    ...(effort !== 'none' && generationConfig.thinkingConfig?.includeThoughts === true ? { summary: 'detailed' as const } : {}),
-  };
+  if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
+
+  const effort = geminiReasoningEffort(generationConfig.thinkingConfig);
+  const summary =
+    generationConfig.thinkingConfig?.includeThoughts === true
+      ? ('detailed' as const)
+      : generationConfig.thinkingConfig?.includeThoughts === false
+        ? ('omitted' as const)
+        : undefined;
+  if (effort || summary !== undefined) {
+    request.reasoning = {
+      ...(effort ? { effort } : {}),
+      ...(summary !== undefined && effort !== 'none' ? { summary } : {}),
+    };
+  }
 };
 
 const buildTools = (payload: GeminiPayload): ResponsesTool[] | undefined => {

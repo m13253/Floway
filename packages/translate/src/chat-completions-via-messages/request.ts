@@ -2,6 +2,7 @@ import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shar
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
@@ -188,6 +189,17 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
+  // Materialize the Floway extension fields onto their Messages-natural
+  // slots. `anthropic_beta` is body-side residue that the per-upstream
+  // sanitizer strips after translation; the gateway-side rule-apply pass owns
+  // moving its value onto the outbound `anthropic-beta` header before the
+  // upstream call. See docs/superpowers/specs/2026-06-25-model-aliases-design.md.
+  const thinking = buildMessagesThinkingFromExtensions({
+    thinkingBudget: payload.thinking_budget,
+    adaptiveThinking: payload.adaptive_thinking,
+    reasoningSummary: payload.reasoning_summary,
+  });
+
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
@@ -205,6 +217,9 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
+    ...(thinking ? { thinking } : {}),
+    ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
+    ...(payload.service_tier != null ? { service_tier: payload.service_tier } : {}),
   };
 };
 

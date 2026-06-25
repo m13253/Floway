@@ -49,7 +49,7 @@ export interface MessagesPayload {
     // no `json_object` variant.
     format?: { type: 'json_schema'; schema: Record<string, unknown> };
   };
-  service_tier?: 'auto' | 'standard_only';
+  service_tier?: 'auto' | 'standard_only' | (string & {});
   // https://docs.claude.com/en/build-with-claude/fast-mode — Fast Mode is
   // opt-in per request. Beta-only on the upstream wire (gated by
   // `anthropic-beta: fast-mode-2026-02-01`), but we expose the field at the

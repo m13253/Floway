@@ -6,7 +6,7 @@ import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToo
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
-test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled', async () => {
+test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
   const result = await translateResponsesToMessages({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -41,7 +41,7 @@ test('translateResponsesToMessages maps reasoning.effort directly to output_conf
     stream: null,
     store: false,
     parallel_tool_calls: true,
-    reasoning: { effort: 'minimal', summary: 'detailed' },
+    reasoning: { effort: 'minimal' },
   });
 
   assertEquals(result.target.output_config, { effort: 'minimal' });
