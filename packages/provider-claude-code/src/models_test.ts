@@ -58,7 +58,7 @@ describe('chatFromCapabilities', () => {
     });
     expect(chat).toEqual({
       reasoning: {
-        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'high' },
+        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'medium' },
         budget_tokens: {},
         adaptive: true,
       },
@@ -80,7 +80,7 @@ describe('chatFromCapabilities', () => {
     });
     expect(chat).toEqual({
       reasoning: {
-        effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'high' },
+        effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max'], default: 'medium' },
         adaptive: true,
       },
     });
@@ -107,7 +107,7 @@ describe('chatFromCapabilities', () => {
     expect(chat).toEqual({
       modalities: { input: ['text', 'image'], output: ['text'] },
       reasoning: {
-        effort: { supported: ['low', 'medium', 'high'], default: 'high' },
+        effort: { supported: ['low', 'medium', 'high'], default: 'medium' },
         budget_tokens: {},
         adaptive: true,
       },
@@ -128,8 +128,8 @@ describe('chatFromCapabilities', () => {
     expect(chat).toEqual({ reasoning: { budget_tokens: {} } });
   });
 
-  // Case 8: default selection — 'high' preferred; fallback to first
-  test('effort default: high when in supported list', () => {
+  // Case 8: default selection — 'medium' preferred; fallback to first
+  test('effort default: medium when in supported list', () => {
     const chat = chatFromCapabilities({
       effort: {
         supported: true,
@@ -139,15 +139,15 @@ describe('chatFromCapabilities', () => {
       },
       thinking: { types: { enabled: { supported: true } } },
     });
-    expect(chat!.reasoning!.effort!.default).toBe('high');
+    expect(chat!.reasoning!.effort!.default).toBe('medium');
   });
 
-  test('effort default: first item when high is not supported', () => {
+  test('effort default: first item when medium is not supported', () => {
     const chat = chatFromCapabilities({
       effort: {
         supported: true,
         low: { supported: true },
-        medium: { supported: true },
+        high: { supported: true },
       },
       thinking: { types: { enabled: { supported: true } } },
     });
@@ -232,7 +232,7 @@ describe('buildClaudeCodeCatalog', () => {
     expect(built[0]!.chat).toEqual({
       modalities: { input: ['text', 'image'], output: ['text'] },
       reasoning: {
-        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'high' },
+        effort: { supported: ['low', 'medium', 'high', 'max'], default: 'medium' },
         budget_tokens: {},
         adaptive: true,
       },

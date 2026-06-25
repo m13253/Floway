@@ -162,7 +162,7 @@ export const chatFromCapabilities = (
       .filter(([key, val]) => key !== 'supported' && typeof val === 'object' && val !== null && (val as { supported: boolean }).supported === true)
       .map(([key]) => key);
     if (supportedLevels.length > 0) {
-      const defaultLevel = supportedLevels.includes('high') ? 'high' : supportedLevels[0]!;
+      const defaultLevel = supportedLevels.includes('medium') ? 'medium' : supportedLevels[0]!;
       reasoning.effort = { supported: supportedLevels, default: defaultLevel };
     }
   }
