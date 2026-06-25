@@ -56,6 +56,11 @@ export const applyAliasRulesToMessages = (payload: MessagesPayload, rules: Model
   }
   if (rules.reasoning?.summary !== undefined) {
     const display = mapSummaryToAnthropicDisplay(rules.reasoning.summary);
+    // summary='auto' maps to undefined and is an explicit no-op on the
+    // Messages path — the operator chose "let upstream default decide", so
+    // we neither synthesize a thinking block nor overwrite a user-supplied
+    // thinking.display. Every other summary value enforces operator-locked
+    // overwrite.
     if (display !== undefined) {
       // When no prior thinking branch ran (no effort/budget/adaptive in this
       // rule), synthesize `thinking: {type:'enabled', display}` so the
