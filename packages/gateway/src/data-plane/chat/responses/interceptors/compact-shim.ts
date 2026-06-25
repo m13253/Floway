@@ -190,8 +190,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   } finally {
     ctx.payload = originalPayload;
     // Re-tag the action so the gateway's post-chain snapshot derivation
-    // picks 'replace'. Restored in `finally` alongside `payload` so the
-    // outer state is symmetric whether the inner call resolves or throws.
+    // picks 'replace'.
     ctx.action = 'compact';
   }
 
