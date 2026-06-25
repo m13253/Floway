@@ -176,3 +176,46 @@ test('mergeClaudeVariants preserves order across mixed claude/non-claude models'
     ['claude-opus-4-7', 'gpt-5.5', 'claude-sonnet-4-6'],
   );
 });
+
+test('mergeClaudeVariants preserves vision/adaptive_thinking/budget from base variant', () => {
+  // These fields are uniform per family (every variant shares the same base
+  // capability), so the merge just keeps the base's value via the ...supports spread.
+  const input: CopilotModelsResponse = {
+    object: 'list',
+    data: [
+      {
+        ...claudeVariant('claude-opus-4.7', { reasoningEfforts: ['medium'] }),
+        capabilities: {
+          type: 'chat',
+          limits: { max_context_window_tokens: 200_000 },
+          supports: {
+            vision: true,
+            reasoning_effort: ['medium'],
+            min_thinking_budget: 1024,
+            max_thinking_budget: 32768,
+            adaptive_thinking: true,
+          },
+        },
+      },
+      {
+        ...claudeVariant('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] }),
+        capabilities: {
+          type: 'chat',
+          limits: { max_context_window_tokens: 200_000 },
+          supports: { vision: true, reasoning_effort: ['xhigh'] },
+        },
+      },
+    ],
+  };
+
+  const merged = mergeClaudeVariants(input);
+  assertEquals(merged.data.length, 1);
+  const supports = merged.data[0].capabilities?.supports;
+  // vision and budget fields come from the base via spread
+  assertEquals(supports?.vision, true);
+  assertEquals(supports?.min_thinking_budget, 1024);
+  assertEquals(supports?.max_thinking_budget, 32768);
+  assertEquals(supports?.adaptive_thinking, true);
+  // reasoning_effort is the union
+  assertSameSet(supports?.reasoning_effort, ['medium', 'xhigh']);
+});
