@@ -50,7 +50,8 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     effective_context_window_percent: 95,
     experimental_supported_tools: [],
     additional_speed_tiers: [],
-    service_tiers: [],
+    // Registry-derived: each key in cost.tiers is a billable tier wire-id.
+    service_tiers: Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' })),
     priority: 0,
     visibility: 'list',
     availability_nux: null,

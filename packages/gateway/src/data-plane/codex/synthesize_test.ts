@@ -29,6 +29,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 10000 });
     expect(entry.visibility).toBe('list');
     expect(entry.priority).toBe(0);
+    expect(entry.service_tiers).toEqual([]);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
     // openai/codex's gpt-5.5 entry) — see synthesized-base-instructions.ts.
     // Test the opening line so a future refresh that mangles the file gets
@@ -105,5 +106,29 @@ describe('synthesizeCatalogEntry', () => {
     });
     expect(entry.supported_reasoning_levels).toEqual([{ effort: 'medium', description: '' }]);
     expect(entry.default_reasoning_level).toBe('medium');
+  });
+
+  test('service_tiers derived from cost.tiers keys', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      cost: { tiers: { fast: { input: 1 } } },
+    });
+    expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
+  });
+
+  test('service_tiers empty when no cost.tiers', () => {
+    const entry = synthesizeCatalogEntry(base);
+    expect(entry.service_tiers).toEqual([]);
+  });
+
+  test('service_tiers preserves key order for multiple tiers', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      cost: { tiers: { flex: { input: 1 }, priority: { input: 2 } } },
+    });
+    expect(entry.service_tiers).toEqual([
+      { id: 'flex', name: 'flex', description: '' },
+      { id: 'priority', name: 'priority', description: '' },
+    ]);
   });
 });

@@ -5,9 +5,9 @@ import type { InternalModel } from '@floway-dev/provider';
 
 const bundled = {
   models: [
-    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep' },
-    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list' },
-    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000, visibility: 'hide' },
+    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [] },
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [] },
+    { slug: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000, visibility: 'hide', service_tiers: [] },
   ],
 };
 
@@ -80,5 +80,19 @@ describe('computeCatalog', () => {
   test('alias absent when target not in registry', () => {
     const out = computeCatalog(bundled, [chat('gpt-5.5')]);
     expect(out.models.map(m => m.slug)).not.toContain('codex-auto-review');
+  });
+
+  test('bundled reuse: registry cost.tiers replaces bundled service_tiers', () => {
+    const im: InternalModel = {
+      ...chat('openrouter/gpt-5.5:nitro'),
+      cost: { tiers: { fast: { input: 1 } } },
+    };
+    const out = computeCatalog(bundled, [im]);
+    expect(out.models[0].service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
+  });
+
+  test('bundled reuse: no registry cost.tiers yields service_tiers: []', () => {
+    const out = computeCatalog(bundled, [chat('openrouter/gpt-5.5:nitro')]);
+    expect(out.models[0].service_tiers).toEqual([]);
   });
 });

@@ -79,6 +79,10 @@ export const computeCatalog = (
       // registry display name so the Codex picker selects the right value.
       const cloned: CatalogModel = { ...hit, slug: im.id };
       if (im.display_name !== undefined) cloned.display_name = im.display_name;
+      // Registry-derived tiers win over bundled; bundled chatgpt.com today emits
+      // service_tiers: [] anyway, but if it ever advertises tiers we lack pricing
+      // for, we'd surface a toggle we can't bill — replace with our derived list.
+      cloned.service_tiers = Object.keys(im.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
       models.push(cloned);
       // The alias entry itself does not trigger an extra alias append. Only a
       // registry model whose public id is exactly the alias target triggers it
