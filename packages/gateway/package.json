@@ -11,6 +11,8 @@
       "types": "./src/runtime/channel-broker-contract.ts"
     },
     "./control-plane/proxies/serialize": { "types": "./src/control-plane/proxies/serialize.ts" },
+    "./control-plane/model-aliases/serialize": { "types": "./src/control-plane/model-aliases/serialize.ts" },
+    "./control-plane/model-aliases/types": { "types": "./src/control-plane/model-aliases/types.ts" },
     "./control-plane/pricing/types": { "types": "./src/control-plane/pricing/types.ts" },
     "./data-plane/tools/web-search/types": {
       "import": "./src/data-plane/tools/web-search/types.ts",
