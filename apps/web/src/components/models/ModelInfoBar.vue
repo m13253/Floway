@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { ControlPlaneModel } from '../../api/types.ts';
+import type { ControlPlaneModel, PublicModelAliasedFrom } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
-import { formatAliasRuleBadges } from '@floway-dev/protocols/common';
+import { formatAliasRuleBadges, type AliasRuleBadge } from '@floway-dev/protocols/common';
 
 defineProps<{
   model: ControlPlaneModel;
@@ -14,6 +14,15 @@ const formatTokenLimit = (n: number) => {
   if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
   return n.toString();
 };
+
+// `alias of: <target>` always leads the alias badge sequence so the operator
+// reading the row sees what the alias resolves to before scanning the rule
+// pills. The rule badges follow in the order `formatAliasRuleBadges`
+// returns, keeping dashboard and any future alias-aware tooling in lockstep.
+const aliasBadges = (aliasedFrom: PublicModelAliasedFrom): AliasRuleBadge[] => [
+  { label: 'alias of', value: aliasedFrom.targetModelId },
+  ...formatAliasRuleBadges(aliasedFrom.rules),
+];
 </script>
 
 <template>
@@ -45,11 +54,10 @@ const formatTokenLimit = (n: number) => {
             output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
           </span>
           <span
-            v-for="badge in (model.aliasedFrom ? formatAliasRuleBadges(model.aliasedFrom.rules) : [])"
-            :key="badge"
-            class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400"
-            :title="`alias rule from ${model.aliasedFrom?.targetModelId}`"
-          >{{ badge }}</span>
+            v-for="badge in (model.aliasedFrom ? aliasBadges(model.aliasedFrom) : [])"
+            :key="`${badge.label}:${badge.value ?? ''}`"
+            class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/[0.08] text-gray-400"
+          >{{ badge.label }}{{ badge.value !== undefined ? `: ${badge.value}` : '' }}</span>
         </div>
       </div>
       <button class="btn-ghost text-[11px] flex shrink-0 items-center gap-1" @click="$emit('clear')">
