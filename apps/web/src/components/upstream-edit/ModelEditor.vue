@@ -717,193 +717,138 @@ const toggleMandatory = (on: boolean) => {
 
         <section v-if="rowKind === 'chat'">
           <div class="mb-3 flex items-baseline gap-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Chat</h3>
-            <span class="text-[11px] text-gray-500">modalities and reasoning capabilities</span>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Modalities</h3>
+            <span class="text-[11px] text-gray-500">text is always supported; toggle additional inputs</span>
+          </div>
+          <label class="flex w-fit items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+            <Switch
+              :model-value="chatImageInput"
+              :disabled="!editable"
+              @update:model-value="v => toggleImageInput(v === true)"
+            />
+            <span class="text-xs" :class="chatImageInput ? 'text-white' : 'text-gray-500'">Image input</span>
+          </label>
+        </section>
+
+        <section v-if="rowKind === 'chat'">
+          <div class="mb-3 flex items-baseline gap-3">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Reasoning</h3>
+            <span class="text-[11px] text-gray-500">enable any subset; details expand under each toggle</span>
           </div>
 
-          <!-- Input Modalities -->
-          <div class="mb-6 space-y-2">
-            <span class="block text-xs font-medium text-gray-500">Input Modalities</span>
-            <div class="flex flex-wrap items-center gap-4">
-              <label class="flex cursor-not-allowed items-center gap-2">
-                <input type="checkbox" class="sr-only" checked disabled />
-                <span class="inline-flex h-4 w-4 items-center justify-center rounded border border-white/20 bg-white/10">
-                  <svg class="h-2.5 w-2.5 text-gray-400" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M2 6l3 3 5-5" />
-                  </svg>
-                </span>
-                <span class="text-xs text-gray-500">Text (always on)</span>
-              </label>
-              <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
-                <Switch
-                  :model-value="chatImageInput"
-                  :disabled="!editable"
-                  @update:model-value="v => toggleImageInput(v === true)"
-                />
-                <span class="text-xs" :class="chatImageInput ? 'text-white' : 'text-gray-500'">Image</span>
-              </label>
-            </div>
+          <div class="flex flex-wrap gap-x-6 gap-y-2">
+            <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+              <Switch :model-value="effortEnabled" :disabled="!editable" @update:model-value="v => toggleEffort(v === true)" />
+              <span class="text-xs" :class="effortEnabled ? 'text-white' : 'text-gray-500'">Effort levels</span>
+            </label>
+            <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+              <Switch :model-value="budgetTokensEnabled" :disabled="!editable" @update:model-value="v => toggleBudgetTokens(v === true)" />
+              <span class="text-xs" :class="budgetTokensEnabled ? 'text-white' : 'text-gray-500'">Budget tokens</span>
+            </label>
+            <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+              <Switch :model-value="adaptiveEnabled" :disabled="!editable" @update:model-value="v => toggleAdaptive(v === true)" />
+              <span class="text-xs" :class="adaptiveEnabled ? 'text-white' : 'text-gray-500'">Adaptive</span>
+              <Tooltip text="Model self-selects reasoning effort"><span class="text-[10px] text-gray-600">?</span></Tooltip>
+            </label>
+            <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
+              <Switch :model-value="mandatoryEnabled" :disabled="!editable" @update:model-value="v => toggleMandatory(v === true)" />
+              <span class="text-xs" :class="mandatoryEnabled ? 'text-white' : 'text-gray-500'">Mandatory</span>
+              <Tooltip text="Reasoning is always applied; caller cannot opt out"><span class="text-[10px] text-gray-600">?</span></Tooltip>
+            </label>
           </div>
 
-          <!-- Reasoning group -->
-          <div class="space-y-4">
-            <span class="block text-xs font-medium text-gray-500">Reasoning</span>
-
-            <!-- Effort levels sub-block -->
-            <div class="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="mb-3 flex items-center gap-3">
-                <Switch
-                  :model-value="effortEnabled"
-                  :disabled="!editable"
-                  @update:model-value="v => toggleEffort(v === true)"
-                />
-                <span class="text-xs font-medium" :class="effortEnabled ? 'text-white' : 'text-gray-500'">Effort levels</span>
-              </div>
-              <template v-if="effortEnabled">
-                <!-- Tag list -->
-                <div v-if="supportedEfforts.length > 0" class="mb-2 flex flex-wrap gap-1.5">
-                  <span
-                    v-for="level in supportedEfforts"
-                    :key="level"
-                    class="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-2 py-0.5 font-mono text-[11px] text-gray-300"
-                  >
-                    {{ level }}
-                    <button
-                      v-if="editable"
-                      type="button"
-                      class="ml-0.5 text-gray-500 transition-colors hover:text-accent-rose"
-                      :aria-label="`Remove ${level}`"
-                      @click="removeReasoningLevel(level)"
-                    >
-                      <svg class="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M9 3 3 9M3 3l6 6" />
-                      </svg>
-                    </button>
-                  </span>
-                </div>
-                <!-- Quick-add buttons -->
-                <div v-if="editable" class="mb-2 flex flex-wrap gap-1.5">
-                  <button
-                    v-for="level in REASONING_LEVELS"
-                    :key="level"
-                    type="button"
-                    class="rounded border px-2 py-0.5 font-mono text-[11px] transition-colors"
-                    :class="supportedEfforts.includes(level)
-                      ? 'border-white/10 text-gray-600 cursor-default'
-                      : 'border-white/15 text-gray-400 hover:border-accent-cyan/40 hover:text-accent-cyan'"
-                    :disabled="supportedEfforts.includes(level)"
-                    @click="addReasoningLevel(level)"
-                  >+ {{ level }}</button>
-                </div>
-                <!-- Custom level input -->
-                <div v-if="editable" class="mb-4 flex max-w-xs gap-2">
-                  <Input
-                    v-model="reasoningLevelInput"
-                    placeholder="custom level…"
-                    class="font-mono"
-                    @keydown.enter.prevent="commitReasoningInput"
-                  />
-                  <Button variant="secondary" size="sm" @click="commitReasoningInput">Add</Button>
-                </div>
-                <!-- Validation message -->
-                <p v-if="effortEnabled && supportedEfforts.length === 0" class="mb-3 text-[11px] text-accent-rose">
-                  Add at least one effort level.
-                </p>
-                <!-- Default level -->
-                <div class="space-y-1.5">
-                  <span class="block text-xs font-medium text-gray-500">Default level</span>
-                  <p v-if="config.chat?.reasoning?.effort && !config.chat.reasoning.effort.default && supportedEfforts.length > 0" class="text-[11px] text-accent-rose">
-                    Default cleared — select a level from the list.
-                  </p>
-                  <div class="max-w-xs">
-                    <Select
-                      v-if="editable"
-                      :model-value="config.chat?.reasoning?.effort?.default ?? ''"
-                      :options="[{ value: '', label: '— none —' }, ...supportedEfforts.map(e => ({ value: e, label: e }))]"
-                      :disabled="supportedEfforts.length === 0"
-                      @update:model-value="v => setDefaultEffort(v as string)"
-                    />
-                    <div v-else class="text-xs text-gray-500">
-                      {{ config.chat?.reasoning?.effort?.default || '—' }}
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </div>
-
-            <!-- Budget tokens sub-block -->
-            <div class="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="mb-3 flex items-center gap-3">
-                <Switch
-                  :model-value="budgetTokensEnabled"
-                  :disabled="!editable"
-                  @update:model-value="v => toggleBudgetTokens(v === true)"
-                />
-                <span class="text-xs font-medium" :class="budgetTokensEnabled ? 'text-white' : 'text-gray-500'">Budget tokens</span>
-              </div>
-              <template v-if="budgetTokensEnabled">
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <label class="block space-y-1.5">
-                    <span class="block text-xs font-medium text-gray-500">Min tokens</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      :model-value="config.chat?.reasoning?.budget_tokens?.min"
-                      :readonly="!editable"
-                      placeholder="no minimum"
-                      class="font-mono"
-                      @update:model-value="v => updateBudgetTokensMin(v)"
-                    />
-                  </label>
-                  <label class="block space-y-1.5">
-                    <span class="block text-xs font-medium text-gray-500">Max tokens</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      :model-value="config.chat?.reasoning?.budget_tokens?.max"
-                      :readonly="!editable"
-                      placeholder="no maximum"
-                      class="font-mono"
-                      @update:model-value="v => updateBudgetTokensMax(v)"
-                    />
-                  </label>
-                </div>
-                <p
-                  v-if="config.chat?.reasoning?.budget_tokens?.min !== undefined
-                    && config.chat?.reasoning?.budget_tokens?.max !== undefined
-                    && config.chat.reasoning.budget_tokens.max < config.chat.reasoning.budget_tokens.min"
-                  class="mt-2 text-[11px] text-accent-rose"
+          <div v-if="effortEnabled" class="mt-3 space-y-2 border-l-2 border-white/[0.08] pl-3">
+            <div v-if="supportedEfforts.length > 0" class="flex flex-wrap gap-1.5">
+              <span
+                v-for="level in supportedEfforts"
+                :key="level"
+                class="inline-flex items-center gap-1 rounded border border-white/15 bg-white/[0.07] px-2 py-0.5 font-mono text-[11px] text-gray-300"
+              >
+                {{ level }}
+                <button
+                  v-if="editable"
+                  type="button"
+                  class="ml-0.5 text-gray-500 transition-colors hover:text-accent-rose"
+                  :aria-label="`Remove ${level}`"
+                  @click="removeReasoningLevel(level)"
                 >
-                  Max must be greater than or equal to min.
-                </p>
-              </template>
+                  <svg class="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 3 3 9M3 3l6 6" />
+                  </svg>
+                </button>
+              </span>
             </div>
+            <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
+              <button
+                v-for="level in REASONING_LEVELS"
+                :key="level"
+                type="button"
+                class="rounded border px-2 py-0.5 font-mono text-[11px] transition-colors"
+                :class="supportedEfforts.includes(level)
+                  ? 'border-white/10 text-gray-600 cursor-default'
+                  : 'border-white/15 text-gray-400 hover:border-accent-cyan/40 hover:text-accent-cyan'"
+                :disabled="supportedEfforts.includes(level)"
+                @click="addReasoningLevel(level)"
+              >+ {{ level }}</button>
+              <Input
+                v-model="reasoningLevelInput"
+                placeholder="custom…"
+                class="!w-32 font-mono"
+                @keydown.enter.prevent="commitReasoningInput"
+              />
+              <Button variant="secondary" size="sm" @click="commitReasoningInput">Add</Button>
+            </div>
+            <p v-if="supportedEfforts.length === 0" class="text-[11px] text-accent-rose">Add at least one effort level.</p>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">Default:</span>
+              <Select
+                v-if="editable"
+                class="!w-32"
+                :model-value="config.chat?.reasoning?.effort?.default ?? ''"
+                :options="[{ value: '', label: '— none —' }, ...supportedEfforts.map(e => ({ value: e, label: e }))]"
+                :disabled="supportedEfforts.length === 0"
+                @update:model-value="v => setDefaultEffort(v as string)"
+              />
+              <span v-else class="font-mono text-xs text-gray-400">{{ config.chat?.reasoning?.effort?.default || '—' }}</span>
+              <p v-if="config.chat?.reasoning?.effort && !config.chat.reasoning.effort.default && supportedEfforts.length > 0" class="text-[11px] text-accent-rose">
+                Default cleared — pick a level.
+              </p>
+            </div>
+          </div>
 
-            <!-- Adaptive toggle -->
-            <div class="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="flex items-center gap-3">
-                <Switch
-                  :model-value="adaptiveEnabled"
-                  :disabled="!editable"
-                  @update:model-value="v => toggleAdaptive(v === true)"
-                />
-                <span class="text-xs font-medium" :class="adaptiveEnabled ? 'text-white' : 'text-gray-500'">Adaptive</span>
-                <span class="text-[11px] text-gray-600">model may self-select reasoning effort</span>
-              </div>
-            </div>
-
-            <!-- Mandatory toggle -->
-            <div class="rounded-md border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="flex items-center gap-3">
-                <Switch
-                  :model-value="mandatoryEnabled"
-                  :disabled="!editable"
-                  @update:model-value="v => toggleMandatory(v === true)"
-                />
-                <span class="text-xs font-medium" :class="mandatoryEnabled ? 'text-white' : 'text-gray-500'">Mandatory</span>
-                <span class="text-[11px] text-gray-600">reasoning is always applied, ignoring caller opt-out</span>
-              </div>
-            </div>
+          <div v-if="budgetTokensEnabled" class="mt-3 flex flex-wrap items-center gap-3 border-l-2 border-white/[0.08] pl-3">
+            <label class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">Min</span>
+              <Input
+                type="number"
+                min="0"
+                :model-value="config.chat?.reasoning?.budget_tokens?.min"
+                :readonly="!editable"
+                placeholder="—"
+                class="!w-28 font-mono"
+                @update:model-value="v => updateBudgetTokensMin(v)"
+              />
+            </label>
+            <label class="flex items-center gap-2">
+              <span class="text-xs text-gray-500">Max</span>
+              <Input
+                type="number"
+                min="0"
+                :model-value="config.chat?.reasoning?.budget_tokens?.max"
+                :readonly="!editable"
+                placeholder="—"
+                class="!w-28 font-mono"
+                @update:model-value="v => updateBudgetTokensMax(v)"
+              />
+            </label>
+            <p
+              v-if="config.chat?.reasoning?.budget_tokens?.min !== undefined
+                && config.chat?.reasoning?.budget_tokens?.max !== undefined
+                && config.chat.reasoning.budget_tokens.max < config.chat.reasoning.budget_tokens.min"
+              class="text-[11px] text-accent-rose"
+            >
+              Max must be ≥ min.
+            </p>
           </div>
         </section>
 
