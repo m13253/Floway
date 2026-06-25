@@ -33,6 +33,14 @@ export interface ResponsesPayload {
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
+  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  thinking_budget?: number;
+  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  adaptive_thinking?: boolean;
+  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  anthropic_speed?: string;
+  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  anthropic_beta?: readonly string[];
 }
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a

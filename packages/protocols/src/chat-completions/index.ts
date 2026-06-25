@@ -25,6 +25,16 @@ export interface ChatCompletionsPayload {
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
   stream_options?: { include_usage: boolean } | null;
+  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  thinking_budget?: number;
+  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  adaptive_thinking?: boolean;
+  /** Floway protocol extension. Translated to OpenAI Responses `reasoning.summary` / Anthropic `thinking.display` / Gemini `thinkingConfig.includeThoughts` when routed to those upstreams; dropped on OpenAI Chat targets. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  reasoning_summary?: string;
+  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  anthropic_speed?: string;
+  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. See docs/superpowers/specs/2026-06-25-model-aliases-design.md. */
+  anthropic_beta?: readonly string[];
 }
 
 export interface ChatCompletionsTool {
