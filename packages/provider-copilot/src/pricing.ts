@@ -22,13 +22,51 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
+  // Opus 4.5 — no Fast Mode variant exposed by Copilot.
   [
-    /^claude-opus-4-[5678]$/,
+    'claude-opus-4-5',
     {
       input: 5,
       input_cache_read: 0.5,
       input_cache_write: 6.25,
       output: 25,
+    },
+  ],
+  // Opus 4.6 / 4.7 — Anthropic public Fast Mode pricing is 6× base.
+  // https://docs.claude.com/en/build-with-claude/fast-mode
+  [
+    /^claude-opus-4-[67]$/,
+    {
+      input: 5,
+      input_cache_read: 0.5,
+      input_cache_write: 6.25,
+      output: 25,
+      tiers: {
+        fast: {
+          input: 30,
+          input_cache_read: 3,
+          input_cache_write: 37.5,
+          output: 150,
+        },
+      },
+    },
+  ],
+  // Opus 4.8 — Anthropic public Fast Mode pricing is 2× base.
+  [
+    'claude-opus-4-8',
+    {
+      input: 5,
+      input_cache_read: 0.5,
+      input_cache_write: 6.25,
+      output: 25,
+      tiers: {
+        fast: {
+          input: 10,
+          input_cache_read: 1,
+          input_cache_write: 12.5,
+          output: 50,
+        },
+      },
     },
   ],
   [

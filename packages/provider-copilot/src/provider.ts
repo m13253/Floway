@@ -10,7 +10,7 @@ import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
-import { CONTEXT_1M_BETA, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
+import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
@@ -359,6 +359,37 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       );
     },
     callMessages: async (model, body, signal, opts) => {
+      // Fast Mode is a hard contract on the request side: Anthropic returns
+      // HTTP 400 invalid_request_error when a model does not support it, with
+      // no silent fallback to standard speed. We mirror that at the gateway
+      // boundary before any per-Copilot workaround runs — selection alone is
+      // best-effort, so the pre-check here is what makes Fast Mode honest.
+      // https://docs.claude.com/en/build-with-claude/fast-mode
+      //
+      // The `error.message` is byte-identical to the string Anthropic emits
+      // on the real wire, recorded verbatim from a live response by an
+      // independent gateway's regression test:
+      // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
+      if (body.speed === 'fast') {
+        const providerData = model.providerData as CopilotProviderData;
+        if (!copilotModelSupportsFastMode(providerData.rawModels)) {
+          return {
+            ok: false,
+            response: Response.json(
+              {
+                type: 'error',
+                error: {
+                  type: 'invalid_request_error',
+                  message: `'${model.id}' does not support the \`speed\` parameter.`,
+                },
+              },
+              { status: 400 },
+            ),
+            modelKey: model.id,
+          };
+        }
+      }
+
       // Both the native Messages call and count_tokens select the same raw
       // `messages` variant; they differ only in the upstream endpoint path.
       // Variant selection runs BEFORE the boundary chain's allow-list filter
@@ -368,6 +399,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       const rawModel = rawModelFor(model, 'messages', {
         context1m: betas.includes(CONTEXT_1M_BETA),
         reasoningEffort: messagesReasoningEffort(body),
+        fast: body.speed === 'fast',
       });
       const ctx: MessagesBoundaryCtx = {
         payload: { ...body, model: model.id },

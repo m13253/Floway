@@ -1,6 +1,7 @@
 import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
+import { requireRecordedDurationMs, type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -40,14 +41,17 @@ export const buildUpstreamCallOptions = (
 // a non-ok provider response is read into an `api-error` (source 'upstream')
 // carrying the context (and records its `upstream_success` failure),
 // otherwise the events stream is wrapped with upstream telemetry and flows on
-// with both the telemetry identity and the context. `durationMs` is the
-// precise round-trip the provider measured by wrapping its fetch with
-// `opts.recordUpstreamLatency`.
+// with both the telemetry identity and the context.
+//
+// The recorder enters via the ok=true branch only: success requires a real
+// upstream round-trip, so durationMs is asserted at use. The ok=false
+// branch carries no latency today — the failure metric scope is counter-only
+// — and so doesn't consult the recorder.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ProviderCandidate,
   ctx: GatewayCtx,
-  durationMs: number,
+  recorder: UpstreamLatencyRecorder,
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
@@ -55,7 +59,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
   return eventResult(
-    withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, durationMs),
+    withUpstreamTelemetry(providerResult.events, ctx, context, candidate.targetApi, requireRecordedDurationMs(recorder, 'upstream success')),
     telemetryModelIdentity(candidate, providerResult.modelKey),
     { performance: context, headers: providerResult.headers },
   );

@@ -17,7 +17,7 @@ import type { PassthroughServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance } from './telemetry/performance.ts';
+import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, requireRecordedDurationMs } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
@@ -145,7 +145,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         waitUntil: ctx.backgroundScheduler,
         headers: inboundHeadersForUpstream(c),
       });
-      const upstreamDurationMs = recorder.durationMs();
+      const upstreamDurationMs = requireRecordedDurationMs(recorder, 'passthrough upstream call');
       // Telemetry keys on `match.id` (the upstream's bare catalog id);
       // user-facing error bodies echo the inbound `model`.
       const identity = {

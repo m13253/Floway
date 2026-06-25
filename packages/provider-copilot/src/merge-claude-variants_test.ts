@@ -117,6 +117,39 @@ test('mergeClaudeVariants merges 4.6 base + 1m', () => {
   assertEquals(capabilities.limits?.max_output_tokens, 64_000);
 });
 
+test('mergeClaudeVariants merges 4.6 base + 1m + fast', () => {
+  const input: CopilotModelsResponse = {
+    object: 'list',
+    data: [
+      claudeVariant('claude-opus-4.6-1m', {
+        maxContextWindowTokens: 1_000_000,
+        maxPromptTokens: 936_000,
+        maxOutputTokens: 64_000,
+      }),
+      claudeVariant('claude-opus-4.6-fast', {
+        maxContextWindowTokens: 200_000,
+        maxPromptTokens: 168_000,
+        maxOutputTokens: 16_000,
+      }),
+      claudeVariant('claude-opus-4.6', {
+        maxContextWindowTokens: 200_000,
+        maxPromptTokens: 168_000,
+        maxOutputTokens: 32_000,
+      }),
+    ],
+  };
+
+  const merged = mergeClaudeVariants(input);
+  assertEquals(merged.data.length, 1);
+  const m = merged.data[0];
+
+  // The merged surface shows one public id; -fast collapses into it the
+  // same way -1m does. Per-tier behavior is resolved at request time via
+  // model-selection + the speed: 'fast' field, not exposed in the catalog.
+  assertEquals(m.id, 'claude-opus-4-6');
+  assertEquals(m.capabilities?.limits?.max_context_window_tokens, 1_000_000);
+});
+
 test('mergeClaudeVariants leaves non-Claude models untouched', () => {
   const input: CopilotModelsResponse = {
     object: 'list',

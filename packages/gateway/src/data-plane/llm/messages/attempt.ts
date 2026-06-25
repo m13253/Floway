@@ -1,5 +1,6 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
+import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
@@ -54,7 +55,7 @@ export const messagesAttempt = {
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
+        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
       }
       if (candidate.targetApi === 'responses') {
         return await traverseTranslation(
@@ -109,7 +110,7 @@ export const messagesAttempt = {
     // metric only covers generation-shaped traffic — but the recorder
     // contract still has to fire so a provider that forgets to wrap fails
     // loud on the happy path.
-    void recorder.durationMs();
+    requireRecordedDurationMs(recorder, 'callMessagesCountTokens');
     return await plainResultFromResponse(response, candidate.binding.upstream);
   },
 };

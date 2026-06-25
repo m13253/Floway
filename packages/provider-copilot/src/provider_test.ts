@@ -848,3 +848,194 @@ test('readCopilotUpstreamState round-trips a persisted state with both knownMode
   if (!round.knownModels) throw new Error('expected knownModels in round-trip');
   assertEquals(Object.keys(round.knownModels.models), ['m1']);
 });
+
+// ---------------------------------------------------------------------------
+// Anthropic Fast Mode end-to-end through the Copilot provider.
+//
+// The catalog merges `claude-opus-4.6` and `claude-opus-4.6-fast` into one
+// public id; `speed: "fast"` on the request picks the `-fast` raw variant,
+// `withSpeedFast` strips the field from the wire, and the response stream
+// gets `usage.speed = 'fast'` stamped before it leaves the provider.
+// ---------------------------------------------------------------------------
+
+const sseEvent = (name: string, data: unknown): string => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+const sseDone = (): string => 'data: [DONE]\n\n';
+
+const messagesSseBody = (): string =>
+  sseEvent('message_start', {
+    type: 'message_start',
+    message: {
+      id: 'msg_1',
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: 'claude-opus-4.6-fast',
+      stop_reason: null,
+      stop_sequence: null,
+      usage: { input_tokens: 5, output_tokens: 0 },
+    },
+  })
+  + sseEvent('message_delta', {
+    type: 'message_delta',
+    delta: { stop_reason: 'end_turn', stop_sequence: null },
+    usage: { output_tokens: 7 },
+  })
+  + sseEvent('message_stop', { type: 'message_stop' })
+  + sseDone();
+
+const fastModelCatalog = () =>
+  copilotModels([
+    {
+      id: 'claude-opus-4.6',
+      display_name: 'Claude Opus 4.6',
+      supported_endpoints: ['/v1/messages'],
+    },
+    {
+      id: 'claude-opus-4.6-fast',
+      display_name: 'Claude Opus 4.6 (fast)',
+      supported_endpoints: ['/v1/messages'],
+    },
+  ]);
+
+test('Copilot provider routes speed=fast to the -fast raw variant and stamps usage.speed on the way out', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  const provider = instance.provider;
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(fastModelCatalog());
+      if (url.pathname === '/v1/messages') {
+        upstreamBody = (await request.json()) as Record<string, unknown>;
+        return sseResponse(messagesSseBody());
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      assertEquals(model.id, 'claude-opus-4-6');
+
+      const result = await provider.callMessages(
+        model,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+
+      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
+
+      const frames = [];
+      for await (const frame of result.events) frames.push(frame);
+
+      const messageStart = frames.find(f => f.type === 'event' && f.event.type === 'message_start');
+      if (messageStart?.type !== 'event' || messageStart.event.type !== 'message_start') {
+        throw new Error('expected message_start frame');
+      }
+      assertEquals(messageStart.event.message.usage.speed, 'fast');
+
+      const messageDelta = frames.find(f => f.type === 'event' && f.event.type === 'message_delta');
+      if (messageDelta?.type !== 'event' || messageDelta.event.type !== 'message_delta') {
+        throw new Error('expected message_delta frame');
+      }
+      assertEquals(messageDelta.event.usage?.speed, 'fast');
+
+      assertEquals(result.modelKey, 'claude-opus-4.6-fast');
+    },
+  );
+
+  assertEquals(upstreamBody?.model, 'claude-opus-4.6-fast');
+  if (!upstreamBody) throw new Error('expected /v1/messages to be hit');
+  assertEquals('speed' in upstreamBody, false);
+});
+
+test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hits a model without a -fast variant', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  const provider = instance.provider;
+  let messagesHit = false;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-haiku-4.5', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.pathname === '/v1/messages') {
+        messagesHit = true;
+        return sseResponse();
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+
+      const result = await provider.callMessages(
+        model,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+
+      if (result.ok) throw new Error('expected 400 error, got ok stream');
+      assertEquals(result.response.status, 400);
+      const body = (await result.response.json()) as { type: string; error: { type: string; message: string } };
+      // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
+      // for the same failure mode — recorded verbatim from a live response in
+      // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
+      assertEquals(body.type, 'error');
+      assertEquals(body.error.type, 'invalid_request_error');
+      assertEquals(body.error.message, "'claude-haiku-4-5' does not support the `speed` parameter.");
+      assertEquals(result.modelKey, model.id);
+    },
+  );
+
+  assertEquals(messagesHit, false);
+});
+
+test('Copilot provider passes unknown speed values to the upstream verbatim so the upstream owns rejecting them', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  const provider = instance.provider;
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(fastModelCatalog());
+      if (url.pathname === '/v1/messages') {
+        upstreamBody = (await request.json()) as Record<string, unknown>;
+        return sseResponse(messagesSseBody());
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      // `priority` is not a documented Messages `speed` value; the gateway
+      // does not own rejecting it and must not strip it either — let
+      // Copilot surface whatever error its strict validator returns.
+      const speedValue = 'priority' as MessagesPayload['speed'];
+      await provider.callMessages(
+        model,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue },
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+    },
+  );
+
+  assertEquals(upstreamBody?.speed, 'priority');
+});

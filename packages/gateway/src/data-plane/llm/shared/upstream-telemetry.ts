@@ -81,8 +81,8 @@ export const withUpstreamTelemetry = <T>(
   })();
 };
 
-// A non-ok upstream HTTP response never produces a frame stream, so it records
-// its `upstream_success` failure directly.
+// A non-ok upstream HTTP response never produces a frame stream, so it
+// records its `upstream_success` failure directly.
 export const recordUpstreamHttpFailure = (ctx: GatewayCtx, context: PerformanceTelemetryContext): void => {
   ctx.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
 };

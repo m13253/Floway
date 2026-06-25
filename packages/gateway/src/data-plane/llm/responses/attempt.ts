@@ -6,7 +6,7 @@ import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } 
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import { recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
+import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
@@ -198,7 +198,7 @@ const dispatchResponses = async (
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
+    return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
   }
   case 'messages':
     return await traverseTranslation(
@@ -252,7 +252,7 @@ const callResponsesCompactAsExecuteResult = async (
     recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
-  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', recorder.durationMs()));
+  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponsesCompact')));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

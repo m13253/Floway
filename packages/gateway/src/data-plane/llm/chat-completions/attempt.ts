@@ -109,5 +109,5 @@ const callChatCompletionsAsExecuteResult = async (
     ctx.abortSignal,
     buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
   );
-  return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder.durationMs());
+  return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
 };
