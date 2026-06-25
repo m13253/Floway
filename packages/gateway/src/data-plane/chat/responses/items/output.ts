@@ -3,7 +3,7 @@ import type { StatefulResponsesStore, ResponsesSnapshotMode } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { LlmTargetApi } from '@floway-dev/provider';
+import type { ChatTargetApi } from '@floway-dev/provider';
 
 // Wraps a Responses event stream to mint gateway-owned stored ids for every
 // output item and persist the matching rows. Runs inside `responsesAttempt`
@@ -30,7 +30,7 @@ export const wrapResponsesOutputForStorage = async function* (
     readonly store: StatefulResponsesStore;
     readonly upstream: string;
     readonly snapshotMode: ResponsesSnapshotMode;
-    readonly targetApi: LlmTargetApi;
+    readonly targetApi: ChatTargetApi;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {

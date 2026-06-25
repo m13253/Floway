@@ -5,7 +5,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { geminiStatusForHttpStatus } from '../llm/gemini/errors.ts';
+import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';

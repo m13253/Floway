@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
-import { type LlmServeFailure, throwLlmServeFailure, tryCatchLlmServeFailure } from './errors.ts';
+import { type ChatServeFailure, throwChatServeFailure, tryCatchChatServeFailure } from './errors.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-const cases: readonly LlmServeFailure[] = [
+const cases: readonly ChatServeFailure[] = [
   { kind: 'model-missing', model: 'gpt-9' },
   { kind: 'model-missing', model: 'gpt-9', failedUpstreams: ['Azure prod'] },
   { kind: 'model-unsupported', model: 'gpt-9' },
@@ -17,13 +17,13 @@ for (const failure of cases) {
     ? `${failure.kind} (with ${failure.failedUpstreams.length} failed upstream(s))`
     : failure.kind;
   test(`round-trips ${label} through throw/catch`, () => {
-    const error = assertThrows(() => throwLlmServeFailure(failure));
-    assertEquals(tryCatchLlmServeFailure(error), failure);
+    const error = assertThrows(() => throwChatServeFailure(failure));
+    assertEquals(tryCatchChatServeFailure(error), failure);
   });
 }
 
-test('returns null for an error not raised by throwLlmServeFailure', () => {
-  assertEquals(tryCatchLlmServeFailure(new Error('something else')), null);
-  assertEquals(tryCatchLlmServeFailure('not even an error'), null);
-  assertEquals(tryCatchLlmServeFailure(null), null);
+test('returns null for an error not raised by throwChatServeFailure', () => {
+  assertEquals(tryCatchChatServeFailure(new Error('something else')), null);
+  assertEquals(tryCatchChatServeFailure('not even an error'), null);
+  assertEquals(tryCatchChatServeFailure(null), null);
 });

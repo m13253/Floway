@@ -7,7 +7,7 @@ import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewr
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import { tryCatchLlmServeFailure } from '../shared/errors.ts';
+import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -135,7 +135,7 @@ const rewriteOrRenderMessagesFailure = async (
     );
     return { payload: { ...payload, messages: rewrittenMessages as MessagesMessage[] } };
   } catch (error) {
-    const failure = tryCatchLlmServeFailure(error);
+    const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;
     if (failure.kind !== 'item-not-found') throw error;
     return {

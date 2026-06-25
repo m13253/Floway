@@ -10,8 +10,8 @@
 
 import type { Context } from 'hono';
 
-import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
-import { readRequestBody } from '../llm/shared/request-body.ts';
+import { createGatewayCtxFromHono } from '../chat/shared/gateway-ctx.ts';
+import { readRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 

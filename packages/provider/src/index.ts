@@ -1,7 +1,7 @@
 export type {
   ChatCompletionsInvocation,
   GeminiInvocation,
-  LlmTargetApi,
+  ChatTargetApi,
   MessagesInvocation,
   ProviderCandidate,
   ResponsesInvocation,

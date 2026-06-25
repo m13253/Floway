@@ -2,7 +2,7 @@ import { createPerRequestFetcher } from '../../../dial/per-request.ts';
 import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { LlmTargetApi, ProviderCandidate } from '@floway-dev/provider';
+import type { ChatTargetApi, ProviderCandidate } from '@floway-dev/provider';
 
 export type { ProviderCandidate };
 
@@ -18,7 +18,7 @@ export const enumerateProviderCandidates = async ({
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
   model: string;
-  pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
+  pickTarget: (endpoints: ModelEndpoints) => ChatTargetApi | null;
   // Threaded into `resolveModelForProvider` so the per-upstream catalog
   // lookup hits the SWR-cached `fetchUpstreamModelsCached` instead of
   // round-tripping to the upstream on every LLM serve.

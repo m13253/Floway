@@ -2,7 +2,7 @@ import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesIt
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
-import type { LlmServeFailure } from '../../shared/errors.ts';
+import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -138,7 +138,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
       .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),
   ));
 
-  const failures: LlmServeFailure[] = [];
+  const failures: ChatServeFailure[] = [];
   for (const ref of references) {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined

@@ -1,18 +1,18 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { LlmServeFailure } from '../shared/errors.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
+import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
-// OpenAI error envelope. `param` / `code` reproduce OpenAI's native fields; a
-// stored-item miss must byte-match OpenAI's own "not found" body — stateless
-// clients (codex) compare the whole body verbatim. The envelope is
-// gateway-synthesized — `source: 'gateway'` so the dump labels it as such.
+// OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
+// stored-item miss must byte-match OpenAI's own "not found" body. The
+// envelope is gateway-synthesized — `source: 'gateway'` so the dump labels
+// it as such.
 const openAiErrorResult = (
   status: number,
   message: string,
-  extra?: { readonly param: string; readonly code: string | null },
-): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({
+  extra?: { param: string; code: string | null },
+): ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -22,9 +22,9 @@ const openAiErrorResult = (
   })),
 });
 
-export const renderResponsesFailure = (
-  failure: LlmServeFailure,
-): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
+export const renderChatCompletionsFailure = (
+  failure: ChatServeFailure,
+): ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> => {
   switch (failure.kind) {
   case 'item-not-found':
     return openAiErrorResult(404, `Item with id '${failure.itemId}' not found.`, { param: 'input', code: null });
@@ -33,6 +33,6 @@ export const renderResponsesFailure = (
   case 'model-missing':
     return openAiErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
   case 'model-unsupported':
-    return openAiErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support the /responses endpoint.`, failure.failedUpstreams));
+    return openAiErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support the /chat/completions endpoint.`, failure.failedUpstreams));
   }
 };

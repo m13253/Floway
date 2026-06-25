@@ -5,7 +5,7 @@ import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
-export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
+export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 // The provider-binding decision for this attempt: which upstream's binding
 // to call and which target protocol to invoke on it. `provider` is the
@@ -15,7 +15,7 @@ export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
   readonly binding: ProviderModelRecord;
-  readonly targetApi: LlmTargetApi;
+  readonly targetApi: ChatTargetApi;
   readonly fetcher: Fetcher;
 }
 

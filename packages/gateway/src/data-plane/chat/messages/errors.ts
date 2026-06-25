@@ -1,11 +1,11 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { LlmServeFailure } from '../shared/errors.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 // Anthropic Messages error envelope used to render pre-stream
-// `LlmServeFailure`s. These are gateway-synthesized rather than received
+// `ChatServeFailure`s. These are gateway-synthesized rather than received
 // from any upstream — `source: 'gateway'` so the dump labels them as such.
 const anthropicErrorResult = (
   status: number,
@@ -25,7 +25,7 @@ const anthropicErrorResult = (
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
 // the `model-unsupported` message string.
 export const renderMessagesFailure = (
-  failure: LlmServeFailure,
+  failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
 ): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => {
   const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';

@@ -11,7 +11,7 @@ import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import { tryCatchLlmServeFailure } from '../shared/errors.ts';
+import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
@@ -153,7 +153,7 @@ const rewriteOrRenderFailure = async (
   try {
     return await rewriteResponsesItemsForCandidate(payload, store, candidate);
   } catch (error) {
-    const failure = tryCatchLlmServeFailure(error);
+    const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;
     // The full Responses failure renderer that also handles `model-missing`
     // / `model-unsupported` / `routing-unavailable` lives in the serve

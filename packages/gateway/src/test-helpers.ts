@@ -179,7 +179,7 @@ export function sseResponse(chunks: SSEChunk[], status = 200): Response {
 }
 
 // Reusable SSE wrappers for upstream test mocks. The provider layer forces
-// stream=true on every LLM endpoint, so upstreams must reply with SSE — these
+// stream=true on every chat endpoint, so upstreams must reply with SSE — these
 // helpers project a single non-stream JSON shape into the canonical SSE chunks
 // that mirror what a real streaming upstream would emit.
 
