@@ -92,6 +92,7 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.cost) internal.cost = model.cost;
+    if (model.chat) internal.chat = model.chat;
     return internal;
   });
   const manualPricingByUpstreamId = new Map<string, ModelPricing>(
