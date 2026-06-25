@@ -188,6 +188,16 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
+  // `service_tier: 'fast'` from the Chat Completions caller maps to
+  // Anthropic's `speed: 'fast'`; all other defined service_tier values
+  // pass through as `service_tier` on the Messages wire.
+  const serviceTierFields: Partial<MessagesPayload> =
+    payload.service_tier === 'fast'
+      ? { speed: 'fast' }
+      : payload.service_tier != null
+        ? { service_tier: payload.service_tier }
+        : {};
+
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
@@ -205,6 +215,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
+    ...serviceTierFields,
   };
 };
 
