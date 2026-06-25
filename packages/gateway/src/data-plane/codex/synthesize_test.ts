@@ -64,4 +64,40 @@ describe('synthesizeCatalogEntry', () => {
     ]);
     expect(entry.default_reasoning_level).toBe('low');
   });
+
+  test('drops budget_tokens silently — no effort fields on output', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { budget_tokens: { min: 100, max: 8000 } } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([]);
+    expect(entry.default_reasoning_level).toBeUndefined();
+  });
+
+  test('drops adaptive silently — no effort fields on output', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { adaptive: true } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([]);
+    expect(entry.default_reasoning_level).toBeUndefined();
+  });
+
+  test('drops mandatory silently — no effort fields on output', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { mandatory: true } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([]);
+    expect(entry.default_reasoning_level).toBeUndefined();
+  });
+
+  test('effort wins when combined with adaptive — adaptive dropped', () => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: ['medium'], default: 'medium' }, adaptive: true } },
+    });
+    expect(entry.supported_reasoning_levels).toEqual([{ effort: 'medium', description: '' }]);
+    expect(entry.default_reasoning_level).toBe('medium');
+  });
 });

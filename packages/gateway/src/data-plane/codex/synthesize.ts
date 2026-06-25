@@ -11,7 +11,20 @@ const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
 export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unknown> => {
   const inputModalities = model.chat?.modalities?.input ?? BASELINE_INPUT_MODALITIES;
   const hasImage = inputModalities.includes('image');
-  const supportedReasoning = model.chat?.reasoning?.supported_efforts ?? [];
+  // Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
+  // (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
+  // mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
+  // `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
+  // `default_reasoning_level: Option<ReasoningEffort>`
+  // (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
+  // Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
+  // don't fit the Codex wire and are silently dropped here. The omission is benign at
+  // request-time: Codex CLI sends `reasoning.effort` from the global default, and
+  // Floway's translation layer maps that effort value into the appropriate upstream
+  // representation (e.g. Anthropic `thinking.budget_tokens`). The catalog simply doesn't
+  // surface effort pickers for models that don't support effort-tiered reasoning — which
+  // is the right UX.
+  const supportedReasoning = model.chat?.reasoning?.effort?.supported ?? [];
   const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
   const contextWindow = model.limits.max_context_window_tokens;
 
@@ -48,8 +61,8 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     entry.context_window = contextWindow;
     entry.max_context_window = contextWindow;
   }
-  if (model.chat?.reasoning?.default_effort !== undefined) {
-    entry.default_reasoning_level = model.chat.reasoning.default_effort;
+  if (model.chat?.reasoning?.effort?.default !== undefined) {
+    entry.default_reasoning_level = model.chat.reasoning.effort.default;
   }
 
   return entry;
