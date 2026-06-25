@@ -75,8 +75,6 @@ export const computeCatalog = (
     if (im.kind !== 'chat') continue;
     const hit = matchBundled(im.id);
     if (hit) {
-      // Override slug so the Codex picker keys on the public id, not the
-      // matched bundled segment.
       const cloned: CatalogModel = { ...hit, slug: im.id };
       if (im.display_name !== undefined) cloned.display_name = im.display_name;
       // Registry-derived tiers win over bundled; bundled chatgpt.com today emits
