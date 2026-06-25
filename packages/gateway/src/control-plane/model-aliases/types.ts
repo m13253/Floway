@@ -10,7 +10,6 @@ export type ModelAliasRules = {
   };
   readonly verbosity?: string;
   readonly serviceTier?: string;
-  readonly anthropicSpeed?: string;
   readonly anthropicBeta?: readonly string[];
 };
 

@@ -202,9 +202,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
 
   // `service_tier: 'fast'` from the Chat Completions caller maps to
   // Anthropic's `speed: 'fast'`; all other defined service_tier values
-  // pass through as `service_tier` on the Messages wire. An explicit
-  // `anthropic_speed` from the alias-extension layer rides through
-  // independently and may co-set `speed`.
+  // pass through as `service_tier` on the Messages wire.
   const serviceTierFields: Partial<MessagesPayload> =
     payload.service_tier === 'fast'
       ? { speed: 'fast' }
@@ -230,7 +228,6 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...(thinking ? { thinking } : {}),
-    ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
     ...serviceTierFields,
   };
 };

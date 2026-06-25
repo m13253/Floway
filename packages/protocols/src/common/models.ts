@@ -129,7 +129,6 @@ export interface PublicModelAliasedFrom {
     };
     verbosity?: string;
     serviceTier?: string;
-    anthropicSpeed?: string;
     anthropicBeta?: readonly string[];
   };
   onConflict: 'alias-only' | 'real-only' | 'both-real-first' | 'both-alias-first';
@@ -156,7 +155,6 @@ export const formatAliasRuleBadges = (rules: PublicModelAliasedFrom['rules']): A
   if (rules.reasoning?.summary !== undefined) out.push({ label: 'reasoning summary', value: rules.reasoning.summary });
   if (rules.verbosity !== undefined) out.push({ label: 'verbosity', value: rules.verbosity });
   if (rules.serviceTier !== undefined) out.push({ label: 'service tier', value: rules.serviceTier });
-  if (rules.anthropicSpeed !== undefined) out.push({ label: 'speed', value: rules.anthropicSpeed });
   if (rules.anthropicBeta !== undefined && rules.anthropicBeta.length > 0) {
     out.push({ label: 'anthropic beta', value: [...rules.anthropicBeta].sort().join('/') });
   }

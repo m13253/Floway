@@ -509,7 +509,6 @@ test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no
   assertEquals(result.reasoning_effort, 'medium');
   assertEquals('thinking_budget' in result, false);
   assertEquals('reasoning_summary' in result, false);
-  assertEquals('anthropic_speed' in result, false);
 });
 
 test('translateMessagesToChatCompletions does not emit verbosity when the extension is unset', () => {

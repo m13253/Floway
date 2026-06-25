@@ -26,7 +26,6 @@ export const composeAliasDisplayName = (input: {
   if (rules.reasoning?.summary !== undefined) parts.push(`${rules.reasoning.summary} summary`);
   if (rules.verbosity !== undefined) parts.push(`${rules.verbosity} verbosity`);
   if (rules.serviceTier !== undefined) parts.push(`${rules.serviceTier} tier`);
-  if (rules.anthropicSpeed !== undefined) parts.push(`${rules.anthropicSpeed} speed`);
   if (rules.anthropicBeta !== undefined && rules.anthropicBeta.length > 0) {
     parts.push([...rules.anthropicBeta].sort().join('/'));
   }

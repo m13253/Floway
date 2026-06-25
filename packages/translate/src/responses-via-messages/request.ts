@@ -348,9 +348,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   // `service_tier: 'fast'` from the Responses caller maps to Anthropic's
   // `speed: 'fast'`; all other defined service_tier values pass through as
   // `service_tier` on the Messages wire (Anthropic accepts 'auto',
-  // 'standard_only', and future literals). An explicit `anthropic_speed`
-  // from the alias-extension layer rides through independently and may
-  // co-set `speed`.
+  // 'standard_only', and future literals).
   const serviceTierFields: Partial<MessagesPayload> =
     payload.service_tier === 'fast'
       ? { speed: 'fast' }
@@ -373,7 +371,6 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     tool_choice: translateToolChoice(payload.tool_choice),
     ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
-    ...(payload.anthropic_speed != null ? { speed: payload.anthropic_speed } : {}),
     ...serviceTierFields,
   };
 

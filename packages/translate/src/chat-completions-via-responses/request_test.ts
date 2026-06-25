@@ -461,7 +461,6 @@ test('translateChatCompletionsToResponses leaves Messages-only extensions as inb
     messages: [{ role: 'user', content: 'hi' }],
     thinking_budget: 4096,
     adaptive_thinking: true,
-    anthropic_speed: 'fast',
     anthropic_beta: ['fast-mode-2026-02-01'],
   });
 
@@ -469,7 +468,6 @@ test('translateChatCompletionsToResponses leaves Messages-only extensions as inb
   // residue. Translate must not invent a target field.
   assertEquals('thinking_budget' in result, false);
   assertEquals('adaptive_thinking' in result, false);
-  assertEquals('anthropic_speed' in result, false);
   assertEquals('anthropic_beta' in result, false);
 });
 

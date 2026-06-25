@@ -36,8 +36,6 @@ export interface ChatCompletionsPayload {
   adaptive_thinking?: boolean;
   /** Floway protocol extension. Translated to OpenAI Responses `reasoning.summary` / Anthropic `thinking.display` / Gemini `thinkingConfig.includeThoughts` when routed to those upstreams; dropped on OpenAI Chat targets. */
   reasoning_summary?: string;
-  /** Floway protocol extension. Translated to Anthropic `speed` when routed to a Messages upstream; dropped elsewhere. */
-  anthropic_speed?: string;
   /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. */
   anthropic_beta?: readonly string[];
 }

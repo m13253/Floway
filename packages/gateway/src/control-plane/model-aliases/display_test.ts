@@ -30,7 +30,6 @@ describe('composeAliasDisplayName', () => {
     expect(composeAliasDisplayName({ targetDisplayName: target, rules: { reasoning: { summary: 'detailed' } } })).toBe('GPT-5.4 (detailed summary)');
     expect(composeAliasDisplayName({ targetDisplayName: target, rules: { verbosity: 'low' } })).toBe('GPT-5.4 (low verbosity)');
     expect(composeAliasDisplayName({ targetDisplayName: target, rules: { serviceTier: 'priority' } })).toBe('GPT-5.4 (priority tier)');
-    expect(composeAliasDisplayName({ targetDisplayName: target, rules: { anthropicSpeed: 'fast' } })).toBe('GPT-5.4 (fast speed)');
   });
 
   test('sorts anthropicBeta tokens and joins with slashes', () => {
@@ -64,9 +63,9 @@ describe('composeAliasDisplayName', () => {
         rules: {
           reasoning: { effort: 'low', summary: 'concise' },
           verbosity: 'high',
-          anthropicSpeed: 'fast',
+          serviceTier: 'flex',
         },
       }),
-    ).toBe('GPT-5.4 (low effort, concise summary, high verbosity, fast speed)');
+    ).toBe('GPT-5.4 (low effort, concise summary, high verbosity, flex tier)');
   });
 });

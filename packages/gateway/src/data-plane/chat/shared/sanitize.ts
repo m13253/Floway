@@ -69,6 +69,5 @@ export const traceAllRulesDropped = (
   }
   if (rules.verbosity !== undefined) trace.emit({ alias: trace.aliasName, field: 'verbosity', targetProtocol });
   if (rules.serviceTier !== undefined) trace.emit({ alias: trace.aliasName, field: 'serviceTier', targetProtocol });
-  if (rules.anthropicSpeed !== undefined) trace.emit({ alias: trace.aliasName, field: 'anthropicSpeed', targetProtocol });
   if (rules.anthropicBeta?.length) trace.emit({ alias: trace.aliasName, field: 'anthropicBeta', targetProtocol });
 };

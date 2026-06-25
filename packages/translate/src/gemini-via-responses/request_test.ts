@@ -436,13 +436,10 @@ test('buildTargetRequest drops top-level Anthropic extensions on Responses', () 
   const result = buildTargetRequest(
     {
       contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      anthropicSpeed: 'fast',
       anthropicBeta: ['fast-mode-2026-02-01'],
     },
     'gpt-test',
   );
 
-  assertEquals('anthropicSpeed' in result, false);
-  assertEquals('anthropic_speed' in result, false);
   assertEquals('anthropicBeta' in result, false);
 });

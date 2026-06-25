@@ -498,19 +498,15 @@ test('buildTargetRequest emits generationConfig.serviceTier onto Chat service_ti
   assertEquals(result.service_tier, 'priority');
 });
 
-test('buildTargetRequest drops top-level Anthropic extensions (anthropicSpeed, anthropicBeta) on Chat', () => {
+test('buildTargetRequest drops top-level Anthropic extensions (anthropicBeta) on Chat', () => {
   const result = buildTargetRequest(
     {
       contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      anthropicSpeed: 'fast',
       anthropicBeta: ['fast-mode-2026-02-01'],
     },
     'gpt-test',
   );
 
-  assertEquals('anthropicSpeed' in result, false);
-  assertEquals('anthropic_speed' in result, false);
-  assertEquals('speed' in result, false);
   assertEquals('anthropicBeta' in result, false);
   assertEquals('anthropic_beta' in result, false);
 });

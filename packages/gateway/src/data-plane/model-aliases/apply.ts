@@ -19,26 +19,24 @@ export const applyAliasRulesToChatCompletions = (payload: ChatCompletionsPayload
   if (rules.reasoning?.summary !== undefined) payload.reasoning_summary = rules.reasoning.summary;
   if (rules.verbosity !== undefined) payload.verbosity = rules.verbosity;
   if (rules.serviceTier !== undefined) payload.service_tier = rules.serviceTier;
-  if (rules.anthropicSpeed !== undefined) payload.anthropic_speed = rules.anthropicSpeed;
   if (rules.anthropicBeta?.length) payload.anthropic_beta = [...rules.anthropicBeta];
 };
 
 export const applyAliasRulesToResponses = (payload: ResponsesPayload, rules: ModelAliasRules): void => {
   // reasoning.{effort, summary} and text.verbosity / service_tier are native;
-  // budget/adaptive ride on extension slots; the two anthropic_* knobs only
-  // matter when this Responses inbound lands on a Messages upstream.
+  // budget/adaptive ride on extension slots; anthropic_beta only matters when
+  // this Responses inbound lands on a Messages upstream.
   if (rules.reasoning?.effort !== undefined) payload.reasoning = { ...payload.reasoning, effort: rules.reasoning.effort };
   if (rules.reasoning?.summary !== undefined) payload.reasoning = { ...payload.reasoning, summary: rules.reasoning.summary };
   if (rules.reasoning?.budgetTokens !== undefined) payload.thinking_budget = rules.reasoning.budgetTokens;
   if (rules.reasoning?.adaptive === true) payload.adaptive_thinking = true;
   if (rules.verbosity !== undefined) payload.text = { ...payload.text, verbosity: rules.verbosity };
   if (rules.serviceTier !== undefined) payload.service_tier = rules.serviceTier;
-  if (rules.anthropicSpeed !== undefined) payload.anthropic_speed = rules.anthropicSpeed;
   if (rules.anthropicBeta?.length) payload.anthropic_beta = [...rules.anthropicBeta];
 };
 
 export const applyAliasRulesToMessages = (payload: MessagesPayload, rules: ModelAliasRules): void => {
-  // Anthropic has natives for effort, thinking, speed, and service_tier; only
+  // Anthropic has natives for effort, thinking, and service_tier; only
   // verbosity is a Floway extension on this inbound. anthropic_beta is the
   // wire header — the attempt layer reads `candidate.aliasRules.anthropicBeta`
   // and merges via mergeAnthropicBetaTokens, so we do not stamp the body here.
@@ -72,14 +70,13 @@ export const applyAliasRulesToMessages = (payload: MessagesPayload, rules: Model
   }
   if (rules.verbosity !== undefined) payload.verbosity = rules.verbosity;
   if (rules.serviceTier !== undefined) payload.service_tier = rules.serviceTier;
-  if (rules.anthropicSpeed !== undefined) payload.speed = rules.anthropicSpeed;
 };
 
 export const applyAliasRulesToGemini = (payload: GeminiPayload, rules: ModelAliasRules): void => {
   // All four reasoning knobs ride on the native thinkingConfig; verbosity and
-  // serviceTier ride on extension slots under generationConfig; the
-  // anthropic_* knobs ride on top-level extension slots so the existing
-  // gemini-via-messages translator picks them up there.
+  // serviceTier ride on extension slots under generationConfig; anthropicBeta
+  // rides on a top-level extension slot so the existing gemini-via-messages
+  // translator picks it up there.
   const hasThinking = rules.reasoning?.effort !== undefined
     || rules.reasoning?.budgetTokens !== undefined
     || rules.reasoning?.adaptive === true
@@ -104,6 +101,5 @@ export const applyAliasRulesToGemini = (payload: GeminiPayload, rules: ModelAlia
     if (rules.serviceTier !== undefined) generationConfig.serviceTier = rules.serviceTier;
     payload.generationConfig = generationConfig;
   }
-  if (rules.anthropicSpeed !== undefined) payload.anthropicSpeed = rules.anthropicSpeed;
   if (rules.anthropicBeta?.length) payload.anthropicBeta = [...rules.anthropicBeta];
 };

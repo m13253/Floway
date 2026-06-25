@@ -265,11 +265,6 @@ export const buildTargetRequest = (
 
   applyGenerationConfig(request, payload.generationConfig, fallbackMaxOutputTokens);
 
-  // Top-level Gemini Floway extensions: `anthropicSpeed` is the only one
-  // with a Messages-natural slot. `anthropicBeta` is header-bound at the
-  // gateway boundary (Task 5) since translate functions do not own headers.
-  if (payload.anthropicSpeed != null) request.speed = payload.anthropicSpeed;
-
   const tools = buildTools(payload);
   if (tools) request.tools = tools;
   applyLastToolCacheBreakpoint(request.tools);

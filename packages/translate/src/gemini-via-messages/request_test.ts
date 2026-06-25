@@ -408,16 +408,6 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
 
 // ── Floway extension emission ──
 
-test('buildTargetRequest emits top-level anthropicSpeed onto Messages speed', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], anthropicSpeed: 'fast' },
-    'claude-test',
-    noOptions,
-  );
-
-  assertEquals(result.speed, 'fast');
-});
-
 test('buildTargetRequest emits generationConfig.serviceTier onto Messages service_tier', () => {
   const result = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },

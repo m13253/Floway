@@ -1261,17 +1261,6 @@ test('translateChatCompletionsToMessages merges reasoning_summary onto budget-dr
   assertEquals(result.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
 });
 
-test('translateChatCompletionsToMessages emits anthropic_speed onto Messages speed', async () => {
-  const result = await translateChatCompletionsToMessages(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      anthropic_speed: 'fast',
-    }),
-  );
-
-  assertEquals(result.speed, 'fast');
-});
-
 test('translateChatCompletionsToMessages forwards service_tier verbatim', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({

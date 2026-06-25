@@ -43,14 +43,13 @@ describe('applyAliasRulesToChatCompletions', () => {
     expect(payload.reasoning_summary).toBe('detailed');
   });
 
-  test('writes verbosity, serviceTier, anthropicSpeed, anthropicBeta to their slots', () => {
+  test('writes verbosity, serviceTier, anthropicBeta to their slots', () => {
     const payload = cc();
     applyAliasRulesToChatCompletions(payload, {
-      verbosity: 'low', serviceTier: 'flex', anthropicSpeed: 'fast', anthropicBeta: ['ctx-1m'],
+      verbosity: 'low', serviceTier: 'flex', anthropicBeta: ['ctx-1m'],
     });
     expect(payload.verbosity).toBe('low');
     expect(payload.service_tier).toBe('flex');
-    expect(payload.anthropic_speed).toBe('fast');
     expect(payload.anthropic_beta).toEqual(['ctx-1m']);
   });
 
@@ -100,10 +99,9 @@ describe('applyAliasRulesToResponses', () => {
     expect(payload.service_tier).toBe('flex');
   });
 
-  test('writes anthropicSpeed / anthropicBeta to extension slots', () => {
+  test('writes anthropicBeta to extension slot', () => {
     const payload = resp();
-    applyAliasRulesToResponses(payload, { anthropicSpeed: 'fast', anthropicBeta: ['ctx-1m'] });
-    expect(payload.anthropic_speed).toBe('fast');
+    applyAliasRulesToResponses(payload, { anthropicBeta: ['ctx-1m'] });
     expect(payload.anthropic_beta).toEqual(['ctx-1m']);
   });
 });
@@ -131,12 +129,6 @@ describe('applyAliasRulesToMessages', () => {
     const payload = msg({ thinking: { type: 'enabled', budget_tokens: 1024 } });
     applyAliasRulesToMessages(payload, { reasoning: { summary: 'detailed' } });
     expect(payload.thinking).toEqual({ type: 'enabled', budget_tokens: 1024, display: 'summarized' });
-  });
-
-  test('writes anthropicSpeed to native speed', () => {
-    const payload = msg();
-    applyAliasRulesToMessages(payload, { anthropicSpeed: 'fast' });
-    expect(payload.speed).toBe('fast');
   });
 
   test('writes serviceTier to native service_tier', () => {
@@ -203,10 +195,9 @@ describe('applyAliasRulesToGemini', () => {
     expect(payload.generationConfig?.serviceTier).toBe('flex');
   });
 
-  test('writes anthropicSpeed / anthropicBeta to top-level extension slots', () => {
+  test('writes anthropicBeta to top-level extension slot', () => {
     const payload = gem();
-    applyAliasRulesToGemini(payload, { anthropicSpeed: 'fast', anthropicBeta: ['ctx-1m'] });
-    expect(payload.anthropicSpeed).toBe('fast');
+    applyAliasRulesToGemini(payload, { anthropicBeta: ['ctx-1m'] });
     expect(payload.anthropicBeta).toEqual(['ctx-1m']);
   });
 
