@@ -789,7 +789,6 @@ const toggleMandatory = (on: boolean) => {
         <section v-if="rowKind === 'chat'">
           <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Modalities</h3>
-            <span class="text-[11px] text-gray-500">text always supported</span>
             <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
               <Switch
                 :model-value="chatImageInput"
@@ -802,12 +801,8 @@ const toggleMandatory = (on: boolean) => {
         </section>
 
         <section v-if="rowKind === 'chat'">
-          <div class="mb-3 flex items-baseline gap-3">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Reasoning</h3>
-            <span class="text-[11px] text-gray-500">Mandatory is exclusive; the other three may combine freely</span>
-          </div>
-
-          <div class="flex flex-wrap gap-x-6 gap-y-2">
             <label class="flex items-center gap-2" :class="controlledDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
               <Switch :model-value="effortEnabled" :disabled="controlledDisabled" @update:model-value="v => toggleEffort(v === true)" />
               <span class="text-xs" :class="effortEnabled ? 'text-white' : 'text-gray-500'">Effort levels</span>
