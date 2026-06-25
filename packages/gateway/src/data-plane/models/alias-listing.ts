@@ -54,14 +54,6 @@ const aliasListingEmissions = (
   return out;
 };
 
-// The public id form an alias emission carries on the wire. Bare alias name
-// for the unprefixed form; provider prefix + alias name for the prefixed
-// form. Mirrors how real models are surfaced in the same listing pass.
-const aliasPublicId = (alias: ModelAlias, emission: AliasListingEmission): string => {
-  const cfg = emission.provider.modelPrefix;
-  return emission.form === 'prefixed' && cfg !== null ? `${cfg.prefix}${alias.alias}` : alias.alias;
-};
-
 // Turn an alias emission into a `ListedModel` that walks the same listing
 // pipeline as real catalog entries. The synthesized `providers` array carries
 // a single binding pointing at the alias's target on this upstream, so the
@@ -73,6 +65,10 @@ const aliasPublicId = (alias: ModelAlias, emission: AliasListingEmission): strin
 // `unprefixed` listing form; the `prefixed` form mirrors the real-model path
 // in `registry.ts` and prepends `${provider.name}: ` so the upstream is
 // visible at a glance.
+//
+// Public id: bare alias name for the unprefixed form; provider prefix + alias
+// name for the prefixed form. Mirrors how real models are surfaced in the
+// same listing pass.
 const aliasEmissionToListedModel = (alias: ModelAlias, emission: AliasListingEmission): ListedModel => {
   const { provider, target, form } = emission;
   const aliasLocalName = composeAliasDisplayName({
@@ -80,6 +76,8 @@ const aliasEmissionToListedModel = (alias: ModelAlias, emission: AliasListingEmi
     targetDisplayName: target.display_name ?? target.id,
     rules: alias.rules,
   });
+  const cfg = provider.modelPrefix;
+  const publicId = form === 'prefixed' && cfg !== null ? `${cfg.prefix}${alias.alias}` : alias.alias;
   const record: ProviderModelRecord = {
     upstream: provider.upstream,
     upstreamName: provider.name,
@@ -92,7 +90,7 @@ const aliasEmissionToListedModel = (alias: ModelAlias, emission: AliasListingEmi
   const { providerData: _providerData, endpoints, id: _targetId, display_name: _targetDisplay, created: _targetCreated, ...rest } = target;
   return {
     ...rest,
-    id: aliasPublicId(alias, emission),
+    id: publicId,
     display_name: form === 'prefixed' ? `${provider.name}: ${aliasLocalName}` : aliasLocalName,
     created: alias.createdAt,
     endpoints: { ...endpoints },

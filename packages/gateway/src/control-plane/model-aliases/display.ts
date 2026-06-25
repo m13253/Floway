@@ -1,16 +1,25 @@
 import type { ModelAliasRules } from './types.ts';
 
-// Render the closed rule set as a parenthesized suffix the gateway appends to
-// the target model's display name when the operator did not supply an
-// explicit alias `displayName`. The wording stays compact (`value label`,
-// joined with commas) because the suffix has to fit alongside the target
-// name in narrow listings — the dashboard's per-badge view uses
-// `formatAliasRuleBadges` for the self-describing `label: value` form.
+// Compose the alias-local display name — what the operator named the alias
+// (when set) or a synthesized target + rules summary. Independent of which
+// upstream is surfacing the alias; the prefixed listing form prepends the
+// upstream display name at the call site, mirroring the real-model path in
+// `registry.ts`.
 //
-// `anthropicBeta` is sorted at format time so two operators carrying the same
-// token set in different orders see the same label.
-export const formatAliasRulesSummary = (rules: ModelAliasRules): string => {
+// The synthesized form's parenthesized rules suffix uses the compact
+// `value label` wording so it fits alongside the target name in narrow
+// listings — the dashboard's per-badge view uses `formatAliasRuleBadges`
+// for the self-describing `label: value` form. `anthropicBeta` tokens are
+// sorted so two operators carrying the same set in different orders see
+// the same label.
+export const composeAliasDisplayName = (input: {
+  aliasDisplayName?: string;
+  targetDisplayName: string;
+  rules: ModelAliasRules;
+}): string => {
+  if (input.aliasDisplayName !== undefined) return input.aliasDisplayName;
   const parts: string[] = [];
+  const { rules } = input;
   if (rules.reasoning?.effort !== undefined) parts.push(`${rules.reasoning.effort} effort`);
   if (rules.reasoning?.budgetTokens !== undefined) parts.push(`${rules.reasoning.budgetTokens}tk reasoning`);
   if (rules.reasoning?.adaptive === true) parts.push('adaptive reasoning');
@@ -21,19 +30,6 @@ export const formatAliasRulesSummary = (rules: ModelAliasRules): string => {
   if (rules.anthropicBeta !== undefined && rules.anthropicBeta.length > 0) {
     parts.push([...rules.anthropicBeta].sort().join('/'));
   }
-  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
-};
-
-// Compose the alias-local display name — what the operator named the alias
-// (when set) or a synthesized target + rules summary. Independent of which
-// upstream is surfacing the alias; the prefixed listing form prepends the
-// upstream display name at the call site, mirroring the real-model path in
-// `registry.ts`.
-export const composeAliasDisplayName = (input: {
-  aliasDisplayName?: string;
-  targetDisplayName: string;
-  rules: ModelAliasRules;
-}): string => {
-  if (input.aliasDisplayName !== undefined) return input.aliasDisplayName;
-  return `${input.targetDisplayName}${formatAliasRulesSummary(input.rules)}`;
+  const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+  return `${input.targetDisplayName}${suffix}`;
 };
