@@ -918,17 +918,41 @@ export class InMemoryRepo implements Repo {
   }
 }
 
-// Test-only in-memory backing for the alias table. The list starts empty
-// and can be reseeded via `setAll` so tests exercising alias-resolution
-// behavior do not depend on a live SQL database.
+// Test-only in-memory backing for the alias table. Mirrors SqlModelAliasesRepo:
+// `loadAll` returns rows sorted by alias, `create` rejects PK collisions,
+// `save` upserts in place. `setAll` is the test seam: tests that pre-populate
+// the table for read-only data-plane assertions reach for it directly.
 export class MemoryModelAliasesRepo implements ModelAliasesRepo {
-  private rows: readonly ModelAlias[] = [];
+  private rows = new Map<string, ModelAlias>();
 
   loadAll(): Promise<readonly ModelAlias[]> {
-    return Promise.resolve(this.rows);
+    return Promise.resolve([...this.rows.values()].sort((a, b) => a.alias.localeCompare(b.alias)));
+  }
+
+  getByAlias(alias: string): Promise<ModelAlias | null> {
+    return Promise.resolve(this.rows.get(alias) ?? null);
+  }
+
+  create(alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }> {
+    if (this.rows.has(alias.alias)) return Promise.resolve({ ok: false, reason: 'duplicate' });
+    this.rows.set(alias.alias, alias);
+    return Promise.resolve({ ok: true });
+  }
+
+  save(alias: ModelAlias): Promise<void> {
+    // Preserve the original row's createdAt on an upsert so re-saves do not
+    // overwrite the local deployment's first-seen timestamp.
+    const existing = this.rows.get(alias.alias);
+    const preserved = existing ? { ...alias, createdAt: existing.createdAt } : alias;
+    this.rows.set(preserved.alias, preserved);
+    return Promise.resolve();
+  }
+
+  delete(alias: string): Promise<{ deleted: boolean }> {
+    return Promise.resolve({ deleted: this.rows.delete(alias) });
   }
 
   setAll(rows: readonly ModelAlias[]): void {
-    this.rows = rows;
+    this.rows = new Map(rows.map(row => [row.alias, row]));
   }
 }

@@ -337,7 +337,18 @@ export interface Repo {
 }
 
 // Operator-managed alias table; small (dozens of rows at most) and read
-// per request, so the repo deliberately exposes only a full-table fetch.
+// per request, so the repo deliberately exposes only a full-table fetch
+// plus the targeted mutations the control-plane CRUD needs.
 export interface ModelAliasesRepo {
   loadAll(): Promise<readonly ModelAlias[]>;
+  getByAlias(alias: string): Promise<ModelAlias | null>;
+  // INSERT-only — fails with `duplicate` on PK conflict so the route layer
+  // surfaces 409 to the dashboard instead of silently overwriting an
+  // existing row.
+  create(alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }>;
+  // UPSERT semantics — used by import/restore flows that need to land a row
+  // regardless of whether it already exists.
+  save(alias: ModelAlias): Promise<void>;
+  // Returns whether a row was actually removed; routes treat false as 404.
+  delete(alias: string): Promise<{ deleted: boolean }>;
 }

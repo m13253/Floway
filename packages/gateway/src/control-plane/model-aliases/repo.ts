@@ -12,16 +12,80 @@ interface ModelAliasRow {
   created_at: number;
 }
 
+const ALIAS_COLUMNS = 'alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at';
+
 // The model_aliases table is operator-managed and small (dozens of rows at
 // most), so the data plane reads the full table per request — no cache layer.
 // `ORDER BY alias` makes the read deterministic so `/v1/models` and friends
 // emit alias entries in a stable, operator-predictable order across runtimes.
 export const loadAllAliases = async (db: SqlDatabase): Promise<readonly ModelAlias[]> => {
   const { results } = await db
-    .prepare('SELECT alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at FROM model_aliases ORDER BY alias')
+    .prepare(`SELECT ${ALIAS_COLUMNS} FROM model_aliases ORDER BY alias`)
     .all<ModelAliasRow>();
   return results.map(toModelAlias);
 };
+
+export const getAliasByName = async (db: SqlDatabase, alias: string): Promise<ModelAlias | null> => {
+  const row = await db
+    .prepare(`SELECT ${ALIAS_COLUMNS} FROM model_aliases WHERE alias = ?`)
+    .bind(alias)
+    .first<ModelAliasRow>();
+  return row ? toModelAlias(row) : null;
+};
+
+// Plain INSERT — surfaces a PK collision through the `duplicate` return so
+// the route layer can map it to 409 without parsing driver-specific error
+// strings. SQLite/D1 both raise a constraint failure on conflict; we detect
+// it with a single SELECT round-trip rather than catching the throw because
+// the driver error shape varies between node:sqlite and D1.
+export const insertAlias = async (db: SqlDatabase, alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }> => {
+  const existing = await db
+    .prepare('SELECT 1 FROM model_aliases WHERE alias = ?')
+    .bind(alias.alias)
+    .first<{ 1: number }>();
+  if (existing) return { ok: false, reason: 'duplicate' };
+  await db
+    .prepare(`INSERT INTO model_aliases (${ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(...bindValues(alias))
+    .run();
+  return { ok: true };
+};
+
+// UPSERT — on conflict the row is overwritten in place, but `created_at`
+// is preserved (the row's first INSERT wins, matching how `proxies.save`
+// keeps the original creation timestamp on a re-save).
+export const saveAlias = async (db: SqlDatabase, alias: ModelAlias): Promise<void> => {
+  await db
+    .prepare(
+      `INSERT INTO model_aliases (${ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (alias) DO UPDATE SET
+         target_model_id = excluded.target_model_id,
+         upstream_ids_json = excluded.upstream_ids_json,
+         rules_json = excluded.rules_json,
+         visible_in_models_list = excluded.visible_in_models_list,
+         on_conflict = excluded.on_conflict,
+         display_name = excluded.display_name,
+         updated_at = unixepoch()`,
+    )
+    .bind(...bindValues(alias))
+    .run();
+};
+
+export const deleteAlias = async (db: SqlDatabase, alias: string): Promise<{ deleted: boolean }> => {
+  const result = await db.prepare('DELETE FROM model_aliases WHERE alias = ?').bind(alias).run();
+  return { deleted: (result.meta.changes ?? 0) > 0 };
+};
+
+const bindValues = (alias: ModelAlias): unknown[] => [
+  alias.alias,
+  alias.targetModelId,
+  JSON.stringify(alias.upstreamIds),
+  JSON.stringify(alias.rules),
+  alias.visibleInModelsList ? 1 : 0,
+  alias.onConflict,
+  alias.displayName ?? null,
+  alias.createdAt,
+];
 
 const toModelAlias = (row: ModelAliasRow): ModelAlias => ({
   alias: row.alias,
