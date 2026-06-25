@@ -375,9 +375,20 @@ const addReasoningLevel = (level: string) => {
 
 const removeReasoningLevel = (level: string) => {
   if (!editable.value || !config.value) return;
-  const updated = supportedEfforts.value.filter(e => e !== level);
+  const current = supportedEfforts.value;
+  const removedIndex = current.indexOf(level);
+  const updated = current.filter(e => e !== level);
   const existingEffort = config.value.chat?.reasoning?.effort;
-  const nextDefault = existingEffort?.default === level ? '' : (existingEffort?.default ?? '');
+  // The default must always be one of the supported levels (or empty when the
+  // list itself is empty). When the operator deletes the current default, pick
+  // the neighbor that slides into the same index slot — falling back to the
+  // new tail when the removed entry was the last one.
+  let nextDefault = existingEffort?.default ?? '';
+  if (existingEffort?.default === level) {
+    if (updated.length === 0) nextDefault = '';
+    else if (removedIndex < updated.length) nextDefault = updated[removedIndex]!;
+    else nextDefault = updated[updated.length - 1]!;
+  }
   // Keep the effort sub-block even when no levels remain — the empty-list
   // warning replaces the tag row in-place so the user sees what's needed
   // without the toggle silently flipping off.
@@ -771,6 +782,7 @@ const toggleMandatory = (on: boolean) => {
           <div v-if="effortEnabled" class="mt-3 space-y-1.5 border-l-2 border-white/[0.08] pl-3">
             <div class="flex min-h-[1.625rem] flex-wrap items-center gap-x-3 gap-y-1.5">
               <span class="text-xs font-semibold text-gray-300">Effort levels</span>
+              <span class="text-[11px] text-gray-500">(click to set default)</span>
               <template v-if="supportedEfforts.length > 0">
                 <button
                   v-for="level in supportedEfforts"
@@ -806,7 +818,6 @@ const toggleMandatory = (on: boolean) => {
               <p v-else class="whitespace-nowrap text-[11px] text-accent-amber">Add at least one effort level — click a preset on the right.</p>
             </div>
             <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[11px] text-gray-500">add:</span>
               <button
                 v-for="level in presetEffortLevels"
                 :key="level"
@@ -836,7 +847,7 @@ const toggleMandatory = (on: boolean) => {
                 :model-value="config.chat?.reasoning?.budget_tokens?.min"
                 :readonly="!editable"
                 placeholder="—"
-                class="!w-24 font-mono"
+                class="!h-6 !w-24 !py-0 !text-[11px] font-mono"
                 @update:model-value="v => updateBudgetTokensMin(v)"
               />
             </label>
@@ -849,7 +860,7 @@ const toggleMandatory = (on: boolean) => {
                 :model-value="config.chat?.reasoning?.budget_tokens?.max"
                 :readonly="!editable"
                 placeholder="—"
-                class="!w-24 font-mono"
+                class="!h-6 !w-24 !py-0 !text-[11px] font-mono"
                 @update:model-value="v => updateBudgetTokensMax(v)"
               />
             </label>
