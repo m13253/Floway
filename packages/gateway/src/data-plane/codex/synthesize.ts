@@ -1,12 +1,9 @@
 // Synthesize a Codex `models.json`-shaped catalog entry for a Floway chat model
-// that does not appear in the bundled Codex catalog. Used by computeCatalog
-// (models.ts) when a registry model's id has no segment-match against a bundled
-// slug. The shape matches what `openai/codex`'s OpenAiModelsManager deserializes;
-// fields we do not opinionate on are filled with safe baselines.
+// that does not appear in the bundled Codex catalog. The shape matches what
+// `openai/codex`'s OpenAiModelsManager deserializes; fields we do not
+// opinionate on are filled with safe baselines.
 
-import type { InternalModel } from '@floway-dev/provider';
-
-type Modality = 'text' | 'image';
+import type { InternalModel, Modality } from '@floway-dev/provider';
 
 const BASELINE_TRUNCATION = { mode: 'tokens', limit: 10000 } as const;
 const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];

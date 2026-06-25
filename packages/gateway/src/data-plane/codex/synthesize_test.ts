@@ -49,6 +49,8 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.input_modalities).toEqual(['text', 'image']);
     expect(entry.web_search_tool_type).toBe('text_and_image');
     expect(entry.supports_image_detail_original).toBe(true);
+    expect(entry.supported_reasoning_levels).toEqual([]);
+    expect(entry.default_reasoning_level).toBeUndefined();
   });
 
   test('propagates reasoning levels as {effort, description} preset', () => {
