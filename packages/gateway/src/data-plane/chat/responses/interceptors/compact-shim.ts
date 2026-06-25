@@ -118,33 +118,21 @@ export const expandShimCompactionItems = (payload: ResponsesPayload): ResponsesP
 
 type ChainRun = () => Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 
-// Collects output_text / input_text blocks from a completed result into a
-// single string. Used to extract the summary text from the upstream's
-// response to the SUMMARIZATION_PROMPT.
+// Collects assistant output_text blocks from a completed result into a single
+// string. Used to extract the summary text from the upstream's response to the
+// SUMMARIZATION_PROMPT.
 const extractTextFromResult = (result: ResponsesResult): string => {
   const parts: string[] = [];
   for (const item of result.output) {
     if (item.type !== 'message') continue;
-    const content = (item as { type: string; content: unknown[] }).content;
-    for (const block of content) {
-      if (
-        block !== null
-        && typeof block === 'object'
-        && 'type' in (block as object)
-        && (
-          (block as { type: string }).type === 'output_text'
-          || (block as { type: string }).type === 'input_text'
-        )
-        && 'text' in (block as object)
-      ) {
-        parts.push((block as { text: string }).text);
-      }
+    for (const block of item.content) {
+      if (block.type === 'output_text') parts.push(block.text);
     }
   }
   return parts.join('');
 };
 
-const buildCompactionEnvelope = (summaryText: string, model: string, upstream?: ResponsesResult): ResponsesResult => {
+const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult): ResponsesResult => {
   const summaryItem: ResponsesInputItem = {
     type: 'message',
     role: 'user',
@@ -155,10 +143,9 @@ const buildCompactionEnvelope = (summaryText: string, model: string, upstream?: 
   const responseId = `resp_compact_shim_${crypto.randomUUID()}`;
 
   return {
+    ...upstream,
     id: responseId,
     object: 'response.compaction',
-    model: upstream?.model ?? model,
-    created_at: Math.floor(Date.now() / 1000),
     status: 'completed',
     output: [
       {
@@ -169,8 +156,7 @@ const buildCompactionEnvelope = (summaryText: string, model: string, upstream?: 
     ] as unknown as ResponsesResult['output'],
     incomplete_details: null,
     error: null,
-    usage: upstream?.usage ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
-  } as ResponsesResult;
+  };
 };
 
 const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
@@ -199,6 +185,10 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     upstreamResult = await run();
   } finally {
     ctx.payload = originalPayload;
+    // Re-tag the action so the gateway's post-chain snapshot derivation
+    // picks 'replace' — even on the error path so the chain's outer state
+    // matches what the caller requested.
+    ctx.action = 'compact';
   }
 
   if (upstreamResult.type !== 'events') {
@@ -210,11 +200,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
 
   const collected = await collectResponsesProtocolEventsToResult(upstreamResult.events);
   const summaryText = extractTextFromResult(collected);
-  const synthesized = buildCompactionEnvelope(summaryText, originalPayload.model, collected);
-
-  // Re-tag the action so the gateway's post-chain snapshot derivation
-  // picks 'replace'.
-  ctx.action = 'compact';
+  const synthesized = buildCompactionEnvelope(summaryText, collected);
 
   return {
     ...upstreamResult,
