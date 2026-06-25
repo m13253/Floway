@@ -332,6 +332,10 @@ export interface ProviderModelResolution {
   // this onto the `x-floway-alias` response header so alias-served calls are
   // observable without enabling any extra mode.
   aliasName?: string;
+  // Operator-locked rules carried alongside `aliasName`. Set in lockstep so
+  // passthrough callers can trace the dropped rule fields without re-finding
+  // the matched alias by name.
+  aliasRules?: ModelAliasRules;
 }
 
 export interface ModelInterpretation {
@@ -525,7 +529,7 @@ export const resolveModelForRequest = async (
   // `x-floway-alias` header without re-deriving the match.
   const matches: ProviderModelResolution[] = resolutions.map(r =>
     r.interpretation.aliasName !== undefined
-      ? { ...r.resolved, aliasName: r.interpretation.aliasName }
+      ? { ...r.resolved, aliasName: r.interpretation.aliasName, aliasRules: r.interpretation.aliasRules }
       : r.resolved);
   return { matches, failedUpstreams };
 };

@@ -1,3 +1,4 @@
+import type { ModelAliasRules } from '../../../control-plane/model-aliases/types.ts';
 import { FLOWAY_EXTENSION_FIELDS } from '@floway-dev/protocols/extensions';
 
 export interface SanitizeTraceCtx {
@@ -48,4 +49,26 @@ export const sanitizeForGeminiUpstream = (body: Record<string, unknown>, trace?:
   if (generationConfig && typeof generationConfig === 'object') {
     stripKeys(generationConfig as Record<string, unknown>, FLOWAY_EXTENSION_FIELDS.gemini.generationConfig, 'gemini', trace, 'generationConfig.');
   }
+};
+
+// Walks the alias rules object and emits one trace line per non-empty rule
+// field. Used by inbound surfaces that have no protocol-extension slots for
+// the rules in the first place (embeddings, images, /v1/completions) — the
+// rules are structurally dropped before the upstream call, and this helper
+// gives the operator the same `floway.alias.drop` signal the chat
+// sanitizers produce when they strip extension residue.
+export const traceAllRulesDropped = (
+  rules: ModelAliasRules,
+  targetProtocol: string,
+  trace: SanitizeTraceCtx,
+): void => {
+  if (rules.reasoning) {
+    for (const key of Object.keys(rules.reasoning)) {
+      trace.emit({ alias: trace.aliasName, field: `reasoning.${key}`, targetProtocol });
+    }
+  }
+  if (rules.verbosity !== undefined) trace.emit({ alias: trace.aliasName, field: 'verbosity', targetProtocol });
+  if (rules.serviceTier !== undefined) trace.emit({ alias: trace.aliasName, field: 'serviceTier', targetProtocol });
+  if (rules.anthropicSpeed !== undefined) trace.emit({ alias: trace.aliasName, field: 'anthropicSpeed', targetProtocol });
+  if (rules.anthropicBeta?.length) trace.emit({ alias: trace.aliasName, field: 'anthropicBeta', targetProtocol });
 };

@@ -23,6 +23,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { TokenUsage } from '../../repo/types.ts';
+import { createSanitizeTraceCtx, traceAllRulesDropped } from '../chat/shared/sanitize.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { stageGatewayResponseHeader } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
@@ -119,31 +120,6 @@ interface PassthroughServeContext {
 export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
 
-// Emit one trace line per rule field present on the matched alias when the
-// inbound endpoint has no slot for the rule. The passthrough endpoints
-// (embeddings, images, /v1/completions) carry no Floway-extension fields
-// so a non-empty `rules` object is structurally dropped before the upstream
-// call; emitting one trace line per knob gives an operator the same signal
-// the chat sanitizers do.
-const traceDroppedAliasRulesForPassthrough = (
-  aliasName: string,
-  aliases: readonly { alias: string; rules: Record<string, unknown> }[],
-  sourceApi: PassthroughServeApiName,
-): void => {
-  const matched = aliases.find(a => a.alias === aliasName);
-  if (!matched) return;
-  const rules = matched.rules as { reasoning?: Record<string, unknown>; verbosity?: unknown; serviceTier?: unknown; anthropicSpeed?: unknown; anthropicBeta?: readonly unknown[] };
-  const fields: string[] = [];
-  if (rules.reasoning) for (const key of Object.keys(rules.reasoning)) fields.push(`reasoning.${key}`);
-  if (rules.verbosity !== undefined) fields.push('verbosity');
-  if (rules.serviceTier !== undefined) fields.push('serviceTier');
-  if (rules.anthropicSpeed !== undefined) fields.push('anthropicSpeed');
-  if (rules.anthropicBeta?.length) fields.push('anthropicBeta');
-  for (const field of fields) {
-    console.warn('floway.alias.drop', JSON.stringify({ alias: aliasName, field, targetProtocol: sourceApi }));
-  }
-};
-
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling } = input;
   const requestStartedAt = performance.now();
@@ -176,7 +152,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!bindingServesEndpoint(match.binding)) continue;
       if (match.aliasName !== undefined) {
         stageGatewayResponseHeader(ctx, 'x-floway-alias', match.aliasName);
-        traceDroppedAliasRulesForPassthrough(match.aliasName, aliases, sourceApi);
+        if (match.aliasRules) {
+          traceAllRulesDropped(match.aliasRules, sourceApi, createSanitizeTraceCtx(match.aliasName));
+        }
       }
 
       const recorder = createUpstreamLatencyRecorder();
