@@ -77,9 +77,9 @@ export const computeCatalog = (
     if (hit) {
       const cloned: CatalogModel = { ...hit, slug: im.id };
       if (im.display_name !== undefined) cloned.display_name = im.display_name;
-      // Registry-derived tiers win over bundled; bundled chatgpt.com today emits
-      // service_tiers: [] anyway, but if it ever advertises tiers we lack pricing
-      // for, we'd surface a toggle we can't bill — replace with our derived list.
+      // Registry-derived tiers win over bundled: a tier we can bill must
+      // have unit prices in the registry, so any bundled tier we lack
+      // pricing for cannot be surfaced to the client.
       cloned.service_tiers = Object.keys(im.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
       models.push(cloned);
       // The alias entry itself does not trigger an extra alias append. Only a
