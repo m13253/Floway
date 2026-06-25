@@ -17,6 +17,56 @@ test('Chat usage maps disjoint input/cache/output counts and omits tier when ser
   );
 });
 
+test('Chat usage reads DeepSeek prompt_cache_hit_tokens at the usage root', () => {
+  // DeepSeek puts the hit count at the usage root (paired with miss) instead
+  // of under prompt_tokens_details. The shared helper sniffs the variant and
+  // lands it in cache_read, leaving miss on bare input.
+  assertEquals(
+    tokenUsageFromChatCompletionsUsage(
+      // The non-standard hit/miss fields aren't on ChatCompletionsUsage; we
+      // cast through to mirror what an actual DeepSeek response would carry.
+      { prompt_tokens: 200, completion_tokens: 5, total_tokens: 205, prompt_cache_hit_tokens: 128, prompt_cache_miss_tokens: 72 } as never,
+      null,
+    ),
+    {
+      input: 72,
+      input_cache_read: 128,
+      output: 5,
+    },
+  );
+});
+
+test('Chat usage reads the flat top-level cached_tokens (Moonshot / Cohere v2 / Qwen Singapore legacy)', () => {
+  assertEquals(
+    tokenUsageFromChatCompletionsUsage(
+      { prompt_tokens: 50, completion_tokens: 3, total_tokens: 53, cached_tokens: 32 } as never,
+      null,
+    ),
+    {
+      input: 18,
+      input_cache_read: 32,
+      output: 3,
+    },
+  );
+});
+
+test('Chat usage reads OpenRouter cache_write_tokens as the write counter', () => {
+  // OpenRouter emits cache_write_tokens alongside cached_tokens under the
+  // standard wrapper when it routes to Anthropic / explicit-Gemini / Alibaba.
+  assertEquals(
+    tokenUsageFromChatCompletionsUsage(
+      { prompt_tokens: 100, completion_tokens: 4, total_tokens: 104, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 50 } } as never,
+      null,
+    ),
+    {
+      input: 20,
+      input_cache_read: 30,
+      input_cache_write: 50,
+      output: 4,
+    },
+  );
+});
+
 test('Chat usage drops service_tier=default to no-tier', () => {
   assertEquals(
     tokenUsageFromChatCompletionsUsage(
