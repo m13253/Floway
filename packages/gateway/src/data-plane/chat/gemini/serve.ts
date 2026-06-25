@@ -2,6 +2,7 @@ import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
 import { getRepo } from '../../../repo/index.ts';
+import { applyAliasRulesToGemini } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -58,6 +59,11 @@ export const geminiServe = {
         'generate',
       );
     }
+    // Operator-locked alias rules apply to the Gemini IR before the attempt
+    // runs; the matching `x-floway-alias` header rides out via
+    // ctx.responseHeaders.
+    if (candidate.aliasRules) applyAliasRulesToGemini(payload, candidate.aliasRules);
+    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
     return await geminiAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
@@ -90,6 +96,8 @@ export const geminiServe = {
         'countTokens',
       );
     }
+    if (candidate.aliasRules) applyAliasRulesToGemini(payload, candidate.aliasRules);
+    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
     return await geminiAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

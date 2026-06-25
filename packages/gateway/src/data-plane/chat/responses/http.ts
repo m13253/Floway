@@ -5,7 +5,7 @@ import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -57,7 +57,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondResponses(c, result, false, effectiveCtx);
-  return (effectiveCtx.dump?.finalize(response) ?? response);
+  return finalizeGatewayResponse(effectiveCtx, response);
 };
 
 const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
@@ -74,12 +74,12 @@ export const responsesHttp = {
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
       const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) {
         const response = previousResponseNotFoundResponse(error.previousResponseId);
         ctx?.dump?.error('gateway');
-        return (ctx?.dump?.finalize(response) ?? response);
+        return ctx ? finalizeGatewayResponse(ctx, response) : response;
       }
       return await respondWithInternalError(c, error, requestBody, ctx);
     }
@@ -96,15 +96,15 @@ export const responsesHttp = {
       if (result.type === 'result') {
         ctx.dump?.success(result.modelIdentity, result.usage);
         const compactResponse = Response.json(result.result);
-        return (ctx.dump?.finalize(compactResponse) ?? compactResponse);
+        return finalizeGatewayResponse(ctx, compactResponse);
       }
       const { response } = await respondResponses(c, result, false, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       if (error instanceof PreviousResponseNotFoundError) {
         const response = previousResponseNotFoundResponse(error.previousResponseId);
         ctx?.dump?.error('gateway');
-        return (ctx?.dump?.finalize(response) ?? response);
+        return ctx ? finalizeGatewayResponse(ctx, response) : response;
       }
       return await respondWithInternalError(c, error, requestBody, ctx);
     }

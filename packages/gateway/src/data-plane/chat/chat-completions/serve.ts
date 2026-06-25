@@ -2,6 +2,7 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
 import { getRepo } from '../../../repo/index.ts';
+import { applyAliasRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -47,6 +48,11 @@ export const chatCompletionsServe = {
           : { kind: 'model-missing', model: payload.model, failedUpstreams },
       );
     }
+    // Apply operator-locked alias rules to the inbound IR before the
+    // attempt runs its interceptor chain. The matching `x-floway-alias`
+    // header rides out via ctx.responseHeaders.
+    if (candidate.aliasRules) applyAliasRulesToChatCompletions(payload, candidate.aliasRules);
+    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
     return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 };

@@ -45,6 +45,7 @@ const setup = (): Harness => {
       dump: null,
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
+      responseHeaders: new Headers(),
     }),
   };
 };

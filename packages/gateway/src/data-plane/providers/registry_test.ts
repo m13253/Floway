@@ -922,6 +922,7 @@ describe('enumerateModelInterpretations with alias matching', () => {
     rules: { reasoning: { effort: 'low' } },
     visibleInModelsList: true,
     onConflict: 'real-only',
+    createdAt: 0,
     ...over,
   });
 
@@ -1065,6 +1066,7 @@ describe('resolveModelForRequest applies alias onConflict pruning', () => {
     rules: { reasoning: { effort: 'low' } },
     visibleInModelsList: true,
     onConflict,
+    createdAt: 0,
   });
 
   test('alias-only resolves to a single match against the alias target id', async () => {

@@ -5,9 +5,10 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createSanitizeTraceCtx, sanitizeForChatCompletionsUpstream } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -21,7 +22,7 @@ export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ChatCandidate;
   readonly headers: Headers;
 }
 
@@ -67,7 +68,7 @@ export const chatCompletionsAttempt = {
 const rewriteOrRenderChatCompletionsFailure = async (
   payload: ChatCompletionsPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
 ): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
@@ -98,10 +99,11 @@ const rewriteOrRenderChatCompletionsFailure = async (
 const callChatCompletionsAsExecuteResult = async (
   payload: ChatCompletionsPayload,
   ctx: GatewayCtx,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
+  sanitizeForChatCompletionsUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.binding.provider.callChatCompletions(
     candidate.binding.upstreamModel,

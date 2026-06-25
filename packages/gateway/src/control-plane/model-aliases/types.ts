@@ -23,4 +23,8 @@ export type ModelAlias = {
   readonly rules: ModelAliasRules;
   readonly visibleInModelsList: boolean;
   readonly onConflict: OnConflict;
+  // Unix epoch seconds stamped at row insertion. Surfaced on the
+  // `/v1/models` synthesized alias entry so callers see when an alias was
+  // declared, matching the `created` semantics of the real entries.
+  readonly createdAt: number;
 };

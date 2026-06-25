@@ -5,13 +5,13 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ChatCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
@@ -28,7 +28,7 @@ const { messagesHttp } = await import('./http.ts');
 
 const API_KEY_ID = 'key_messages_http_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
+const queueCandidates = (candidates: readonly ChatCandidate[], sawModel = candidates.length > 0): void => {
   candidatesQueue.push({ candidates, sawModel });
 };
 
@@ -104,7 +104,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ProviderCandidate => {
+} = {}): ChatCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
@@ -271,4 +271,61 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
+});
+
+test('POST /v1/messages stamps x-floway-alias when the candidate is alias-matched', async () => {
+  installRepo();
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  const candidate = makeCandidate({ callMessages });
+  queueCandidates([{ ...candidate, aliasRules: { reasoning: { effort: 'low' } }, aliasName: 'codex-auto-review' }]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'codex-auto-review', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('x-floway-alias'), 'codex-auto-review');
+});
+
+test('POST /v1/messages does not set x-floway-alias when no alias matched', async () => {
+  installRepo();
+  const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callMessages })]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('x-floway-alias'), null);
+});
+
+test('POST /v1/messages applies alias reasoning.effort onto output_config before upstream call', async () => {
+  installRepo();
+  const observedBodies: { output_config?: { effort?: string } }[] = [];
+  const callMessages = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedBodies.push(body as { output_config?: { effort?: string } });
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+  const candidate = makeCandidate({ callMessages });
+  queueCandidates([{ ...candidate, aliasRules: { reasoning: { effort: 'high' } }, aliasName: 'alias-x' }]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'alias-x', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 200);
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callMessages to receive a body');
+  assertEquals(observed.output_config?.effort, 'high');
 });

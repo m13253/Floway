@@ -10,9 +10,10 @@ import { recordPerformanceLatency, requireRecordedDurationMs } from '../../share
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createSanitizeTraceCtx, sanitizeForResponsesUpstream } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -26,7 +27,7 @@ export interface ResponsesAttemptGenerateArgs {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ChatCandidate;
   // Native HTTP/WS entry passes 'append'; the cross-protocol translation-in
   // path (another protocol's attempt translating into Responses) passes
   // 'none' so the outer source owns snapshot persistence.
@@ -38,7 +39,7 @@ export interface ResponsesAttemptCompactArgs {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ChatCandidate;
   readonly headers: Headers;
 }
 
@@ -148,7 +149,7 @@ type RewriteOutcome =
 const rewriteOrRenderFailure = async (
   payload: ResponsesPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
 ): Promise<RewriteOutcome> => {
   try {
     return await rewriteResponsesItemsForCandidate(payload, store, candidate);
@@ -185,12 +186,13 @@ const dispatchResponses = async (
   payload: ResponsesPayload,
   ctx: GatewayCtx,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   switch (candidate.targetApi) {
   case 'responses': {
     const { model: _model, ...body } = payload;
+    sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
     const recorder = createUpstreamLatencyRecorder();
     const providerResult = await candidate.binding.provider.callResponses(
       candidate.binding.upstreamModel,
@@ -236,10 +238,11 @@ const dispatchResponses = async (
 const callResponsesCompactAsExecuteResult = async (
   payload: ResponsesPayload,
   ctx: GatewayCtx,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const { model: _model, stream: _stream, store: _store, ...body } = payload;
+  sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.binding.provider.callResponsesCompact(
     candidate.binding.upstreamModel,

@@ -2,6 +2,7 @@ import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
+import { applyAliasRulesToResponses } from '../../model-aliases/apply.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -46,6 +47,11 @@ export const responsesServe = {
               : null,
     });
     if (plan.kind === 'failure') return plan.result;
+    // Operator-locked alias rules apply to the prepared inbound IR before
+    // the attempt runs; the `x-floway-alias` header rides out via
+    // ctx.responseHeaders.
+    if (plan.candidate.aliasRules) applyAliasRulesToResponses(plan.prepared, plan.candidate.aliasRules);
+    if (plan.candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', plan.candidate.aliasName);
     const effectiveSnapshotMode: ResponsesSnapshotMode = snapshotMode !== 'none' && containsCompactionTrigger(plan.prepared.input)
       ? 'replace'
       : snapshotMode;
@@ -62,6 +68,12 @@ export const responsesServe = {
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
     if (plan.kind === 'failure') return plan.result;
+    // Alias rules also apply on the compact path. The upstream compact
+    // endpoint silently drops fields like `reasoning` it does not honor;
+    // applying uniformly keeps the operator's intent expressed at the
+    // inbound boundary regardless of which endpoint runs.
+    if (plan.candidate.aliasRules) applyAliasRulesToResponses(plan.prepared, plan.candidate.aliasRules);
+    if (plan.candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', plan.candidate.aliasName);
     return await responsesAttempt.compact({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers });
   },
 };

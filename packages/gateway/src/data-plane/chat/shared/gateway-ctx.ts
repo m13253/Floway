@@ -21,10 +21,17 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
   readonly currentColo: string;
-  // Null when the api key has no retention configured, in which case the
-  // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
-  // `ctx.dump?.finalize(response) ?? response` returns the response unchanged.
+  // Null when the api key has no retention configured, in which case
+  // `finalizeGatewayResponse` short-circuits the dump tee and returns the
+  // response untouched (headers from `responseHeaders` are still applied).
   readonly dump: DumpAccumulator | null;
+  // Per-request response-header staging. The data-plane writes alias-aware
+  // and similar non-upstream headers here mid-request; the inbound HTTP
+  // wrapper merges them onto the final outgoing Response before
+  // `dump?.finalize`. Mutable on purpose — the serve layer owns the
+  // chosen candidate and is the right seam for stamping the
+  // `x-floway-alias` header.
+  readonly responseHeaders: Headers;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -70,5 +77,15 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     runtimeLocation: colo,
     currentColo: colo,
     dump,
+    responseHeaders: new Headers(),
   };
+};
+
+// Apply ctx-stamped response headers onto the outgoing Response and then run
+// the dump-accumulator's finalize tee. Every inbound HTTP wrapper returns its
+// response through this seam so alias and other gateway-stamped headers ride
+// out uniformly across happy-path, error, and passthrough paths.
+export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
+  for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
+  return ctx.dump?.finalize(response) ?? response;
 };

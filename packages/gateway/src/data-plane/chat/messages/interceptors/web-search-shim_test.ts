@@ -58,6 +58,7 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
 

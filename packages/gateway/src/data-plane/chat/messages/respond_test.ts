@@ -534,6 +534,7 @@ const makeRespondCtx = (): GatewayCtx => ({
   wantsStream: false,
   runtimeLocation: 'TEST',
   backgroundScheduler: () => {},
+  responseHeaders: new Headers(),
   requestStartedAt: 0,
   currentColo: 'TEST',
   dump: null,

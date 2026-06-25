@@ -110,6 +110,30 @@ export interface PublicModel {
   };
   kind: ModelKind;
   cost?: ModelPricing;
+  // Floway protocol extension. Present on synthesized alias entries the
+  // gateway appends to the listing. Clients that do not know about the
+  // field ignore it; alias-aware clients (dashboard, CLI shims) render the
+  // alias's target id and rules from this payload directly.
+  // See docs/superpowers/specs/2026-06-25-model-aliases-design.md.
+  aliasedFrom?: PublicModelAliasedFrom;
+}
+
+export interface PublicModelAliasedFrom {
+  targetModelId: string;
+  upstreamIds: readonly string[];
+  rules: {
+    reasoning?: {
+      effort?: string;
+      budgetTokens?: number;
+      adaptive?: boolean;
+      summary?: string;
+    };
+    verbosity?: string;
+    serviceTier?: string;
+    anthropicSpeed?: string;
+    anthropicBeta?: readonly string[];
+  };
+  onConflict: 'alias-only' | 'real-only' | 'both-real-first' | 'both-alias-first';
 }
 
 export interface PublicModelsResponse {

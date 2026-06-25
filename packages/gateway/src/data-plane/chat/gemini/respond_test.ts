@@ -26,6 +26,7 @@ const ctx = (): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
 

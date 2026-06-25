@@ -21,6 +21,7 @@ import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanc
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
+import { getRepo } from '../../repo/index.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
@@ -117,6 +118,31 @@ interface PassthroughServeContext {
 export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
 
+// Emit one trace line per rule field present on the matched alias when the
+// inbound endpoint has no slot for the rule. The passthrough endpoints
+// (embeddings, images, /v1/completions) carry no Floway-extension fields
+// so a non-empty `rules` object is structurally dropped before the upstream
+// call; emitting one trace line per knob gives an operator the same signal
+// the chat sanitizers do.
+const traceDroppedAliasRulesForPassthrough = (
+  aliasName: string,
+  aliases: readonly { alias: string; rules: Record<string, unknown> }[],
+  sourceApi: PassthroughServeApiName,
+): void => {
+  const matched = aliases.find(a => a.alias === aliasName);
+  if (!matched) return;
+  const rules = matched.rules as { reasoning?: Record<string, unknown>; verbosity?: unknown; serviceTier?: unknown; anthropicSpeed?: unknown; anthropicBeta?: readonly unknown[] };
+  const fields: string[] = [];
+  if (rules.reasoning) for (const key of Object.keys(rules.reasoning)) fields.push(`reasoning.${key}`);
+  if (rules.verbosity !== undefined) fields.push('verbosity');
+  if (rules.serviceTier !== undefined) fields.push('serviceTier');
+  if (rules.anthropicSpeed !== undefined) fields.push('anthropicSpeed');
+  if (rules.anthropicBeta?.length) fields.push('anthropicBeta');
+  for (const field of fields) {
+    console.warn('floway.alias.drop', JSON.stringify({ alias: aliasName, field, targetProtocol: sourceApi }));
+  }
+};
+
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling } = input;
   const requestStartedAt = performance.now();
@@ -124,12 +150,20 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
+    // Aliases pass through so a `(model, lookupId)` interpretation can rewrite
+    // to the alias's target id even for non-LLM-shaped endpoints. The alias
+    // rules themselves never apply here — the inbound payload (embeddings,
+    // images, /v1/completions) has no protocol-extension slots for the rule
+    // knobs. We still surface the matched alias name on the
+    // `x-floway-alias` response header and trace one log line per dropped
+    // rule so an operator can confirm the rewrite ran.
+    const aliases = await getRepo().modelAliases.loadAll();
     // Each match is one (upstream, upstream-catalog id) pair that interprets
     // the inbound public id. Iteration order follows configured sort_order
     // across upstreams, with the unprefixed interpretation pushed before the
     // prefixed one within a single upstream. The first match whose binding
     // satisfies the endpoint capability wins.
-    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler, aliases);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
@@ -137,6 +171,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
     for (const match of matches) {
       if (!bindingServesEndpoint(match.binding)) continue;
+      if (match.aliasName !== undefined) {
+        ctx.responseHeaders.set('x-floway-alias', match.aliasName);
+        traceDroppedAliasRulesForPassthrough(match.aliasName, aliases, sourceApi);
+      }
 
       const recorder = createUpstreamLatencyRecorder();
       const { response, modelKey } = await call(match.binding, {

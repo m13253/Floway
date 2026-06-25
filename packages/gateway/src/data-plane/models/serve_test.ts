@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -583,6 +584,183 @@ test('/v1/models returns the last real error when every account model load fails
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: unknown[] };
       assertEquals(body.data, []);
+    },
+  );
+});
+
+// /v1/models alias-listing coverage. Each test exercises one slice of the
+// spec's visibility contract: visible alias appears with `aliasedFrom`,
+// hidden alias does not appear, alias-with-disabled-target is still listed,
+// the `aliasedFrom` shape matches the spec byte-for-byte.
+test('/v1/models appends a visible alias with aliasedFrom after the real entries', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({
+          object: 'list',
+          data: [{ id: 'gpt-5.4', owned_by: 'openai' }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = await response.json() as { data: Array<{ id: string; owned_by?: string; aliasedFrom?: unknown }> };
+      const ids = body.data.map(m => m.id);
+      assertEquals(ids[ids.length - 1], 'codex-auto-review');
+      const aliasEntry = body.data.find(m => m.id === 'codex-auto-review');
+      if (!aliasEntry) throw new Error('expected codex-auto-review alias entry');
+      assertEquals(aliasEntry.aliasedFrom, {
+        targetModelId: 'gpt-5.4',
+        upstreamIds: [],
+        rules: { reasoning: { effort: 'low' } },
+        onConflict: 'real-only',
+      });
+      assertEquals(aliasEntry.owned_by, 'openai');
+    },
+  );
+});
+
+test('/v1/models omits aliases marked visibleInModelsList=false', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'hidden-alias',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: {},
+      visibleInModelsList: false,
+      onConflict: 'real-only',
+      createdAt: 0,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string }> };
+      assertEquals(body.data.map(m => m.id).includes('hidden-alias'), false);
+    },
+  );
+});
+
+test('/v1/models lists an alias whose target is not present on any upstream (no silent hide)', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'orphan-alias',
+      targetModelId: 'never-resolves',
+      upstreamIds: ['up_oai'],
+      rules: {},
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 0,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({ object: 'list', data: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string; aliasedFrom?: { targetModelId: string }; owned_by?: string }> };
+      const orphan = body.data.find(m => m.id === 'orphan-alias');
+      if (!orphan) throw new Error('expected orphan-alias entry');
+      assertEquals(orphan.aliasedFrom?.targetModelId, 'never-resolves');
+      // No matching real entry → owner falls back to the alias's primary upstream id.
+      assertEquals(orphan.owned_by, 'up_oai');
     },
   );
 });

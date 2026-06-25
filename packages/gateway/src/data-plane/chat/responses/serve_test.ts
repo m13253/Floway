@@ -57,6 +57,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
+  responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
 

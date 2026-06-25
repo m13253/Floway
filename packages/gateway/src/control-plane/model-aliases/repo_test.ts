@@ -8,17 +8,21 @@ test('loadAllAliases reads the seed row from a freshly migrated database', async
   const db = await createSqliteTestDb();
 
   const aliases = await loadAllAliases(db);
-
-  assertEquals(aliases, [
-    {
-      alias: 'codex-auto-review',
-      targetModelId: 'gpt-5.4',
-      upstreamIds: [],
-      rules: { reasoning: { effort: 'low' } },
-      visibleInModelsList: true,
-      onConflict: 'real-only',
-    },
-  ]);
+  assertEquals(aliases.length, 1);
+  const [seed] = aliases;
+  // `createdAt` rides off the migration's `DEFAULT (unixepoch())`, so the
+  // exact value is wall-clock dependent. Assert structurally that it landed
+  // as a number and strip it before comparing the rest of the row.
+  assertEquals(typeof seed.createdAt, 'number');
+  const { createdAt: _createdAt, ...withoutTimestamp } = seed;
+  assertEquals(withoutTimestamp, {
+    alias: 'codex-auto-review',
+    targetModelId: 'gpt-5.4',
+    upstreamIds: [],
+    rules: { reasoning: { effort: 'low' } },
+    visibleInModelsList: true,
+    onConflict: 'real-only',
+  });
 });
 
 test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_models_list to a boolean', async () => {
@@ -26,7 +30,7 @@ test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_mo
   await db.exec('DELETE FROM model_aliases');
   await db
     .prepare(
-      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       'opus-xhigh',
@@ -35,13 +39,14 @@ test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_mo
       '{"reasoning":{"effort":"xhigh"},"anthropicBeta":["fine-grained-tool-streaming"]}',
       0,
       'alias-only',
+      1_700_000_000,
     )
     .run();
   await db
     .prepare(
-      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
-    .bind('gpt-5-fast', 'gpt-5.4', '[]', '{"serviceTier":"priority"}', 1, 'both-alias-first')
+    .bind('gpt-5-fast', 'gpt-5.4', '[]', '{"serviceTier":"priority"}', 1, 'both-alias-first', 1_700_000_001)
     .run();
 
   const aliases = await loadAllAliases(db);
@@ -54,6 +59,7 @@ test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_mo
     rules: { reasoning: { effort: 'xhigh' }, anthropicBeta: ['fine-grained-tool-streaming'] },
     visibleInModelsList: false,
     onConflict: 'alias-only',
+    createdAt: 1_700_000_000,
   });
   assertEquals(byAlias.get('gpt-5-fast'), {
     alias: 'gpt-5-fast',
@@ -62,6 +68,7 @@ test('loadAllAliases parses upstreamIds and rules JSON and coerces visible_in_mo
     rules: { serviceTier: 'priority' },
     visibleInModelsList: true,
     onConflict: 'both-alias-first',
+    createdAt: 1_700_000_001,
   });
 });
 

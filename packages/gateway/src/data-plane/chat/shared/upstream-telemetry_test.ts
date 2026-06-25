@@ -24,6 +24,7 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     apiKeyId: 'key_1',
     upstreamIds: null,
     wantsStream: true,
+    responseHeaders: new Headers(),
     requestStartedAt: 0,
     runtimeLocation: 'TEST',
     currentColo: 'TEST',

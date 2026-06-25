@@ -6,10 +6,11 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
+import { sanitizeForMessagesUpstream, createSanitizeTraceCtx } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -17,13 +18,14 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
+import { applyAnthropicBetaToHeaders } from '@floway-dev/translate/via-messages/anthropic-extensions';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ChatCandidate;
   readonly headers: Headers;
 }
 
@@ -31,7 +33,7 @@ export interface MessagesAttemptCountTokensArgs {
   readonly payload: MessagesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ChatCandidate;
   readonly headers: Headers;
 }
 
@@ -48,12 +50,21 @@ export const messagesAttempt = {
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
+        // The candidate's `anthropic_beta` alias rule merges onto the
+        // anthropic-beta header (the wire path; the body slot is rejected
+        // by the http entry). Body extensions are stripped just before the
+        // upstream call, after every interceptor has had its say.
+        const outgoingHeaders = new Headers(invocation.headers);
+        if (candidate.aliasRules?.anthropicBeta?.length) {
+          applyAnthropicBetaToHeaders(outgoingHeaders, candidate.aliasRules.anthropicBeta);
+        }
+        sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
         const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.binding.provider.callMessages(
           candidate.binding.upstreamModel,
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+          buildUpstreamCallOptions(candidate, ctx, recorder.record, outgoingHeaders),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
       }
@@ -98,11 +109,16 @@ export const messagesAttempt = {
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
+      const outgoingHeaders = new Headers(invocation.headers);
+      if (candidate.aliasRules?.anthropicBeta?.length) {
+        applyAnthropicBetaToHeaders(outgoingHeaders, candidate.aliasRules.anthropicBeta);
+      }
+      sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
       const { response } = await candidate.binding.provider.callMessagesCountTokens(
         candidate.binding.upstreamModel,
         body,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+        buildUpstreamCallOptions(candidate, ctx, recorder.record, outgoingHeaders),
       );
       return response;
     });
@@ -124,7 +140,7 @@ export const messagesAttempt = {
 const rewriteOrRenderMessagesFailure = async (
   payload: MessagesPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ChatCandidate,
 ): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(

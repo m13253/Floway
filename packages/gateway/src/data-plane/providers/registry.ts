@@ -285,6 +285,11 @@ export interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
   binding: ProviderModelRecord;
+  // Set when this resolution came from an alias-rewrite interpretation. The
+  // gateway-side passthrough callers (embeddings/images/completions) stamp
+  // this onto the `x-floway-alias` response header so alias-served calls are
+  // observable without enabling any extra mode.
+  aliasName?: string;
 }
 
 export interface ModelInterpretation {
@@ -381,6 +386,10 @@ const pushInterpretation = (
     out.push(aliasInterp);
     out.push(realInterp);
     return;
+  default: {
+    const exhaustive: never = alias.onConflict;
+    throw new Error(`pushInterpretation: unhandled onConflict '${exhaustive as string}'`);
+  }
   }
 };
 
@@ -470,7 +479,14 @@ export const resolveModelForRequest = async (
 
   const interpretations = enumerateModelInterpretations(modelId, providers, aliases);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
+  // Project each resolution's alias-rewrite interpretation onto the
+  // returned ProviderModelResolution so passthrough callers can stamp the
+  // `x-floway-alias` header without re-deriving the match.
+  const matches: ProviderModelResolution[] = resolutions.map(r =>
+    r.interpretation.aliasName !== undefined
+      ? { ...r.resolved, aliasName: r.interpretation.aliasName }
+      : r.resolved);
+  return { matches, failedUpstreams };
 };
 
 export const resolveModelForProvider = async (

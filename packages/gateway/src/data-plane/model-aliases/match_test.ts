@@ -10,6 +10,7 @@ const make = (overrides: Partial<ModelAlias>): ModelAlias => ({
   rules: {},
   visibleInModelsList: true,
   onConflict: 'real-only',
+  createdAt: 0,
   ...overrides,
 });
 

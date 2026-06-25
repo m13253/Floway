@@ -2,6 +2,7 @@ import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
 import { getRepo } from '../../../repo/index.ts';
+import { applyAliasRulesToMessages } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -55,6 +56,13 @@ export const messagesServe = {
         'generate',
       );
     }
+    // Operator-locked alias rules go onto the inbound IR before the attempt
+    // begins so the per-protocol interceptor chain (and any downstream
+    // translate pass) sees the already-injected fields. The matching
+    // `x-floway-alias` response header is staged on the gateway-stamped
+    // header set; the http wrapper flushes it onto the outgoing Response.
+    if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
+    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
     return await messagesAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
@@ -84,6 +92,11 @@ export const messagesServe = {
         'countTokens',
       );
     }
+    // count_tokens carries the same alias semantics as generate — operator
+    // rules apply uniformly regardless of endpoint, and the response header
+    // rides out the same way.
+    if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
+    if (candidate.aliasName) ctx.responseHeaders.set('x-floway-alias', candidate.aliasName);
     return await messagesAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };
