@@ -14,8 +14,7 @@ export const chatFromCopilotRaw = (raw: CopilotRawModel): UpstreamChatModelConfi
   const reasoning: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
   const efforts = supports.reasoning_effort;
   if (efforts && efforts.length > 0) {
-    // Default to 'medium' if supported, else the first available — mirrors
-    // the OpenRouter convention for reasoning-effort defaults.
+    // Default to 'medium' if supported, else the first available.
     const def = efforts.includes('medium') ? 'medium' : efforts[0];
     reasoning.effort = { supported: efforts, default: def };
   }
