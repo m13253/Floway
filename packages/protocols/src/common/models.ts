@@ -91,18 +91,24 @@ export type ModelKind = 'chat' | 'embedding' | 'image';
 
 export type Modality = 'text' | 'image';
 
-// Wire-level chat metadata, mirrored from UpstreamChatModelConfig in
-// @floway-dev/provider. Lives here so PublicModel stays self-contained.
-// Field names and semantics are intentionally identical to the provider type.
+// Operator-configured chat capability metadata. Lives in protocols because it
+// flows verbatim onto PublicModel.chat (the wire DTO) and is also re-exported
+// by @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
+// definition serves both surfaces.
 export interface ChatModelInfo {
   modalities?: {
     input: readonly Modality[];
     output: readonly Modality[];
   };
   reasoning?: {
+    // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
     effort?: { supported: readonly string[]; default: string };
+    // Operator-supplied token budget. Bounds are optional; absent bounds mean
+    // "operator can supply a budget, but legal range is unknown".
     budget_tokens?: { min?: number; max?: number };
+    // Model-controlled adaptive depth — the model decides how much reasoning to do.
     adaptive?: boolean;
+    // Always-on reasoning — the model cannot be instructed to skip it.
     mandatory?: boolean;
   };
 }

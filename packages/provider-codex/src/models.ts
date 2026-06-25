@@ -107,11 +107,17 @@ export const codexRawToUpstreamModel = (raw: CodexRawModel, enabledFlags: Readon
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
   }
-  if (raw.reasoning_efforts && raw.reasoning_efforts.length > 0 && raw.default_reasoning_effort !== undefined) {
-    if (!raw.reasoning_efforts.includes(raw.default_reasoning_effort)) {
-      throw new Error(`Codex model ${raw.id}: default_reasoning_level not in supported_reasoning_levels`);
+  if (raw.reasoning_efforts && raw.reasoning_efforts.length > 0) {
+    let effortDefault: string;
+    if (raw.default_reasoning_effort !== undefined) {
+      if (!raw.reasoning_efforts.includes(raw.default_reasoning_effort)) {
+        throw new Error(`Codex model ${raw.id}: default_reasoning_level not in supported_reasoning_levels`);
+      }
+      effortDefault = raw.default_reasoning_effort;
+    } else {
+      effortDefault = raw.reasoning_efforts.includes('medium') ? 'medium' : raw.reasoning_efforts[0]!;
     }
-    chat.reasoning = { effort: { supported: raw.reasoning_efforts, default: raw.default_reasoning_effort } };
+    chat.reasoning = { effort: { supported: raw.reasoning_efforts, default: effortDefault } };
   }
   return {
     id: raw.id,

@@ -1,6 +1,8 @@
 import { isKnownFlagId } from './flags.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
+
+export type { Modality } from '@floway-dev/protocols/common';
 
 export interface UpstreamModelLimits {
   max_context_window_tokens?: number;
@@ -13,25 +15,10 @@ export interface UpstreamModelFlagOverrides {
   values: Record<string, boolean>;
 }
 
-export type Modality = 'text' | 'image';
-
-export interface UpstreamChatModelConfig {
-  modalities?: {
-    input: readonly Modality[];
-    output: readonly Modality[];
-  };
-  reasoning?: {
-    // Discrete effort levels — a closed set of named presets (e.g. low/medium/high).
-    effort?: { supported: readonly string[]; default: string };
-    // Operator-supplied token budget. Bounds are optional; absent bounds mean
-    // "operator can supply a budget, but legal range is unknown".
-    budget_tokens?: { min?: number; max?: number };
-    // Model-controlled adaptive depth — the model decides how much reasoning to do.
-    adaptive?: boolean;
-    // Always-on reasoning — the model cannot be instructed to skip it.
-    mandatory?: boolean;
-  };
-}
+// The catalog-side name for the wire chat metadata. Shape lives in
+// @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
+// share a single declaration.
+export type UpstreamChatModelConfig = ChatModelInfo;
 
 export interface UpstreamModelConfig {
   // Mirrors of fields that flow through to PublicModel (snake_case for parity).

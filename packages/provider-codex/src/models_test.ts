@@ -212,13 +212,32 @@ describe('codexRawToUpstreamModel', () => {
     expect(m.chat?.reasoning).toBeUndefined();
   });
 
-  test('omits chat.reasoning when supported_reasoning_levels present but default_reasoning_level absent (both-or-nothing)', () => {
+  test('derives default = medium when supported includes medium and default_reasoning_level absent', () => {
     const m = codexRawToUpstreamModel({
       id: 'gpt-5.5',
       display_name: 'GPT-5.5',
       context_window: 272000,
-      reasoning_efforts: ['low', 'medium'],
-      // default_reasoning_effort intentionally absent
+      reasoning_efforts: ['low', 'medium', 'high'],
+    }, noFlags);
+    expect(m.chat?.reasoning).toEqual({ effort: { supported: ['low', 'medium', 'high'], default: 'medium' } });
+  });
+
+  test('derives default = first when medium absent and default_reasoning_level absent', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      reasoning_efforts: ['low', 'high'],
+    }, noFlags);
+    expect(m.chat?.reasoning).toEqual({ effort: { supported: ['low', 'high'], default: 'low' } });
+  });
+
+  test('drops reasoning entirely when default_reasoning_level present but supported_reasoning_levels absent', () => {
+    const m = codexRawToUpstreamModel({
+      id: 'gpt-5.5',
+      display_name: 'GPT-5.5',
+      context_window: 272000,
+      default_reasoning_effort: 'medium',
     }, noFlags);
     expect(m.chat?.reasoning).toBeUndefined();
   });
