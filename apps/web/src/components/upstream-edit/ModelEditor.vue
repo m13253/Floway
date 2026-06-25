@@ -306,7 +306,6 @@ const isReasoningValid = computed<boolean>(() => {
 
   return true;
 });
-});
 
 watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediate: true });
 
