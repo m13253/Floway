@@ -280,6 +280,14 @@ const budgetTokensEnabled = computed(() => config.value?.chat?.reasoning?.budget
 const adaptiveEnabled = computed(() => config.value?.chat?.reasoning?.adaptive === true);
 const mandatoryEnabled = computed(() => config.value?.chat?.reasoning?.mandatory === true);
 
+// Mandatory is exclusive: when enabled it dominates and the three operator-
+// controlled toggles disappear. When any of those is on, Mandatory is locked
+// off. UI-only constraint (the schema would technically accept any subset).
+const anyControlledEnabled = computed(() => effortEnabled.value || budgetTokensEnabled.value || adaptiveEnabled.value);
+const controlledDisabled = computed(() => !editable.value || mandatoryEnabled.value);
+const mandatoryDisabled = computed(() => !editable.value || anyControlledEnabled.value);
+const presetEffortLevels = computed(() => REASONING_LEVELS.filter(level => !supportedEfforts.value.includes(level)));
+
 const supportedEfforts = computed<string[]>(
   () => config.value?.chat?.reasoning?.effort?.supported ?? [],
 );
@@ -349,7 +357,7 @@ const toggleImageInput = (on: boolean) => {
 const toggleEffort = (on: boolean) => {
   if (!editable.value) return;
   const reasoning = on
-    ? buildNextReasoning({ effort: { supported: [], default: '' } })
+    ? buildNextReasoning({ effort: { supported: ['low', 'medium', 'high'], default: 'medium' } })
     : buildNextReasoning({ effort: undefined });
   patch({ chat: buildNextChat({ reasoning }) });
 };
@@ -370,7 +378,10 @@ const removeReasoningLevel = (level: string) => {
   const updated = supportedEfforts.value.filter(e => e !== level);
   const existingEffort = config.value.chat?.reasoning?.effort;
   const nextDefault = existingEffort?.default === level ? '' : (existingEffort?.default ?? '');
-  const nextEffort = updated.length > 0 ? { supported: updated, default: nextDefault } : undefined;
+  // Keep the effort sub-block even when no levels remain — the empty-list
+  // warning replaces the tag row in-place so the user sees what's needed
+  // without the toggle silently flipping off.
+  const nextEffort = { supported: updated, default: nextDefault };
   patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: nextEffort }) }) });
 };
 
