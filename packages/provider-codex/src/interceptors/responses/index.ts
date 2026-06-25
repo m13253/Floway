@@ -15,7 +15,7 @@ import type { Interceptor } from '@floway-dev/interceptor';
 //
 // Each interceptor is generic over the terminal result type: the streaming
 // `/responses` chain runs to ProviderStreamResult, the compaction chain runs
-// to ProviderCompactionResult, and both feed the same boundary ctx. Codex
+// to ProviderResponsesResult, and both feed the same boundary ctx. Codex
 // interceptors are pure payload/header mutators, so the streaming variant
 // returns ProviderStreamResult directly (no per-frame lift/lower).
 export const codexResponsesChain = <TResult>(): readonly Interceptor<ResponsesBoundaryCtx, object, TResult>[] => [

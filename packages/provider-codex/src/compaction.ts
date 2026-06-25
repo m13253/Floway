@@ -26,11 +26,16 @@ export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponse
 // - `x-codex-beta-features: remote_compaction_v2` — activates the v2 path;
 //   the Codex CLI enables this on every request when
 //   `[features].remote_compaction_v2 = true` (default since 0.137.0).
-//   Source: codex-rs/core/src/compact_remote_v2.rs (x-codex-beta-features
-//   literal), codex-rs/core/tests/responses_headers.rs (test coverage).
+//   Source: the header literal lives in
+//   https://github.com/openai/codex/blob/adccb464d075a39d5450d6bc879e3bb6c97ce14b/codex-rs/core/src/client.rs#L1830
+//   and the `remote_compaction_v2` feature key in
+//   https://github.com/openai/codex/blob/adccb464d075a39d5450d6bc879e3bb6c97ce14b/codex-rs/features/src/lib.rs#L1342-L1346
+//   Test coverage in
+//   https://github.com/openai/codex/blob/adccb464d075a39d5450d6bc879e3bb6c97ce14b/codex-rs/core/tests/suite/compact_remote.rs#L956-L962
 // - `x-codex-turn-metadata` — JSON telemetry+routing hint with the
-//   compaction-specific field set; shape verified from
-//   codex-rs/core/src/compact_remote_v2.rs.
+//   compaction-specific field set. The `CompactionTurnMetadata` shape and
+//   its five fields (trigger/reason/implementation/phase/strategy) live in
+//   https://github.com/openai/codex/blob/adccb464d075a39d5450d6bc879e3bb6c97ce14b/codex-rs/core/src/responses_metadata.rs#L73-L95
 export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactOptions): Promise<CodexCompactionCallResult> => {
   const originalInput: ResponsesInputItem[] = typeof opts.body.input === 'string'
     ? [{ type: 'message', role: 'user', content: opts.body.input }]
