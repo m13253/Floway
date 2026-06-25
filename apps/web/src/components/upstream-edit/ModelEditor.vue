@@ -409,6 +409,55 @@ const setDefaultEffort = (value: string) => {
   patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: { supported: current, default: value } }) }) });
 };
 
+// ── Effort tag drag-to-reorder ─────────────────────────────────────────────
+//
+// HTML5 DnD distinguishes drag from click via a built-in pointer-distance
+// threshold: a mousedown+mouseup with no movement still fires `click` (and
+// sets the default), while a mousedown+drag+drop suppresses click entirely.
+// So the two affordances coexist on the same button element.
+const draggedEffortIndex = ref<number | null>(null);
+const dragOverEffortIndex = ref<number | null>(null);
+
+const onEffortDragStart = (index: number, e: DragEvent) => {
+  if (!editable.value) return;
+  draggedEffortIndex.value = index;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox requires setData to actually initiate the drag.
+    e.dataTransfer.setData('text/plain', String(index));
+  }
+};
+
+const onEffortDragOver = (index: number, e: DragEvent) => {
+  if (draggedEffortIndex.value === null) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  dragOverEffortIndex.value = index;
+};
+
+const onEffortDragLeave = (index: number) => {
+  if (dragOverEffortIndex.value === index) dragOverEffortIndex.value = null;
+};
+
+const onEffortDrop = (index: number, e: DragEvent) => {
+  e.preventDefault();
+  const from = draggedEffortIndex.value;
+  draggedEffortIndex.value = null;
+  dragOverEffortIndex.value = null;
+  if (from === null || from === index || !config.value) return;
+  const current = [...supportedEfforts.value];
+  const [moved] = current.splice(from, 1);
+  if (moved === undefined) return;
+  current.splice(index, 0, moved);
+  const existing = config.value.chat?.reasoning?.effort;
+  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: { supported: current, default: existing?.default ?? '' } }) }) });
+};
+
+const onEffortDragEnd = () => {
+  draggedEffortIndex.value = null;
+  dragOverEffortIndex.value = null;
+};
+
 // ── Budget tokens sub-block ────────────────────────────────────────────────
 
 const toggleBudgetTokens = (on: boolean) => {
@@ -785,7 +834,7 @@ const toggleMandatory = (on: boolean) => {
               <span class="text-[11px] text-gray-500">(click to set default)</span>
               <template v-if="supportedEfforts.length > 0">
                 <button
-                  v-for="level in supportedEfforts"
+                  v-for="(level, index) in supportedEfforts"
                   :key="level"
                   type="button"
                   class="inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] transition-colors"
@@ -793,11 +842,19 @@ const toggleMandatory = (on: boolean) => {
                     config.chat?.reasoning?.effort?.default === level
                       ? 'border-accent-cyan/50 bg-accent-cyan/10 text-accent-cyan font-semibold'
                       : 'border-white/15 bg-white/[0.07] text-gray-300 hover:border-white/30 hover:text-white',
-                    editable ? 'cursor-pointer' : 'cursor-not-allowed',
+                    editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed',
+                    draggedEffortIndex === index && 'opacity-40',
+                    dragOverEffortIndex === index && draggedEffortIndex !== index && 'ring-1 ring-accent-cyan',
                   ]"
                   :disabled="!editable"
-                  :title="config.chat?.reasoning?.effort?.default === level ? 'Default — click another to switch' : 'Click to set as default'"
+                  :draggable="editable"
+                  :title="config.chat?.reasoning?.effort?.default === level ? 'Default — click another to switch, drag to reorder' : 'Click to set as default, drag to reorder'"
                   @click="setDefaultEffort(level)"
+                  @dragstart="e => onEffortDragStart(index, e)"
+                  @dragover="e => onEffortDragOver(index, e)"
+                  @dragleave="onEffortDragLeave(index)"
+                  @drop="e => onEffortDrop(index, e)"
+                  @dragend="onEffortDragEnd"
                 >
                   {{ level }}
                   <span
