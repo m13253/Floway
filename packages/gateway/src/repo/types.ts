@@ -346,8 +346,8 @@ export interface ModelAliasesRepo {
   // surfaces 409 to the dashboard instead of silently overwriting an
   // existing row.
   create(alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }>;
-  // UPSERT semantics — used by import/restore flows that need to land a row
-  // regardless of whether it already exists.
+  // UPSERT — used by the PATCH update path; preserves created_at on re-save
+  // and bumps updated_at.
   save(alias: ModelAlias): Promise<void>;
   // Returns whether a row was actually removed; routes treat false as 404.
   delete(alias: string): Promise<{ deleted: boolean }>;

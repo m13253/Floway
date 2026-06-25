@@ -33,11 +33,8 @@ export const getAliasByName = async (db: SqlDatabase, alias: string): Promise<Mo
   return row ? toModelAlias(row) : null;
 };
 
-// Plain INSERT — surfaces a PK collision through the `duplicate` return so
-// the route layer can map it to 409 without parsing driver-specific error
-// strings. SQLite/D1 both raise a constraint failure on conflict; we detect
-// it with a single SELECT round-trip rather than catching the throw because
-// the driver error shape varies between node:sqlite and D1.
+// Detects PK collision with a SELECT round-trip rather than catching the
+// INSERT throw — driver error shape differs between node:sqlite and D1.
 export const insertAlias = async (db: SqlDatabase, alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }> => {
   const existing = await db
     .prepare('SELECT 1 FROM model_aliases WHERE alias = ?')

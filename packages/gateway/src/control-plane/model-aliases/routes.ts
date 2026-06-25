@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import { aliasToJson } from './serialize.ts';
-import type { ModelAlias, ModelAliasRules } from './types.ts';
+import type { ModelAlias } from './types.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { createAliasBody, updateAliasBody } from '../schemas.ts';
@@ -36,7 +36,7 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
 };
 
 export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
-  const aliasName = c.req.param('alias') ?? '';
+  const aliasName = c.req.param('alias')!;
   const body = c.req.valid('json');
 
   const repo = getRepo();
@@ -69,12 +69,8 @@ const nextDisplayName = (existing: ModelAlias, patch: string | null | undefined)
 };
 
 export const deleteAlias = async (c: Context) => {
-  const aliasName = c.req.param('alias') ?? '';
+  const aliasName = c.req.param('alias')!;
   const { deleted } = await getRepo().modelAliases.delete(aliasName);
   if (!deleted) return c.json({ error: 'Alias not found' }, 404);
   return c.body(null, 204);
 };
-
-// Re-export so the routes module can wire the type-level `Rules` carrier
-// through the RPC client without consumers having to chase the alias subtree.
-export type { ModelAliasRules };
