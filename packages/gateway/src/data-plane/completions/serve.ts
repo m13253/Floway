@@ -1,5 +1,5 @@
 // POST /v1/completions and /completions — OpenAI text completions
-// passthrough. The endpoint sits outside the LLM source/target executor:
+// passthrough. The endpoint sits outside the chat source/target executor:
 // no protocol translation, no interceptor chain, no cross-protocol
 // traversal. The request body is forwarded to the chosen provider's
 // /completions verbatim; the response (single-shot JSON or streaming SSE
@@ -10,8 +10,8 @@ import type { Context } from 'hono';
 
 import { tokenUsageFromCompletionsUsage } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
-import { readRequestBody } from '../llm/shared/request-body.ts';
+import { createGatewayCtxFromHono } from '../chat/shared/gateway-ctx.ts';
+import { readRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 

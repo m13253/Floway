@@ -2,7 +2,7 @@ import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { LlmTargetApi, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ChatTargetApi, PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export { createUpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 
@@ -32,7 +32,7 @@ export const withUpstreamTelemetry = <T>(
   events: AsyncIterable<ProtocolFrame<T>>,
   ctx: GatewayCtx,
   context: PerformanceTelemetryContext,
-  targetApi: LlmTargetApi,
+  targetApi: ChatTargetApi,
   durationMs: number,
 ): AsyncIterable<ProtocolFrame<T>> => {
   return (async function* () {
@@ -87,7 +87,7 @@ export const recordUpstreamHttpFailure = (ctx: GatewayCtx, context: PerformanceT
   ctx.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
 };
 
-function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: LlmTargetApi): TerminalKind | null {
+function classifyTerminalFrame<T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): TerminalKind | null {
   if (frame.type === 'done') {
     // Chat Completions's terminal signal IS the `[DONE]` sentinel; Messages
     // and Responses have explicit terminal events (message_stop /

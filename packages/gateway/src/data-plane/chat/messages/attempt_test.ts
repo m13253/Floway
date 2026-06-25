@@ -226,7 +226,7 @@ test('generate attaches the performance context and records upstream_success', a
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // The full performance dimension set rides every LLM result so both
+  // The full performance dimension set rides every chat result so both
   // telemetry scopes record.
   assertExists(result.performance);
   assertEquals(result.performance.keyId, API_KEY_ID);

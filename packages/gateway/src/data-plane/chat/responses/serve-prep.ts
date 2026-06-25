@@ -5,14 +5,14 @@ import { enumerateProviderCandidates, type ProviderCandidate } from '../shared/c
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult, LlmTargetApi } from '@floway-dev/provider';
+import type { ExecuteResult, ChatTargetApi } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
 // 400 body verbatim — clients (codex) compare it byte-for-byte against
 // upstream OpenAI's `previous_response_not_found` envelope, so the rendering
 // stays at the entry boundary instead of being folded into the generic
-// LlmServeFailure renderer.
+// ChatServeFailure renderer.
 //
 // Verbatim payload cross-verified from real upstream captures:
 // - https://github.com/cline/cline/issues/9399
@@ -84,7 +84,7 @@ export const prepareResponsesServePlan = async (args: {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly pickTarget: (endpoints: ModelEndpoints) => LlmTargetApi | null;
+  readonly pickTarget: (endpoints: ModelEndpoints) => ChatTargetApi | null;
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx, store, pickTarget } = args;
   const prepared = await expandPreviousResponseId(payload, store);

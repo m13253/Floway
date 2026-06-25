@@ -15,7 +15,7 @@ import type {
   StoredDumpRecord,
   StoredDumpResponseBody,
 } from './types.ts';
-import type { RequestBody } from '../data-plane/llm/shared/request-body.ts';
+import type { RequestBody } from '../data-plane/chat/shared/request-body.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';

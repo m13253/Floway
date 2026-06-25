@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { LlmServeFailure } from '../shared/errors.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -41,7 +41,7 @@ const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<Pr
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.
 export const renderGeminiFailure = (
-  failure: LlmServeFailure,
+  failure: ChatServeFailure,
   endpoint: 'generate' | 'countTokens',
 ): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => {
   switch (failure.kind) {

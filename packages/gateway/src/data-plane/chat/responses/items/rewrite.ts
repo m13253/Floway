@@ -2,7 +2,7 @@ import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, resp
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ProviderCandidate } from '../../shared/candidates.ts';
-import { throwLlmServeFailure } from '../../shared/errors.ts';
+import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -31,7 +31,7 @@ const rewriteItemForCandidate = (
   // travel as a reference on the wire; a provider that doesn't support
   // `item_reference` input has no way to expand it.
   if (item.type === 'item_reference' && row.payload === null && !candidate.binding.supportsResponsesItemReference) {
-    throwLlmServeFailure({ kind: 'item-not-found', itemId: row.id });
+    throwChatServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
 
   if (!isUpstreamOwned(row)) {

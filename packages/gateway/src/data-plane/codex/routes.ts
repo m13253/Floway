@@ -5,7 +5,7 @@
 //
 //   chatgpt_base_url           — backend endpoints (jwks, plugins, analytics,
 //                                wham, codex-namespaced catalog/compact)
-//   [model_providers.x].base_url — LLM endpoints (responses)
+//   [model_providers.x].base_url — responses endpoint
 //
 // Pointing both at the same prefix lets a single Floway deployment serve every
 // surface codex expects. The prefix must contain an Azure marker so codex's
@@ -16,7 +16,7 @@
 // ResponseItem ids on the wire so server-side state (encrypted reasoning
 // content, web search results, prompt cache) is correctly bound across turns.
 //
-// Path-prefix split: the LLM data plane is reached through `model_providers`
+// Path-prefix split: the chat data plane is reached through `model_providers`
 // and codex sends to `<provider.base_url>/responses` verbatim — no extra
 // prefix. The ChatGPT-backend surface, in contrast, prefixes a `/codex/`
 // segment for the catalog / analytics endpoints
@@ -58,8 +58,8 @@ import {
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
-import { responsesHttp } from '../llm/responses/http.ts';
-import { responsesWebSocket } from '../llm/responses/websocket.ts';
+import { responsesHttp } from '../chat/responses/http.ts';
+import { responsesWebSocket } from '../chat/responses/websocket.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 

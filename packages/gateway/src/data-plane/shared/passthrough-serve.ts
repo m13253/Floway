@@ -1,5 +1,5 @@
 // Shared serve scaffold for passthrough data-plane endpoints. These
-// bypass the LLM source/target executor because they have no protocol
+// bypass the chat source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
 // matching endpoint and the upstream response is passed through back to
 // the client. Embeddings and images run the `json` branch (single-shot
@@ -22,8 +22,8 @@ import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
-import { type StreamCompletion, writeSSEFrames } from '../llm/shared/stream/sse.ts';
+import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -211,7 +211,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         // before the writer settled. A client cancel after the terminal
         // frame is graceful (upstream already finished its work); a
         // mid-stream cancel or EOF without terminal is a real failure.
-        // Mirrors SourceStreamState.failedAfter on the LLM endpoints.
+        // Mirrors SourceStreamState.failedAfter on the chat endpoints.
         let terminalFrameSeen = false;
         try {
           const frames = (async function* () {
@@ -243,7 +243,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
           }
           // Record any accumulated usage regardless of the failed flag —
           // tokens already metered upstream should bill even when the
-          // downstream half of the round-trip turned out badly. The LLM
+          // downstream half of the round-trip turned out badly. The chat
           // streaming endpoints follow the same rule.
           if (usage) {
             scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));

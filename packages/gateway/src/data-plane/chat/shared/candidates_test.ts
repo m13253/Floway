@@ -4,7 +4,7 @@ import { enumerateProviderCandidates } from './candidates.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { LlmTargetApi, UpstreamRecord } from '@floway-dev/provider';
+import type { ChatTargetApi, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // Drains SWR background revalidate so a rejection surfaces in the runner
@@ -34,16 +34,16 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   modelPrefix: null,
 });
 
-const pickMessages = (e: ModelEndpoints): LlmTargetApi | null =>
+const pickMessages = (e: ModelEndpoints): ChatTargetApi | null =>
   e.messages ? 'messages' : null;
 
-const pickMessagesOrResponses = (e: ModelEndpoints): LlmTargetApi | null =>
+const pickMessagesOrResponses = (e: ModelEndpoints): ChatTargetApi | null =>
   e.messages ? 'messages' : e.responses ? 'responses' : null;
 
-const pickResponses = (e: ModelEndpoints): LlmTargetApi | null =>
+const pickResponses = (e: ModelEndpoints): ChatTargetApi | null =>
   e.responses ? 'responses' : null;
 
-const pickAny = (e: ModelEndpoints): LlmTargetApi | null =>
+const pickAny = (e: ModelEndpoints): ChatTargetApi | null =>
   e.messages ? 'messages' : e.responses ? 'responses' : e.chatCompletions ? 'chat-completions' : null;
 
 describe('enumerateProviderCandidates', () => {
@@ -260,7 +260,7 @@ describe('enumerateProviderCandidates', () => {
   });
 
   // When every upstream's catalog rejects, the request gets an empty candidate
-  // list and sawModel=false — the LLM serve sites turn that into model-missing
+  // list and sawModel=false — the chat serve sites turn that into model-missing
   // with the failed-upstream parenthetical attached.
   test('all upstreams rejecting yields no candidates, sawModel=false, and every name in failedUpstreams', async () => {
     clearInFlightForTesting();

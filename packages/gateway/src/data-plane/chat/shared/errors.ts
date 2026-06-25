@@ -5,24 +5,24 @@
 // "no upstream has this model" miss from a transient outage where the
 // upstream that owns the model is currently unreachable. Empty / absent
 // means every consulted upstream returned a catalog.
-export type LlmServeFailure =
+export type ChatServeFailure =
   | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams?: readonly string[] }
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams?: readonly string[] }
   | { readonly kind: 'item-not-found'; readonly itemId: string }
   | { readonly kind: 'routing-unavailable'; readonly message: string };
 
-class LlmServeFailureError extends Error {
-  readonly failure: LlmServeFailure;
+class ChatServeFailureError extends Error {
+  readonly failure: ChatServeFailure;
 
-  constructor(failure: LlmServeFailure) {
-    super(`LlmServeFailure: ${failure.kind}`);
+  constructor(failure: ChatServeFailure) {
+    super(`ChatServeFailure: ${failure.kind}`);
     this.failure = failure;
   }
 }
 
-export const throwLlmServeFailure = (failure: LlmServeFailure): never => {
-  throw new LlmServeFailureError(failure);
+export const throwChatServeFailure = (failure: ChatServeFailure): never => {
+  throw new ChatServeFailureError(failure);
 };
 
-export const tryCatchLlmServeFailure = (error: unknown): LlmServeFailure | null =>
-  error instanceof LlmServeFailureError ? error.failure : null;
+export const tryCatchChatServeFailure = (error: unknown): ChatServeFailure | null =>
+  error instanceof ChatServeFailureError ? error.failure : null;

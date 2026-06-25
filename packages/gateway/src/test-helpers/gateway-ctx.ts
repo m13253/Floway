@@ -1,4 +1,4 @@
-import type { GatewayCtx } from '../data-plane/llm/shared/gateway-ctx.ts';
+import type { GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
