@@ -287,6 +287,7 @@ const isReasoningValid = computed<boolean>(() => {
   if (!reasoning.effort) return true;
   return reasoning.effort.default !== '' && reasoning.effort.supported.includes(reasoning.effort.default);
 });
+});
 
 watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediate: true });
 
