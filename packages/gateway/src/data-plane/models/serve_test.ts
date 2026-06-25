@@ -934,3 +934,68 @@ test('/v1/models honours alias upstreamIds — only emits on the named upstream'
     },
   );
 });
+
+test('/v1/models merges alias emissions whose synthesized public id collides — one row, multiple backing upstreams', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      displayName: 'Codex Auto Review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  // Two no-prefix upstreams both serve gpt-5.4 — without dedupe, the alias
+  // would emit two `codex-auto-review` rows. With dedupe, the dashboard sees
+  // one row whose `upstreams` field lists both bindings, exactly like real
+  // models that exist on multiple upstreams.
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_alpha',
+    name: 'Alpha',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://alpha.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-alpha',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_beta',
+    name: 'Beta',
+    sortOrder: 200,
+    config: {
+      baseUrl: 'https://beta.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-beta',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') return jsonResponse(copilotModels([]));
+      if (url.pathname === '/v1/models' && (url.hostname === 'alpha.example.com' || url.hostname === 'beta.example.com')) {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string }> };
+      const rows = body.data.filter(m => m.id === 'codex-auto-review');
+      assertEquals(rows.length, 1);
+    },
+  );
+});

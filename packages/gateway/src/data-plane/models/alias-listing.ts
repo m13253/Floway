@@ -1,6 +1,7 @@
 import { composeAliasDisplayName } from '../../control-plane/model-aliases/display.ts';
 import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
-import type { PublicModel } from '@floway-dev/protocols/common';
+import { unionEndpoints } from '../providers/registry.ts';
+import { kindForEndpoints, type PublicModel } from '@floway-dev/protocols/common';
 import type { ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel } from '@floway-dev/provider';
 
 // One emission slot for an alias: a (provider, addressable form) pair where
@@ -106,18 +107,35 @@ const aliasEmissionToListedModel = (alias: ModelAlias, emission: AliasListingEmi
 };
 
 // Single-pass alias fan-out used by every listing surface. Visibility filter
-// honoured here; per-surface callers just map ListedModel → their own DTO.
+// honoured here. Emissions whose synthesized public id collides — two
+// no-prefix upstreams both serving the alias target, or two prefix-aliased
+// upstreams sharing a prefix — merge into one row with the bindings
+// appended, mirroring how `mergeIntoCatalog` collapses duplicate real-model
+// ids; the dashboard then renders a single alias row whose `upstreams` lists
+// every backing binding instead of N identical rows.
 export const synthesizeListedAliases = (
   aliases: readonly ModelAlias[],
   providers: readonly ModelProviderInstance[],
   rawCatalogs: ReadonlyMap<string, readonly UpstreamModel[]>,
 ): ListedModel[] => {
-  const out: ListedModel[] = [];
+  const byId = new Map<string, ListedModel>();
   for (const alias of aliases) {
     if (!alias.visibleInModelsList) continue;
     for (const emission of aliasListingEmissions(alias, providers, rawCatalogs)) {
-      out.push(aliasEmissionToListedModel(alias, emission));
+      const next = aliasEmissionToListedModel(alias, emission);
+      const existing = byId.get(next.id);
+      if (existing === undefined) {
+        byId.set(next.id, next);
+        continue;
+      }
+      const endpoints = unionEndpoints(existing.endpoints, next.endpoints);
+      byId.set(next.id, {
+        ...existing,
+        endpoints,
+        kind: kindForEndpoints(endpoints),
+        providers: [...existing.providers, ...next.providers],
+      });
     }
   }
-  return out;
+  return [...byId.values()];
 };

@@ -89,7 +89,7 @@ export const listModelProviders = async (
 // Merge two capability maps: a key present in either side is present in the
 // result, and its sub-capability flags are OR-ed so a sub-cap advertised by
 // either provider survives.
-const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
+export const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
   const result: ModelEndpoints = { ...a };
   for (const key of Object.keys(b) as ModelEndpointKey[]) {
     const merged = { ...result[key], ...b[key] };
