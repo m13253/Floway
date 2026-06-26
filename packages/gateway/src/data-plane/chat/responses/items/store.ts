@@ -61,7 +61,7 @@ export interface LayeredStatefulResponsesStoreOptions {
 //                 original full history.
 //
 // The mode is derived inside `wrapResponsesOutputForStorage` by observing the
-// output stream; callers no longer pass it. Skipping the snapshot entirely is
+// output stream, so callers do not pass it. Skipping the snapshot entirely is
 // expressed at the store layer via an empty `snapshotWrites` configuration
 // (see `createNonResponsesSourceStore` and the `store=false` branch of
 // `createResponsesHttpStore`).
