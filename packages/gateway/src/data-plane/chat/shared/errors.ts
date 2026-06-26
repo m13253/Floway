@@ -14,9 +14,7 @@ export type ChatServeFailure =
   // to an enabled upstream binding that exposes the inbound endpoint.
   | { readonly kind: 'alias-no-target-available'; readonly aliasName: string; readonly targetCount: number };
 
-// Canonical message every protocol renders for `alias-no-target-available`.
-export const aliasNoTargetMessage = (failure: { aliasName: string; targetCount: number }): string =>
-  `alias '${failure.aliasName}' has ${failure.targetCount} target(s); none currently map to an enabled upstream binding`;
+export { aliasNoTargetMessage } from '../../model-aliases/resolve.ts';
 
 class ChatServeFailureError extends Error {
   readonly failure: ChatServeFailure;
