@@ -89,6 +89,7 @@ const commitTyped = async () => {
     v-model:open="open"
     :disabled="disabled"
     :display-value="(v: string) => v"
+    open-on-focus
   >
     <ComboboxAnchor as-child>
       <div class="relative w-full">
