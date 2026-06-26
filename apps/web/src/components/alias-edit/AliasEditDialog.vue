@@ -233,7 +233,7 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-5">
         <label class="flex items-center gap-2">
           <Switch v-model="visibleInModelsList" />
-          <span class="text-sm text-gray-300">Visible in <code class="rounded bg-white/[0.04] px-1 font-mono text-xs">/v1/models</code></span>
+          <span class="text-sm text-gray-300">Visible in <code class="font-mono">/v1/models</code></span>
         </label>
         <div class="flex items-center gap-2">
           <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
