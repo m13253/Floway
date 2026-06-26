@@ -321,41 +321,48 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         model,
         action,
       };
-      if (action === 'generate') {
-        const result = await runInterceptors<ResponsesBoundaryCtx, object, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>(
-          ctx, {}, COPILOT_RESPONSES_BOUNDARY, async () => {
-            const { model: _ignored, ...wireBody } = ctx.payload;
-            return await liftStream(callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream, opts));
-          },
-        );
-        const lowered = lowerToStream(result, rawModel.id);
-        return lowered.ok
-          ? { action: 'generate', ok: true, events: lowered.events, modelKey: lowered.modelKey, ...(lowered.headers ? { headers: lowered.headers } : {}) }
-          : { action: 'generate', ok: false, response: lowered.response, modelKey: lowered.modelKey };
-      }
-      // action === 'compact'. Copilot has no native /v1/responses/compact;
-      // we drive `/responses` with stream:false + the compaction_trigger
-      // input item, then reshape the single envelope via the shared
-      // `compactionResponse` helper. Boundary-chain payload/header mutations
-      // (force-store-false, strip-service-tier, vision/initiator headers,
-      // image stripping, inline-image compression) apply identically — the
-      // chain runs through COPILOT_RESPONSES_COMPACT_BOUNDARY which omits
-      // only the post-`run()` event-stream mutators.
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
-        ctx, {}, COPILOT_RESPONSES_COMPACT_BOUNDARY, async () => {
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
-          const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-          const response = await copilotFetchResponses(
-            upstreamConfig,
-            { method: 'POST', body: JSON.stringify(triggered), signal },
-            { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      switch (action) {
+        case 'generate': {
+          const result = await runInterceptors<ResponsesBoundaryCtx, object, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>(
+            ctx, {}, COPILOT_RESPONSES_BOUNDARY, async () => {
+              const { model: _ignored, ...wireBody } = ctx.payload;
+              return await liftStream(callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream, opts));
+            },
           );
-          if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
-          const generated = (await response.json()) as ResponsesResult;
-          return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
-        },
-      );
+          const lowered = lowerToStream(result, rawModel.id);
+          return lowered.ok
+            ? { action: 'generate', ok: true, events: lowered.events, modelKey: lowered.modelKey, ...(lowered.headers ? { headers: lowered.headers } : {}) }
+            : { action: 'generate', ok: false, response: lowered.response, modelKey: lowered.modelKey };
+        }
+        case 'compact': {
+          // Copilot has no native /v1/responses/compact; we drive `/responses`
+          // with stream:false + the compaction_trigger input item, then reshape
+          // the single envelope via the shared `compactionResponse` helper.
+          // Boundary-chain payload/header mutations (force-store-false,
+          // strip-service-tier, vision/initiator headers, image stripping,
+          // inline-image compression) apply identically — the chain runs
+          // through COPILOT_RESPONSES_COMPACT_BOUNDARY which omits only the
+          // post-`run()` event-stream mutators.
+          return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
+            ctx, {}, COPILOT_RESPONSES_COMPACT_BOUNDARY, async () => {
+              const { model: _ignored, ...wireBody } = ctx.payload;
+              const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
+              const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
+              const response = await copilotFetchResponses(
+                upstreamConfig,
+                { method: 'POST', body: JSON.stringify(triggered), signal },
+                { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+              );
+              if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
+              const generated = (await response.json()) as ResponsesResult;
+              return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+            },
+          );
+        }
+        default:
+          action satisfies never;
+          throw new Error(`Unhandled ResponsesAction: ${action as string}`);
+      }
     },
     callMessages: async (model, body, signal, opts) => {
       // Fast Mode is a hard contract on the request side: Anthropic returns

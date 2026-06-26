@@ -180,22 +180,29 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
-      if (action === 'generate') {
-        const stream = await callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      switch (action) {
+        case 'generate': {
+          const stream = await callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
+          return stream.ok
+            ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+            : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+        }
+        case 'compact': {
+          rememberPricingForModel(model);
+          const rawModelId = rawModelIdOf(model);
+          const response = await customFetchResponsesCompact(
+            config,
+            { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
+            { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          );
+          return response.ok
+            ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+            : { action: 'compact', ok: false, response, modelKey: rawModelId };
+        }
+        default:
+          action satisfies never;
+          throw new Error(`Unhandled ResponsesAction: ${action as string}`);
       }
-      rememberPricingForModel(model);
-      const rawModelId = rawModelIdOf(model);
-      const response = await customFetchResponsesCompact(
-        config,
-        { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
-      );
-      return response.ok
-        ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-        : { action: 'compact', ok: false, response, modelKey: rawModelId };
     },
     callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
