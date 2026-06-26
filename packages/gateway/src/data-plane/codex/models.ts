@@ -90,7 +90,7 @@ export const computeCatalog = (
       // registry.
       if (im.id.toLowerCase() === CODEX_AUTO_REVIEW_TARGET) aliasActive = true;
     } else {
-      models.push(synthesizeCatalogEntry(im) as CatalogModel);
+      models.push(synthesizeCatalogEntry(im));
     }
   }
   if (aliasActive) {

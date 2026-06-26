@@ -3,12 +3,13 @@
 // `openai/codex`'s OpenAiModelsManager deserializes; fields we do not
 // opinionate on are filled with safe baselines.
 
+import type { CatalogModel } from './catalog.ts';
 import { SYNTHESIZED_BASE_INSTRUCTIONS } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
 const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
 
-export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unknown> => {
+export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
   const inputModalities = model.chat?.modalities?.input ?? BASELINE_INPUT_MODALITIES;
   const hasImage = inputModalities.includes('image');
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
@@ -27,7 +28,7 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
   const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
   const contextWindow = model.limits.max_context_window_tokens;
 
-  const entry: Record<string, unknown> = {
+  const entry: CatalogModel = {
     slug: model.id,
     display_name: model.display_name ?? model.id,
     description: '',
