@@ -33,19 +33,9 @@ import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 // `output_item.done` entry to pin to, so it passes through unchanged.
 
 interface CanonicalItem {
-  readonly id: string | null;
-  readonly encryptedContent: string | null;
+  readonly id: string | undefined;
+  readonly encryptedContent: string | undefined;
 }
-
-const itemId = (item: object): string | null => {
-  const id = (item as { id?: unknown }).id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
-};
-
-const encryptedContentOf = (item: object): string | null => {
-  const value = (item as { encrypted_content?: unknown }).encrypted_content;
-  return typeof value === 'string' && value.length > 0 ? value : null;
-};
 
 const canonicalizeOutputItems = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
@@ -61,8 +51,8 @@ const canonicalizeOutputItems = async function* (
 
     if (event.type === 'response.output_item.done') {
       canonical.set(event.output_index, {
-        id: itemId(event.item),
-        encryptedContent: encryptedContentOf(event.item),
+        id: event.item.id,
+        encryptedContent: (event.item as { encrypted_content?: string }).encrypted_content,
       });
       yield frame;
       continue;
@@ -73,8 +63,8 @@ const canonicalizeOutputItems = async function* (
         const replacement = canonical.get(index);
         if (replacement === undefined) return item;
         const next: Record<string, unknown> = { ...item };
-        if (replacement.id !== null) next.id = replacement.id;
-        if (replacement.encryptedContent !== null) next.encrypted_content = replacement.encryptedContent;
+        if (replacement.id !== undefined) next.id = replacement.id;
+        if (replacement.encryptedContent !== undefined) next.encrypted_content = replacement.encryptedContent;
         return next;
       });
       yield eventFrame({ ...event, response: { ...event.response, output: output as typeof event.response.output } });
