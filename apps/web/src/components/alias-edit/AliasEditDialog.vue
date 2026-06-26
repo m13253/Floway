@@ -105,7 +105,7 @@ const adaptiveSupported = computed(() => targetChat.value?.reasoning?.adaptive =
 
 const SUMMARY_HINTS = ['auto', 'concise', 'detailed', 'omitted'];
 const VERBOSITY_HINTS = ['low', 'medium', 'high'];
-const SERVICE_TIER_HINTS = ['auto', 'default', 'flex', 'scale', 'priority', 'standard_only'];
+const SERVICE_TIER_HINTS = ['auto', 'default', 'flex', 'scale', 'priority', 'fast', 'standard_only'];
 
 // Each on-conflict option carries a one-line explanation surfaced both in
 // the Select popover and in a helper line below the trigger so an operator
