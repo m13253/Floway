@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { composeAliasDisplayName } from './display.ts';
+import { composeAliasDisplayName } from './models.ts';
 
 describe('composeAliasDisplayName', () => {
   test('uses alias displayName when set, suppressing the rules summary', () => {

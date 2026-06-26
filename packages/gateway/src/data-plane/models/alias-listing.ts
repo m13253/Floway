@@ -1,7 +1,6 @@
-import { composeAliasDisplayName } from '../../control-plane/model-aliases/display.ts';
 import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
 import { unionEndpoints } from '../providers/registry.ts';
-import { kindForEndpoints, type PublicModel } from '@floway-dev/protocols/common';
+import { composeAliasDisplayName, kindForEndpoints, type PublicModel } from '@floway-dev/protocols/common';
 import type { ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel } from '@floway-dev/provider';
 
 // One emission slot for an alias: a (provider, addressable form) pair where
