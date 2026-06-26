@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { synthesizeListedAliases } from '../../data-plane/models/alias-listing.ts';
+import { mergeAliasesIntoModels } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
@@ -48,12 +48,12 @@ export const controlPlaneModels = async (c: Context) => {
       ),
       getRepo().modelAliases.list(),
     ]);
-    const aliasEntries = synthesizeListedAliases({ aliases, realModels: models });
-    const aliasIds = new Set(aliasEntries.map(entry => entry.id));
-    const data: ControlPlaneModel[] = [
-      ...models.filter(model => !aliasIds.has(model.id)).map(toControlPlaneModel),
-      ...aliasEntries.map(entry => ({ ...entry, upstreams: [] })),
-    ];
+    const data = mergeAliasesIntoModels({
+      realModels: models,
+      aliases,
+      mapReal: toControlPlaneModel,
+      wrapAlias: entry => ({ ...entry, upstreams: [] }),
+    });
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,

@@ -1,4 +1,4 @@
-import { synthesizeListedAliases } from './alias-listing.ts';
+import { mergeAliasesIntoModels } from './alias-listing.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -24,12 +24,6 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   return info;
 };
 
-// Merge real-model entries with alias entries synthesized off the operator's
-// alias catalog. An alias whose `name` collides with a real model id wins —
-// two entries with the same `id` would break OpenAI client deduplication, and
-// the alias was added by the operator deliberately, so collapsing to it
-// preserves intent. `synthesizeListedAliases` already produces the alias entry;
-// the merge step drops the real entry with that id.
 export const loadModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -40,12 +34,12 @@ export const loadModels = async (
     getModels(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const aliasEntries = synthesizeListedAliases({ aliases, realModels });
-  const aliasIds = new Set(aliasEntries.map(entry => entry.id));
-  const data: PublicModel[] = [
-    ...realModels.map(toPublicModel).filter(model => !aliasIds.has(model.id)),
-    ...aliasEntries,
-  ];
+  const data = mergeAliasesIntoModels({
+    realModels,
+    aliases,
+    mapReal: toPublicModel,
+    wrapAlias: entry => entry,
+  });
   return {
     object: 'list',
     has_more: false,

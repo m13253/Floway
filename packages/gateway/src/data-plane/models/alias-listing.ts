@@ -19,7 +19,7 @@
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom } from '@floway-dev/protocols/common';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
@@ -125,12 +125,6 @@ const narrowChatByRules = (chat: ChatModelInfo | undefined, target: AliasTarget)
   return out;
 };
 
-const deriveDisplayName = (alias: ModelAliasRecord): string => {
-  if (alias.displayName !== null) return alias.displayName;
-  if (alias.targets.length === 1) return composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules);
-  return alias.name;
-};
-
 const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
   name: alias.name,
   kind: alias.kind,
@@ -146,11 +140,18 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalMod
     .map(target => ({ target, real: realById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
 
+  // Display name precedence: operator-set wins; otherwise derive from the
+  // sole target's id + rules when single-target; multi-target falls back to
+  // the alias's own name because no single target represents the alias.
+  const displayName = alias.displayName ?? (alias.targets.length === 1
+    ? composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules)
+    : alias.name);
+
   const entry: PublicModel = {
     id: alias.name,
     object: 'model',
     type: 'model',
-    display_name: deriveDisplayName(alias),
+    display_name: displayName,
     limits: {},
     kind: alias.kind,
     aliasedFrom: buildAliasedFrom(alias),
@@ -188,3 +189,28 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[]
   sortAliases(input.aliases)
     .filter(alias => alias.visibleInModelsList)
     .map(alias => synthesizeOne(alias, input.realModels));
+
+// Compose real-model entries with visible alias entries into a single typed
+// list. Both data-plane `/v1/models` and the dashboard's `/api/models`
+// share the same merge rule: when an alias's `name` collides with a real
+// model id, the alias entry wins and the colliding real entry is dropped
+// — two entries with the same `id` would break OpenAI-client deduplication,
+// and the alias was added by the operator deliberately, so collapsing to
+// it preserves intent. `mapReal` shapes each real model into the caller's
+// row type; `wrapAlias` lifts a synthesized `PublicModel` alias entry into
+// the same row type (the dashboard, for example, adds an empty `upstreams`
+// array since alias rows do not bind to an upstream directly).
+export const mergeAliasesIntoModels = <T extends PublicModel>(input: {
+  readonly realModels: readonly ResolvedModel[];
+  readonly aliases: readonly ModelAliasRecord[];
+  readonly mapReal: (model: ResolvedModel) => T;
+  readonly wrapAlias: (entry: PublicModel) => T;
+}): T[] => {
+  const { realModels, aliases, mapReal, wrapAlias } = input;
+  const aliasEntries = synthesizeListedAliases({ aliases, realModels });
+  const aliasIds = new Set(aliasEntries.map(entry => entry.id));
+  return [
+    ...realModels.filter(model => !aliasIds.has(model.id)).map(mapReal),
+    ...aliasEntries.map(wrapAlias),
+  ];
+};
