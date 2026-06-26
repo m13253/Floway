@@ -123,6 +123,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
                 signal,
                 effects,
                 call: opts,
+                additionalHeaders: {},
               });
               return compactResult.ok
                 ? { action: 'compact', ok: true, result: compactResult.result, modelKey: compactResult.modelKey }
@@ -138,6 +139,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
                 signal,
                 effects,
                 call: opts,
+                additionalHeaders: {},
               });
               return streamResult.ok
                 ? { action: 'generate', ok: true, events: streamResult.events, modelKey: streamResult.modelKey, ...(streamResult.headers ? { headers: streamResult.headers } : {}) }

@@ -39,10 +39,10 @@ export interface CallCodexResponsesOptions {
   call: UpstreamCallOptions;
   // Extra headers merged after the built-in auth/UA/accept/content-type set.
   // Built-ins are applied first; additionalHeaders entries are applied second,
-  // so a caller can deliberately override any built-in header (e.g. user-agent
-  // for testing). Non-compaction call sites pass nothing, leaving the built-ins
-  // unchanged.
-  additionalHeaders?: Record<string, string>;
+  // so a caller can deliberately override any built-in header. The streaming
+  // call site passes `{}`; the compaction site uses this seam to attach the
+  // v2 beta-features and turn-metadata headers.
+  additionalHeaders: Record<string, string>;
 }
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
@@ -107,9 +107,7 @@ const performUpstreamCall = async (
   headers.set('accept', 'text/event-stream');
   headers.set('content-type', 'application/json');
 
-  if (opts.additionalHeaders) {
-    for (const [k, v] of Object.entries(opts.additionalHeaders)) headers.set(k, v);
-  }
+  for (const [k, v] of Object.entries(opts.additionalHeaders)) headers.set(k, v);
 
   const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
