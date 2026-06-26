@@ -50,7 +50,6 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callCompletions: autoWrap(overrides.callCompletions) ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
   callChatCompletions: autoWrap(overrides.callChatCompletions) ?? (() => Promise.reject(new Error('stubProvider.callChatCompletions was called'))),
   callResponses: autoWrap(overrides.callResponses) ?? (() => Promise.reject(new Error('stubProvider.callResponses was called'))),
-  callResponsesCompact: autoWrap(overrides.callResponsesCompact) ?? (() => Promise.reject(new Error('stubProvider.callResponsesCompact was called'))),
   callMessages: autoWrap(overrides.callMessages) ?? (() => Promise.reject(new Error('stubProvider.callMessages was called'))),
   callMessagesCountTokens: autoWrap(overrides.callMessagesCountTokens) ?? (() => Promise.reject(new Error('stubProvider.callMessagesCountTokens was called'))),
   callEmbeddings: autoWrap(overrides.callEmbeddings) ?? (() => Promise.reject(new Error('stubProvider.callEmbeddings was called'))),

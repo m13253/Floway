@@ -7,7 +7,17 @@ import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+
+// Action tag threaded through the Responses pipeline. `generate` is a normal
+// streaming /responses turn; `compact` is the summarize-and-replace-history
+// turn that some upstreams expose natively (`/v1/responses/compact`,
+// chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
+// simulate. The same `callResponses` method dispatches on this tag, and
+// interceptors are free to flip it (a future responses-compact-shim can turn
+// 'compact' into 'generate' so the inner upstream call runs an ordinary
+// summarization turn against a SUMMARIZATION_PROMPT).
+export type ResponsesAction = 'generate' | 'compact';
 
 export interface ProviderModelRecord {
   upstream: string;
@@ -60,12 +70,33 @@ export type ProviderStreamResult<TEvent> =
   | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
   | { ok: false; response: Response; modelKey: string };
 
-// `/responses/compact` is non-streaming — the upstream returns a single
+// `action: 'generate'` is a normal streaming /responses turn — its frames
+// flow through the per-frame event stream like every other streaming endpoint.
+// `action: 'compact'` is non-streaming — the upstream returns a single
 // `response.compaction` envelope. Some upstreams expose a native compaction
-// endpoint and produce the envelope directly; others synthesize the
-// envelope from a regular `/responses` turn — both return the typed value
-// rather than a re-parsed synthesized SSE body. An upstream failure
-// carries the raw Response so the boundary reports it verbatim.
+// endpoint and produce the envelope directly; others synthesize the envelope
+// from a regular /responses turn — both return the typed value rather than a
+// re-parsed synthesized SSE body. The unified discriminated result tags which
+// branch actually ran (a provider-internal interceptor could in principle flip
+// the action between the call and the inner dispatch, though none does today),
+// so downstream consumers — snapshot mode in particular — switch on the result
+// rather than relying on the caller's input.
+// `ok: false` on either variant carries the raw upstream Response verbatim so
+// the gateway boundary can relay status + body + headers unchanged. Non-2xx-
+// but-not-SSE responses on the generate branch throw from the provider as a
+// contract violation (provider always forces stream=true on streaming
+// endpoints).
+export type ProviderResponsesResult =
+  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; modelKey: string; headers?: Headers }
+  | { action: 'generate'; ok: false; response: Response; modelKey: string }
+  | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
+  | { action: 'compact'; ok: false; response: Response; modelKey: string };
+
+// Pre-tagging shape used internally by provider helpers that produce the
+// compact branch of `ProviderResponsesResult` (codex's unary backend call,
+// Copilot's `compactionResponse` rebuilder, custom/azure/ollama's native
+// passthrough). The provider's `callResponses` terminal re-tags this onto
+// the unified result with `action: 'compact'`.
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
@@ -126,8 +157,7 @@ export interface ModelProvider {
   // before the wire header is filtered down to the Copilot allow-list)
   // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.

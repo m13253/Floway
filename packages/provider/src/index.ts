@@ -47,8 +47,10 @@ export type {
   ProviderCallResult,
   ProviderCompactionResult,
   ProviderModelRecord,
+  ProviderResponsesResult,
   ProviderStreamResult,
   ResolvedModel,
+  ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
 export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';

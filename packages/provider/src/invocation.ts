@@ -1,5 +1,5 @@
 import type { Fetcher } from './options.ts';
-import type { ModelProviderInstance, ProviderModelRecord } from './provider.ts';
+import type { ModelProviderInstance, ProviderModelRecord, ResponsesAction } from './provider.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -33,6 +33,11 @@ export interface MessagesInvocation {
 
 export interface ResponsesInvocation {
   payload: ResponsesPayload;
+  // Mutable action tag — interceptors can flip 'compact' to 'generate' so the
+  // inner provider call runs an ordinary summarization turn (a future
+  // responses-compact-shim uses this) and the gateway derives snapshot mode
+  // from the post-chain action carried on the provider's tagged result.
+  action: ResponsesAction;
   readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
