@@ -65,8 +65,8 @@ const geminiModelLoadError = (error: unknown): Response => {
   return geminiError(502, error instanceof Error ? error.message : String(error));
 };
 
-// Mirror loadModels: real models plus chat-kind alias entries, with alias
-// names winning id collisions.
+// Real chat models plus chat-kind alias entries; see `loadModels` for the
+// collision rationale.
 const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,

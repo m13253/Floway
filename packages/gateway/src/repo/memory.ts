@@ -886,9 +886,8 @@ const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });
 
 const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
   ...record,
-  // Deep-clone the JSON payload so a caller's mutation of the returned record
-  // never leaks back into the store. Targets and their inner rule objects are
-  // plain JSON, so structuredClone is the cheapest faithful copy.
+  // Deep-clone so a caller's mutation of the returned record never leaks
+  // back into the store.
   targets: structuredClone(record.targets),
 });
 

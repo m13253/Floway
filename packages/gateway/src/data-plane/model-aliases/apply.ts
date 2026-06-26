@@ -1,9 +1,5 @@
-// Per-protocol rule overlay. Given a resolved alias's ChatAliasRules,
-// stamp the rule values onto the inbound IR. Alias rules are authoritative
-// — an existing IR field is OVERWRITTEN by a rule that names it. Rules the
-// target IR cannot express are silently dropped; the runtime never tries
-// to enum-gate a value against a model's advertised capabilities. The
-// catalog-warning surface lives in the dashboard.
+// Per-protocol rule overlay. Alias rules overwrite IR fields they name;
+// fields the target IR cannot express are silently dropped.
 
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ChatAliasRules } from '@floway-dev/protocols/common';
@@ -11,8 +7,6 @@ import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
-// Type guard — `reasoning` is optional. Helpers below assume rules are
-// non-null but each sub-key may still be absent.
 const hasReasoning = (rules: ChatAliasRules): rules is ChatAliasRules & { reasoning: NonNullable<ChatAliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 
@@ -80,10 +74,8 @@ export const applyChatRulesToMessages = (body: MessagesPayload, rules: ChatAlias
   }
 };
 
-// Map the discrete `ReasoningEffort` presets onto Gemini's `thinkingLevel`
-// enum, which carries the same five tiers under different names. Anything
-// outside the closed set is dropped — Gemini's wire reads from a fixed
-// enum and an unknown tier would just be rejected upstream.
+// Discrete effort presets map onto Gemini's `thinkingLevel` enum; unknown
+// values are dropped because Gemini rejects out-of-enum tiers upstream.
 const GEMINI_THINKING_LEVEL_BY_EFFORT: Record<string, 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'> = {
   none: 'minimal',
   low: 'low',
@@ -97,8 +89,7 @@ export const applyChatRulesToGemini = (body: GeminiPayload, rules: ChatAliasRule
     const { effort, budget_tokens, adaptive } = rules.reasoning;
     // Gemini collapses the three reasoning controls onto one `thinkingConfig`
     // sub-object. Adaptive wins by encoding budget=-1 (Gemini's adaptive
-    // sentinel); an explicit budget pins the count; effort sets the level
-    // preset. All three can coexist on the same object.
+    // sentinel); an explicit budget pins the count; effort sets the level.
     const thinkingConfig = { ...body.generationConfig?.thinkingConfig };
     if (adaptive === true) {
       thinkingConfig.thinkingBudget = -1;

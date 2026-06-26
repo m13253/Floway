@@ -1,18 +1,12 @@
 // Per-protocol alias preamble helpers. Each protocol's serve calls
-// `resolveAndApply<Protocol>` immediately after parsing the inbound payload
-// and before `enumerateProviderCandidates`. The helper:
-//   1. looks up the inbound model name in the alias repo,
-//   2. on a hit whose kind matches `chat`, picks one target row,
-//   3. stamps the row's rules onto the IR (overwriting any matching field),
-//   4. stages the `x-floway-alias` response header on the gateway ctx, and
-//   5. returns the resolved target_model_id so the caller substitutes it
-//      for `payload.model` before candidate enumeration runs.
+// `resolveAndApply<Protocol>` after parsing the inbound payload and before
+// `enumerateProviderCandidates`. The helper looks up the inbound model name,
+// stamps a target's rules onto the IR, stages the `x-floway-alias` response
+// header, and returns the resolved target id for substitution.
 //
-// Returns `null` when the inbound name is not an alias of kind=chat;
-// callers continue with the literal name and the catalog's miss surface
-// renders if nothing matches. Throws `AliasNoTargetAvailableError` when
-// the alias exists but every target is currently unroutable — caught at
-// the serve seam and rendered via the protocol's failure renderer.
+// Returns `null` when the inbound name is not an alias of kind=chat. Throws
+// `AliasNoTargetAvailableError` when the alias exists but every target is
+// currently unroutable — caught at the serve seam.
 
 import { applyChatRulesToChatCompletions, applyChatRulesToGemini, applyChatRulesToMessages, applyChatRulesToResponses } from './apply.ts';
 import { resolveAlias, type AliasResolution } from './resolve.ts';
@@ -44,10 +38,8 @@ const resolveChatAlias = async (modelName: string, ctx: GatewayCtx): Promise<Ali
   return resolution;
 };
 
-// All four `resolveAndApplyAliasFor*` helpers narrow the rule shape to
-// `ChatAliasRules` before calling the per-protocol overlay. Today every
-// chat-kind alias target carries `ChatAliasRules` per the wire schema; the
-// cast is the unavoidable narrowing from the generic `AliasRules` union.
+// Every chat-kind alias target carries `ChatAliasRules` per the wire
+// schema; the cast is the unavoidable narrowing from the generic union.
 const asChatRules = (rules: AliasResolution['rules']): ChatAliasRules => rules as ChatAliasRules;
 
 export const resolveAndApplyAliasForChatCompletions = async (payload: ChatCompletionsPayload, ctx: GatewayCtx): Promise<void> => {
@@ -96,7 +88,7 @@ export const resolveAliasForPassthrough = async (model: string, endpointKind: 'e
     currentColo: ctx.currentColo,
     repo: getRepo().modelAliases,
   });
-  if (resolution === null) return model;
+  if (!resolution) return model;
   ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, resolution.aliasName);
   return resolution.targetModelId;
 };

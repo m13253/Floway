@@ -1,33 +1,20 @@
 // Synthesizes the alias entries that join the real-model catalog inside
-// `/v1/models`. One PublicModel per visible alias — hidden aliases
-// (visible_in_models_list = false) are dropped from the listing while
-// remaining routable. The synthesized entry carries an `aliasedFrom` block
-// so an alias-aware UI (today: the dashboard) can render the alias-of
-// relationship without a second round trip.
+// `/v1/models`. One PublicModel per visible alias. The synthesized entry
+// carries an `aliasedFrom` block so an alias-aware UI can render the
+// alias-of relationship without a second round trip.
 //
 // Capability metadata is the safe lower bound for the inbound request:
-//   • single-target → the sole target's metadata, narrowed by the alias's
-//     `rules` (a fixed reasoning effort collapses the reported effort set
-//     to that one value, a fixed budget collapses the reported range to
-//     a single point).
-//   • multi-target → the intersection across every currently-available
-//     target. A capability survives only when every target backing the
-//     alias declares it; whichever target gets picked at request time is
-//     then guaranteed to support whatever the catalog reported.
-//
-// "Available target" for intersection purposes means a target whose
-// `target_model_id` appears in `realModels` AND whose entry's `kind`
-// matches the alias's `kind`. Unavailable targets are excluded from the
-// intersection but still appear in `aliasedFrom.targets` so the dashboard
-// can show the full configuration.
+// single-target reports the sole target's metadata narrowed by the
+// alias's rules; multi-target reports the intersection across every
+// currently-available target so whichever target gets picked at request
+// time supports whatever the catalog reported.
 //
 // Collision: when an alias's `name` exactly equals a real model id, the
 // alias entry replaces the real entry in the final catalog. Two entries
 // with the same `id` would break OpenAI client deduplication; collapsing
 // to the alias entry preserves the operator's intent (the alias is the
-// reason both rows would have been present). The dashboard surfaces this
-// via a shadow warning in the alias editor; here it is purely a wire-shape
-// concern. The real entry is removed at the `loadModels` merge step.
+// reason both rows would have been present). The real entry is removed
+// at the `loadModels` merge step.
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
@@ -55,7 +42,6 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
 };
 
 const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
-  if (chats.length === 0) return undefined;
   const result: ChatModelInfo = {};
 
   const modalityChats = chats.filter(c => c.modalities !== undefined);
@@ -171,8 +157,7 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalMod
   };
 
   // No backing target — still emit the row so the dashboard can show the
-  // alias with a no-target warning. Capability metadata stays absent so
-  // clients see no inherited claims.
+  // alias with a no-target warning.
   if (availableTargets.length === 0) return entry;
 
   if (availableTargets.length === 1) {

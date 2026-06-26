@@ -1663,7 +1663,6 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
 
   async update(oldName: string, record: ModelAliasRecord): Promise<void> {
     if (oldName === record.name) {
-      // Plain in-place update — the PK is unchanged, no rename to coordinate.
       const result = await this.db
         .prepare(
           `UPDATE model_aliases SET
@@ -1693,11 +1692,10 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
       return;
     }
 
-    // Rename. Verify the source row exists first so a missing oldName fails
-    // before any write hits the table. Then INSERT(new) + DELETE(old) atomically
-    // through the batch primitive — a PK collision against `record.name`
-    // bubbles up from the INSERT, which is exactly the "rename collides" signal
-    // the route layer translates to 409.
+    // Rename. Verify the source row exists first, then INSERT(new) +
+    // DELETE(old) atomically through the batch primitive — a PK collision
+    // against `record.name` bubbles up from the INSERT, which the route
+    // layer translates to 409.
     const existing = await this.getByName(oldName);
     if (!existing) throw new Error(`alias ${oldName} not found`);
 

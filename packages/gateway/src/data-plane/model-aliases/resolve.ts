@@ -53,9 +53,8 @@ export class AliasNoTargetAvailableError extends Error {
   }
 }
 
-// Lift `AliasNoTargetAvailableError` into a `ChatServeFailure` so a chat
-// serve can route it through its existing failure renderer without
-// special-casing the error type.
+// Lift `AliasNoTargetAvailableError` into a `ChatServeFailure` so the
+// existing failure renderer can surface it without special-casing.
 export const aliasFailureFromError = (error: AliasNoTargetAvailableError): { kind: 'alias-no-target-available'; aliasName: string; targetCount: number } => ({
   kind: 'alias-no-target-available',
   aliasName: error.aliasName,
@@ -76,12 +75,8 @@ interface ResolveAliasArgs {
   readonly repo: ModelAliasesRepo;
 }
 
-// Reports true when the given target_model_id resolves to at least one
-// enabled upstream binding that exposes any endpoint the inbound
-// `endpointKind` cares about. Mirrors the resolution path
-// `enumerateProviderCandidates` takes, narrowed to a yes/no answer so we
-// can pre-filter the alias target list once.
-//
+// Reports true when the target id resolves to at least one enabled upstream
+// binding exposing an endpoint the inbound `endpointKind` cares about.
 // `fetcherForUpstream` and `providers` are passed in (not derived here) so a
 // caller filtering N targets hits the underlying repo / dial factories once,
 // not N times.
