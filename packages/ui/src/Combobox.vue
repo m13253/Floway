@@ -1,0 +1,159 @@
+<script setup lang="ts">
+// Single-select combobox with free-form input. Operator can type a value
+// the suggestion list does not contain and the typed string becomes the
+// model value verbatim — alias rule fields (effort, summary, service
+// tier, ...) pass through to the upstream and the gateway intentionally
+// does not enum-gate them, so unknown values must round-trip.
+//
+// Visual contract matches Select.vue / TagCombobox.vue (dark popover,
+// surface-700 trigger). HTML5 `<input list>` + `<datalist>` would have
+// been one line but the browser-rendered popover is white-on-dark-only
+// on every major browser, which is jarring inside the dashboard's dark
+// theme.
+import {
+  ComboboxAnchor, ComboboxContent, ComboboxEmpty, ComboboxGroup, ComboboxInput,
+  ComboboxItem, ComboboxItemIndicator, ComboboxPortal, ComboboxRoot, ComboboxTrigger,
+  ComboboxViewport, useFilter,
+} from 'reka-ui';
+import { computed, nextTick, ref, watch } from 'vue';
+
+interface Item {
+  value: string;
+  label?: string;
+}
+
+const value = defineModel<string>({ required: true });
+
+const props = withDefaults(defineProps<{
+  /** Suggestion list. Each item's `value` is what gets committed; `label` is the visible row text. */
+  items: readonly (string | Item)[];
+  placeholder?: string;
+  disabled?: boolean;
+  inputmode?: 'text' | 'numeric' | 'decimal';
+  /** Tailwind classes applied to the trigger input (e.g. `font-mono`). */
+  inputClass?: string;
+  /** Override the default "no matches" copy shown when the typed value already matches nothing. */
+  emptyText?: string;
+}>(), {
+  emptyText: 'No matches',
+});
+
+const { contains } = useFilter({ sensitivity: 'base' });
+
+// Normalize the items list to a single shape so the template only deals
+// with `{ value, label }`. Strings collapse to `{ value: s, label: s }`.
+const normalizedItems = computed<Item[]>(() => props.items.map(it =>
+  typeof it === 'string' ? { value: it, label: it } : { value: it.value, label: it.label ?? it.value }));
+
+// query mirrors value so the input always shows the committed string. Reka's
+// ComboboxInput owns the typed text via its own v-model; we keep them in
+// sync so an outside change to the model (form reset, prefill) updates the
+// visible text too.
+const query = ref(value.value);
+watch(value, v => { if (v !== query.value) query.value = v; });
+
+// Free-form commit: any keystroke or blur sets the model to the current
+// query so the dialog's submit handler always reads the latest typed text,
+// even when the operator never clicks a suggestion row. ComboboxRoot's
+// own onChange path still fires for clicked rows and just re-writes the
+// same value.
+watch(query, q => { value.value = q; });
+
+// Filter suggestions by the typed query against either value or label.
+// When the query exactly matches an item we still show it (the user can
+// re-pick the same row), but we hide a synthesized "create" row in that
+// case — it would be a no-op.
+const filteredItems = computed(() => normalizedItems.value.filter(item =>
+  query.value === '' || contains(item.label ?? item.value, query.value) || contains(item.value, query.value)));
+
+const trimmedQuery = computed(() => query.value.trim());
+const hasExactMatch = computed(() => normalizedItems.value.some(item => item.value === trimmedQuery.value));
+const showCreateOption = computed(() => trimmedQuery.value !== '' && !hasExactMatch.value);
+
+const open = ref(false);
+
+// Reka's Combobox only registers items present in the DOM. When the operator
+// types a brand-new value, surface a synthesized "Use 'foo'" row so the
+// arrow keys + Enter path still commits it. Without this row Enter on a
+// brand-new value falls back to default form behavior.
+const commitTyped = async () => {
+  value.value = trimmedQuery.value;
+  open.value = false;
+  await nextTick();
+};
+</script>
+
+<template>
+  <ComboboxRoot
+    v-model="value"
+    v-model:open="open"
+    :disabled="disabled"
+    :display-value="(v: string) => v"
+  >
+    <ComboboxAnchor as-child>
+      <div class="relative w-full">
+        <ComboboxInput
+          v-model="query"
+          :placeholder="placeholder"
+          :disabled="disabled"
+          :inputmode="inputmode"
+          :class="[
+            'h-9 w-full rounded-[10px] border border-white/[0.14] bg-surface-700 pl-3 pr-9 text-sm text-white',
+            'transition-colors hover:border-white/25',
+            'focus:outline-none focus:border-accent-cyan/50 focus:ring-1 focus:ring-accent-cyan/30',
+            'placeholder:text-gray-600',
+            'disabled:opacity-50 disabled:cursor-not-allowed',
+            inputClass,
+          ]"
+        />
+        <ComboboxTrigger
+          class="absolute inset-y-0 right-0 grid w-9 place-items-center text-gray-400 hover:text-gray-200"
+          tabindex="-1"
+        >
+          <i class="i-lucide-chevrons-up-down size-3.5" />
+        </ComboboxTrigger>
+      </div>
+    </ComboboxAnchor>
+
+    <ComboboxPortal>
+      <ComboboxContent
+        position="popper"
+        :side-offset="4"
+        class="z-50 max-h-72 w-[--reka-combobox-trigger-width] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 text-white shadow-xl"
+      >
+        <ComboboxViewport class="p-1">
+          <ComboboxEmpty v-if="!showCreateOption" class="px-2 py-1.5 text-xs text-gray-500">
+            {{ emptyText }}
+          </ComboboxEmpty>
+          <ComboboxGroup>
+            <ComboboxItem
+              v-if="showCreateOption"
+              :value="trimmedQuery"
+              class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-accent-cyan outline-none data-[highlighted]:bg-accent-cyan/10"
+              @select="commitTyped"
+            >
+              <span class="absolute left-2 flex size-3.5 items-center justify-center">
+                <i class="i-lucide-plus size-3.5" />
+              </span>
+              <span class="truncate">Use "<span class="font-mono">{{ trimmedQuery }}</span>"</span>
+            </ComboboxItem>
+            <ComboboxItem
+              v-for="item in filteredItems"
+              :key="item.value"
+              :value="item.value"
+              class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-white outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
+            >
+              <span class="absolute left-2 flex size-3.5 items-center justify-center">
+                <ComboboxItemIndicator>
+                  <i class="i-lucide-check size-3.5 text-accent-cyan" />
+                </ComboboxItemIndicator>
+              </span>
+              <span class="truncate">{{ item.label }}</span>
+              <span v-if="item.label !== item.value" class="ml-auto pl-3 font-mono text-xs text-gray-500">{{ item.value }}</span>
+            </ComboboxItem>
+          </ComboboxGroup>
+        </ComboboxViewport>
+      </ComboboxContent>
+    </ComboboxPortal>
+  </ComboboxRoot>
+</template>
