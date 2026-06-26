@@ -89,7 +89,7 @@ export interface StatefulResponsesStore {
   getPrivatePayload(id: string): unknown;
   stageOutputItem(row: StoredResponsesItem): void;
   commitOutputItems(): Promise<void>;
-  commitSnapshot(responseId: string, mode: 'append' | 'replace'): Promise<void>;
+  commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   refreshTouchedItems(): Promise<void>;
 }
 
@@ -228,7 +228,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     await this.commitItems([...this.stagedOutputItems.values()]);
   }
 
-  async commitSnapshot(responseId: string, mode: 'append' | 'replace'): Promise<void> {
+  async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.snapshotWrites.length === 0 || this.committedSnapshotIds.has(responseId)) return;
     await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
     const itemIds = mode === 'replace'
