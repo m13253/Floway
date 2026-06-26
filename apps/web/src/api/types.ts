@@ -8,6 +8,7 @@ import type {
   AnnouncedMetadata,
   BillingDimension,
   ChatAliasRules,
+  ChatModelInfo,
   ModelAlias,
   ModelEndpointKey,
   ModelEndpoints,
@@ -18,7 +19,7 @@ import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/mo
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
-export type { AliasKind, AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ModelAlias };
+export type { AliasKind, AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 

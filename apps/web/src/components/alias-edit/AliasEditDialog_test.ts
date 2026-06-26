@@ -186,7 +186,16 @@ describe('AliasEditDialog', () => {
     return label.querySelector<HTMLButtonElement>('button[role="switch"]')!;
   };
 
-  it('announced metadata: override off → editor not rendered; the read-only view appears in its place', async () => {
+  // Locate the "Effort levels" toggle inside the ChatMetadataEditor by
+  // scanning labels in the portal-rooted DOM. Reka-UI renders Switch as
+  // a `<button role="switch">`, sitting next to its caption.
+  const effortSwitch = (): HTMLButtonElement | null => {
+    const label = Array.from(document.body.querySelectorAll<HTMLLabelElement>('label'))
+      .find(l => (l.textContent ?? '').trim().startsWith('Effort levels'));
+    return label?.querySelector<HTMLButtonElement>('button[role="switch"]') ?? null;
+  };
+
+  it('announced metadata: override off → editor renders in auto (read-only) mode', async () => {
     const w = mount(AliasEditDialog, {
       props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
       attachTo: document.body,
@@ -196,14 +205,17 @@ describe('AliasEditDialog', () => {
 
     // The override switch is present but off.
     expect(announcedSwitch().getAttribute('aria-checked')).toBe('false');
-    // The editor's distinctive "Effort levels" toggle does not render.
-    expect(portalText()).not.toContain('Effort levels');
-    // Instead the read-only summary copy appears.
+    // The read-only hint copy appears above the editor.
     expect(portalText()).toContain('Read-only');
+    // The shared editor mounts and renders the Reasoning toggles, but
+    // every Switch in there is disabled because mode='auto'.
+    const sw = effortSwitch();
+    expect(sw).not.toBeNull();
+    expect(sw!.disabled).toBe(true);
     w.unmount();
   });
 
-  it('announced metadata: toggling override on renders the editor seeded with the computed view', async () => {
+  it('announced metadata: toggling override on switches the editor into manual (enabled) mode and seeds it from the computed view', async () => {
     modelsRef.value = [
       {
         id: 'gpt-5',
@@ -223,16 +235,18 @@ describe('AliasEditDialog', () => {
     announcedSwitch().click();
     await nextTick();
 
-    // The editor's distinctive toggles render once the override is on.
-    expect(portalText()).toContain('Effort levels');
-    expect(portalText()).toContain('Budget tokens');
+    // Read-only hint disappears; the editor now accepts input.
+    expect(portalText()).not.toContain('Read-only');
+    const sw = effortSwitch();
+    expect(sw).not.toBeNull();
+    expect(sw!.disabled).toBe(false);
     // The frozen seed includes the computed `medium` default, so the
     // editor's pinned-default tag for `medium` is part of the visible DOM.
     expect(portalText()).toContain('medium');
     w.unmount();
   });
 
-  it('announced metadata: toggling override off discards the buffer and restores the read-only view', async () => {
+  it('announced metadata: toggling override off restores auto (read-only) mode', async () => {
     const w = mount(AliasEditDialog, {
       props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
       attachTo: document.body,
@@ -242,11 +256,11 @@ describe('AliasEditDialog', () => {
 
     const sw = announcedSwitch();
     sw.click(); await nextTick();
-    expect(portalText()).toContain('Effort levels');
+    expect(effortSwitch()!.disabled).toBe(false);
     sw.click(); await nextTick();
-    // The editor unmounts and the read-only summary is back.
-    expect(portalText()).not.toContain('Effort levels');
+    // Auto mode: read-only hint back, effort switch disabled again.
     expect(portalText()).toContain('Read-only');
+    expect(effortSwitch()!.disabled).toBe(true);
     w.unmount();
   });
 

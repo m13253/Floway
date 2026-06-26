@@ -8,12 +8,12 @@ import { computed, ref, watch } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
 import { computeAnnouncedMetadata } from './announced-metadata.ts';
-import AnnouncedMetadataEditor from './AnnouncedMetadataEditor.vue';
 import { computeShadowWarning, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useRawModelsStore } from '../../composables/useModels.ts';
+import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import { Button, Dialog, Input, Select, Switch } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open', { required: true });
@@ -112,11 +112,19 @@ const setOverrideEnabled = (on: boolean) => {
   }
 };
 
-// Two-way binding for the editor: writes flow back to the buffer.
-const overrideBuffer = computed<AnnouncedMetadata>({
-  get: () => announcedOverride.value ?? {},
-  set: next => { announcedOverride.value = next; },
-});
+// The editor's `modelValue` source-of-truth: the override buffer when
+// the operator is editing, the live computed snapshot when not. In
+// auto mode the editor is read-only, so its emits are no-ops anyway.
+const announcedEditorValue = computed<AnnouncedMetadata>(
+  () => announcedOverride.value ?? computedAnnouncedMetadata.value,
+);
+
+const onAnnouncedChange = (next: AnnouncedMetadata | undefined) => {
+  // Editor only fires this in manual mode (auto is read-only). Persist
+  // an empty object rather than null so the override stays "on" even
+  // when the operator clears every field.
+  announcedOverride.value = next ?? {};
+};
 
 // Switching alias kind discards a chat-only override since the
 // schema would reject it on save (e.g. embedding aliases can not
@@ -212,35 +220,6 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
 ];
-
-// Labels + formatters for the read-only view of the auto-computed
-// announced metadata. Keeping them inline (rather than reusing the
-// editor in disabled mode) keeps the override-off render compact and
-// avoids dragging the editor's mutation surface into a read path.
-const COMPUTED_LIMIT_LABELS = {
-  max_context_window_tokens: 'Context window',
-  max_prompt_tokens: 'Prompt tokens',
-  max_output_tokens: 'Output tokens',
-} as const;
-
-const formatLimit = (n: number | undefined): string => n === undefined ? '—' : n.toLocaleString('en-US');
-
-const formatModalities = (mods: readonly string[] | undefined): string =>
-  mods === undefined || mods.length === 0 ? '—' : mods.join(', ');
-
-const formatEffort = (effort: { supported: readonly string[]; default: string } | undefined): string =>
-  effort === undefined ? '—' : `${effort.supported.join(', ')} (default: ${effort.default})`;
-
-const formatBudget = (range: { min?: number; max?: number } | undefined): string => {
-  if (range === undefined) return '—';
-  const { min, max } = range;
-  if (min === undefined && max === undefined) return '—';
-  if (min !== undefined && max !== undefined) return `${min}–${max}`;
-  if (min !== undefined) return `≥ ${min}`;
-  return `≤ ${max}`;
-};
-
-const formatFlag = (flag: boolean | undefined): string => flag === true ? 'yes' : flag === false ? 'no' : '—';
 </script>
 
 <template>
@@ -343,50 +322,17 @@ const formatFlag = (flag: boolean | undefined): string => flag === true ? 'yes' 
         </div>
 
         <div v-if="announcedSectionExpanded" id="announced-metadata-body" class="mt-4">
-          <AnnouncedMetadataEditor
-            v-if="overrideEnabled"
-            v-model="overrideBuffer"
+          <p v-if="!overrideEnabled" class="mb-3 text-xs text-gray-500">
+            Read-only — the intersection across every currently-available
+            target, with any rule-pinned sub-field treated as unsupported.
+            Enable override to publish a different payload to <code class="font-mono">/v1/models</code>.
+          </p>
+          <ChatMetadataEditor
+            :model-value="announcedEditorValue"
             :kind="kind"
+            :mode="overrideEnabled ? 'manual' : 'auto'"
+            @update:model-value="onAnnouncedChange"
           />
-          <div v-else class="space-y-3">
-            <p class="text-xs text-gray-500">
-              Read-only — the intersection across every currently-available
-              target, with any rule-pinned sub-field treated as unsupported.
-              Enable override to publish a different payload to <code class="font-mono">/v1/models</code>.
-            </p>
-            <dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
-              <div v-for="(label, key) in COMPUTED_LIMIT_LABELS" :key="key" class="flex items-baseline justify-between gap-3">
-                <dt class="text-gray-500">{{ label }}</dt>
-                <dd class="font-mono text-gray-300">{{ formatLimit(computedAnnouncedMetadata.limits?.[key]) }}</dd>
-              </div>
-              <template v-if="kind === 'chat'">
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Modalities (input)</dt>
-                  <dd class="font-mono text-gray-300">{{ formatModalities(computedAnnouncedMetadata.chat?.modalities?.input) }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Modalities (output)</dt>
-                  <dd class="font-mono text-gray-300">{{ formatModalities(computedAnnouncedMetadata.chat?.modalities?.output) }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Reasoning effort</dt>
-                  <dd class="font-mono text-gray-300">{{ formatEffort(computedAnnouncedMetadata.chat?.reasoning?.effort) }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Reasoning budget</dt>
-                  <dd class="font-mono text-gray-300">{{ formatBudget(computedAnnouncedMetadata.chat?.reasoning?.budget_tokens) }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Adaptive</dt>
-                  <dd class="font-mono text-gray-300">{{ formatFlag(computedAnnouncedMetadata.chat?.reasoning?.adaptive) }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-3">
-                  <dt class="text-gray-500">Mandatory</dt>
-                  <dd class="font-mono text-gray-300">{{ formatFlag(computedAnnouncedMetadata.chat?.reasoning?.mandatory) }}</dd>
-                </div>
-              </template>
-            </dl>
-          </div>
         </div>
       </section>
 
