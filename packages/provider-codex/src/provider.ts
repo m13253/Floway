@@ -2,7 +2,7 @@ import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cac
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
-import { codexResponsesChain } from './interceptors/responses/index.ts';
+import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
@@ -108,7 +108,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
         action,
       };
       return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
-        ctx, {}, codexResponsesChain<ProviderResponsesResult>(), async () => {
+        ctx, {}, CODEX_RESPONSES_BOUNDARY, async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
           const backendCall = { upstreamId: record.id, account, model, body: wireBody, headers: ctx.headers, signal, effects, call: opts };
