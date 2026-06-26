@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import type { ChatServeFailure } from '../shared/errors.ts';
+import { aliasNoTargetMessage, type ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -35,6 +35,6 @@ export const renderResponsesFailure = (
   case 'model-unsupported':
     return openAiErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support the /responses endpoint.`, failure.failedUpstreams));
   case 'alias-no-target-available':
-    return openAiErrorResult(404, `alias '${failure.aliasName}' has ${failure.targetCount} target(s); none currently map to an enabled upstream binding`);
+    return openAiErrorResult(404, aliasNoTargetMessage(failure));
   }
 };
