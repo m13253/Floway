@@ -204,6 +204,57 @@ test('generate native success wraps the upstream event stream once', async () =>
   wrapSpy.mockRestore();
 });
 
+test('generate upgrades snapshotMode to replace when input carries compaction_trigger, even under a WS-pinned append override', async () => {
+  // WS pins `snapshotMode: 'append'` so in-session snapshots survive when
+  // the caller opted out of durable storage. A turn whose input carries a
+  // `compaction_trigger` item is semantically a compaction — the upstream
+  // replaces history with a single summary — and the snapshot must follow
+  // suit. The pre-fix derivation used `override ?? trigger ? 'replace' :
+  // ...`, so the WS override short-circuited and the trigger-upgrade
+  // never ran; this test pins the post-fix behavior where the upgrade
+  // wins on shape grounds whenever the base mode is not 'none'.
+  installRepo();
+  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
+
+  const completedEvent: ResponsesStreamEvent = {
+    type: 'response.completed',
+    sequence_number: 0,
+    response: makeResponsesResult(),
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProviderEvents([completedEvent]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [
+        { type: 'message', role: 'user', content: 'kept message' },
+        { type: 'compaction_trigger' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    store,
+    candidate,
+    snapshotMode: 'append',
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(wrapSpy.mock.calls.length, 1);
+  assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
+
+  wrapSpy.mockRestore();
+});
+
 test('generate returns failure when rewrite throws item-not-found', async () => {
   installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
