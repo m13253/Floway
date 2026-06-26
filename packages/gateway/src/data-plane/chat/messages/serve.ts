@@ -1,10 +1,11 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
-import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
 import { resolveAndApplyAliasForMessages } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
+import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';

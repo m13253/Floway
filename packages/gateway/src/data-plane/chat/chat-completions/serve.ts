@@ -1,10 +1,11 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
-import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
 import { resolveAndApplyAliasForChatCompletions } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
+import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

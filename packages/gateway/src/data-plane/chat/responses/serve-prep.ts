@@ -1,9 +1,10 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
 import { resolveAndApplyAliasForResponses } from '../../model-aliases/serve-integration.ts';
 import { enumerateProviderCandidates, type ChatCandidate } from '../shared/candidates.ts';
+import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

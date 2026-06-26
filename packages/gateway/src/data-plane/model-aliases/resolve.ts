@@ -59,14 +59,6 @@ export class AliasNoTargetAvailableError extends Error {
   }
 }
 
-// Lift `AliasNoTargetAvailableError` into a `ChatServeFailure` so the
-// existing failure renderer can surface it without special-casing.
-export const aliasFailureFromError = (error: AliasNoTargetAvailableError): { kind: 'alias-no-target-available'; aliasName: string; targetCount: number } => ({
-  kind: 'alias-no-target-available',
-  aliasName: error.aliasName,
-  targetCount: error.targetCount,
-});
-
 interface ResolveAliasArgs {
   readonly modelName: string;
   readonly endpointKind: AliasEndpointKind;

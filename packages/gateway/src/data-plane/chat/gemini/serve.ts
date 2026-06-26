@@ -1,10 +1,11 @@
 import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
-import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
 import { resolveAndApplyAliasForGemini } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
+import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
