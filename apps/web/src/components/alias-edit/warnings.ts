@@ -11,12 +11,15 @@ import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/ty
 // unprefixed) resolves to that public id. The /api/models catalog already
 // emits the public id directly, so equality is enough; future prefix-form
 // surfaces can wire their normalisation in here without touching the
-// callers.
+// callers. Alias entries are excluded — at runtime target ids never
+// re-enter the alias layer, so the rule-warning lookup must compare against
+// the same "real model" surface the suggestion list and shadow-detection
+// helpers already use.
 export const findCatalogModel = (
   models: readonly ControlPlaneModel[] | null | undefined,
   targetModelId: string,
 ): ControlPlaneModel | undefined =>
-  (models ?? []).find(m => m.id === targetModelId);
+  (models ?? []).find(m => m.id === targetModelId && m.aliasedFrom === undefined);
 
 // Real (non-alias) model ids the operator can route to. Used by the
 // target-id combobox suggestion list and by the shadow-warning check.
