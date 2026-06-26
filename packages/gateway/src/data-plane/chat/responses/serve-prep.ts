@@ -106,7 +106,7 @@ export const prepareResponsesServePlan = async (args: {
     throw error;
   }
   const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
-  if (aliasResolution) {
+  if (aliasResolution !== null) {
     prepared.model = aliasResolution.targetModelId;
     applyChatRulesToResponses(prepared, aliasResolution.rules);
     ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);

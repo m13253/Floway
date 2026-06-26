@@ -22,7 +22,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
     enumerateProviderCandidates: vi.fn(async (_args: { model: string }) => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
+      return { ...next, failedUpstreams: [], aliasResolution: null };
     }),
   };
 });

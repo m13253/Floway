@@ -38,7 +38,7 @@ export const enumerateProviderCandidates = async ({
   readonly candidates: readonly ChatCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-  readonly aliasResolution?: AliasResolution;
+  readonly aliasResolution: AliasResolution | null;
 }> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
@@ -87,6 +87,6 @@ export const enumerateProviderCandidates = async ({
     candidates,
     sawModel,
     failedUpstreams,
-    ...(aliasResolution !== null ? { aliasResolution } : {}),
+    aliasResolution,
   };
 };

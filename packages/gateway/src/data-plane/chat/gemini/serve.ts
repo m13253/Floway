@@ -50,7 +50,7 @@ export const geminiServe = {
     }
     const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
     const model = aliasResolution?.targetModelId ?? args.model;
-    if (aliasResolution) {
+    if (aliasResolution !== null) {
       applyChatRulesToGemini(payload, aliasResolution.rules);
       ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
     }
@@ -93,7 +93,7 @@ export const geminiServe = {
     }
     const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
     const model = aliasResolution?.targetModelId ?? args.model;
-    if (aliasResolution) {
+    if (aliasResolution !== null) {
       applyChatRulesToGemini(payload, aliasResolution.rules);
       ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
     }

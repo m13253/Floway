@@ -39,7 +39,7 @@ export const chatCompletionsServe = {
       throw error;
     }
     const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
-    if (aliasResolution) {
+    if (aliasResolution !== null) {
       payload.model = aliasResolution.targetModelId;
       applyChatRulesToChatCompletions(payload, aliasResolution.rules);
       ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);

@@ -45,7 +45,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
       lastCandidatesCall.model = effectiveModel;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return { ...next, failedUpstreams: [], ...(aliasResolution !== null ? { aliasResolution } : {}) };
+      return { ...next, failedUpstreams: [], aliasResolution };
     }),
   };
 });

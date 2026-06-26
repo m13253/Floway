@@ -152,7 +152,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       throw e;
     }
     const { matches, failedUpstreams, aliasResolution } = resolution;
-    if (aliasResolution) ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    if (aliasResolution !== null) ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);

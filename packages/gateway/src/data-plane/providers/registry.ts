@@ -272,7 +272,7 @@ interface ModelResolution {
   // otherwise. `AliasNoTargetAvailableError` is thrown out of
   // `resolveModelForRequest` itself when the alias exists but has no
   // routable target, and is caught at each protocol's serve seam.
-  aliasResolution?: AliasResolution;
+  aliasResolution: AliasResolution | null;
 }
 
 export interface ProviderModelResolution {
@@ -393,7 +393,7 @@ export const resolveModelForRequest = async (
   return {
     matches: resolutions.map(r => r.resolved),
     failedUpstreams,
-    ...(aliasResolution !== null ? { aliasResolution } : {}),
+    aliasResolution,
   };
 };
 

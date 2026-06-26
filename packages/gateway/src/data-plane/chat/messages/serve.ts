@@ -46,7 +46,7 @@ export const messagesServe = {
       throw error;
     }
     const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
-    if (aliasResolution) {
+    if (aliasResolution !== null) {
       payload.model = aliasResolution.targetModelId;
       applyChatRulesToMessages(payload, aliasResolution.rules);
       ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
@@ -86,7 +86,7 @@ export const messagesServe = {
       throw error;
     }
     const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
-    if (aliasResolution) {
+    if (aliasResolution !== null) {
       payload.model = aliasResolution.targetModelId;
       applyChatRulesToMessages(payload, aliasResolution.rules);
       ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
