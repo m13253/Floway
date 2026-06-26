@@ -79,7 +79,7 @@ export const responsesAttempt = {
       headers,
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
-      await dispatchResponses(invocation, ctx, store, candidate));
+      await dispatchResponses(invocation, ctx));
 
     if (chainResult.type !== 'events') return chainResult;
 
@@ -215,9 +215,8 @@ const rewriteOrRenderFailure = async (
 const dispatchResponses = async (
   invocation: ResponsesInvocation,
   ctx: GatewayCtx,
-  store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const { candidate, store } = invocation;
   switch (candidate.targetApi) {
   case 'responses': {
     const recorder = createUpstreamLatencyRecorder();
