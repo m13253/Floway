@@ -85,14 +85,6 @@ export type ProviderResponsesResult =
   | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
-// Pre-tagging shape used internally by codex's unary compact backend call;
-// the provider's `callResponses` terminal re-tags it onto the unified result
-// with `action: 'compact'`. Other providers build the tagged compact variant
-// directly at their call sites.
-export type ProviderCompactionResult =
-  | { ok: true; result: ResponsesResult; modelKey: string }
-  | { ok: false; response: Response; modelKey: string };
-
 // Per-call observation hooks the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.
