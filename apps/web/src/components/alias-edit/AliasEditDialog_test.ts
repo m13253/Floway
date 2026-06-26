@@ -165,4 +165,98 @@ describe('AliasEditDialog', () => {
     expect(document.body.innerHTML).toContain('<strong class="font-semibold">GPT 5</strong>');
     w.unmount();
   });
+
+  // ── Announced metadata section ────────────────────────────────────────
+
+  // The section header always renders for chat/embedding; the body only
+  // renders the editor when the "Enable override" switch is on. Image
+  // aliases never see the section at all.
+
+  const expandAnnouncedSection = async () => {
+    const header = portalQueryAll<HTMLButtonElement>('button').find(b => (b.textContent ?? '').includes('Announced metadata'))!;
+    header.click();
+    await nextTick();
+  };
+
+  const announcedSwitch = (): HTMLButtonElement => {
+    // The override switch sits at the right end of the section header
+    // row. Reka-UI renders Switch as a <button role="switch">, so scan
+    // by role + the surrounding "Enable override" label.
+    const label = Array.from(document.body.querySelectorAll<HTMLLabelElement>('label')).find(l => (l.textContent ?? '').includes('Enable override'))!;
+    return label.querySelector<HTMLButtonElement>('button[role="switch"]')!;
+  };
+
+  it('announced metadata: override off → editor not rendered; the read-only view appears in its place', async () => {
+    const w = mount(AliasEditDialog, {
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      attachTo: document.body,
+    });
+    await nextTick();
+    await expandAnnouncedSection();
+
+    // The override switch is present but off.
+    expect(announcedSwitch().getAttribute('aria-checked')).toBe('false');
+    // The editor's distinctive "Effort levels" toggle does not render.
+    expect(portalText()).not.toContain('Effort levels');
+    // Instead the read-only summary copy appears.
+    expect(portalText()).toContain('Read-only');
+    w.unmount();
+  });
+
+  it('announced metadata: toggling override on renders the editor seeded with the computed view', async () => {
+    modelsRef.value = [
+      {
+        id: 'gpt-5',
+        display_name: 'GPT 5',
+        kind: 'chat',
+        upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+        chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } },
+      },
+    ];
+    const w = mount(AliasEditDialog, {
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      attachTo: document.body,
+    });
+    await nextTick();
+    await expandAnnouncedSection();
+
+    announcedSwitch().click();
+    await nextTick();
+
+    // The editor's distinctive toggles render once the override is on.
+    expect(portalText()).toContain('Effort levels');
+    expect(portalText()).toContain('Budget tokens');
+    // The frozen seed includes the computed `medium` default, so the
+    // editor's pinned-default tag for `medium` is part of the visible DOM.
+    expect(portalText()).toContain('medium');
+    w.unmount();
+  });
+
+  it('announced metadata: toggling override off discards the buffer and restores the read-only view', async () => {
+    const w = mount(AliasEditDialog, {
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      attachTo: document.body,
+    });
+    await nextTick();
+    await expandAnnouncedSection();
+
+    const sw = announcedSwitch();
+    sw.click(); await nextTick();
+    expect(portalText()).toContain('Effort levels');
+    sw.click(); await nextTick();
+    // The editor unmounts and the read-only summary is back.
+    expect(portalText()).not.toContain('Effort levels');
+    expect(portalText()).toContain('Read-only');
+    w.unmount();
+  });
+
+  it('announced metadata: image-kind aliases never see the section', async () => {
+    const w = mount(AliasEditDialog, {
+      props: { open: true, record: baseAlias({ name: 'img', kind: 'image', targets: [{ target_model_id: 'dalle', rules: {} as never }] }) },
+      attachTo: document.body,
+    });
+    await nextTick();
+    expect(portalText()).not.toContain('Announced metadata');
+    w.unmount();
+  });
 });

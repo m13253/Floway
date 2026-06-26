@@ -1,15 +1,17 @@
 <script setup lang="ts">
 // Editor for one alias (create or edit). Top form (name / display name /
 // kind / selection); a vertical stack of AliasTargetRow cards with an
-// "Add target" button; alias-level warnings card; footer (visibility
-// switch + Cancel / Save).
+// "Add target" button; an Announced-metadata section; alias-level
+// warnings card; footer (visibility switch + Cancel / Save).
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
+import { computeAnnouncedMetadata } from './announced-metadata.ts';
+import AnnouncedMetadataEditor from './AnnouncedMetadataEditor.vue';
 import { computeShadowWarning, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
-import type { AliasKind, AliasSelection, AliasTarget, ChatAliasRules, ModelAlias } from '../../api/types.ts';
+import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useRawModelsStore } from '../../composables/useModels.ts';
 import { Button, Dialog, Input, Select, Switch } from '@floway-dev/ui';
@@ -77,6 +79,60 @@ const removeTarget = (idx: number) => {
   targets.value = targets.value.filter((_, i) => i !== idx);
 };
 
+// ── Announced metadata ──────────────────────────────────────────────────
+//
+// The override is a sparse AnnouncedMetadata; null means "compute
+// automatically at listing time". When the operator flips the override
+// switch on, we freeze the current computed view into the buffer so the
+// editor starts from a sensible baseline; flipping back off discards
+// the buffer and resets the wire payload to null so the next render
+// snaps back to the live computed view.
+
+const announcedOverride = ref<AnnouncedMetadata | null>(props.record?.announced_metadata ?? null);
+
+const computedAnnouncedMetadata = computed<AnnouncedMetadata>(() =>
+  computeAnnouncedMetadata(targets.value, kind.value, modelsStore.models.value));
+
+const overrideEnabled = computed<boolean>(() => announcedOverride.value !== null);
+
+const showAnnouncedSection = computed(() => kind.value !== 'image');
+
+const announcedSectionExpanded = ref(false);
+const toggleAnnouncedSection = () => { announcedSectionExpanded.value = !announcedSectionExpanded.value; };
+
+const setOverrideEnabled = (on: boolean) => {
+  if (on) {
+    // Freeze the live computed view into the working state — the
+    // operator's edits start from what the wire surface would have
+    // emitted, so a blank override doesn't visually erase the alias's
+    // metadata.
+    announcedOverride.value = structuredClone(computedAnnouncedMetadata.value);
+  } else {
+    announcedOverride.value = null;
+  }
+};
+
+// Two-way binding for the editor: writes flow back to the buffer.
+const overrideBuffer = computed<AnnouncedMetadata>({
+  get: () => announcedOverride.value ?? {},
+  set: next => { announcedOverride.value = next; },
+});
+
+// Switching alias kind discards a chat-only override since the
+// schema would reject it on save (e.g. embedding aliases can not
+// carry a `chat` block).
+watch(kind, k => {
+  if (announcedOverride.value === null) return;
+  if (k === 'image') {
+    announcedOverride.value = null;
+    return;
+  }
+  if (k === 'embedding' && announcedOverride.value.chat !== undefined) {
+    const { chat: _drop, ...rest } = announcedOverride.value;
+    announcedOverride.value = rest;
+  }
+});
+
 // Suggestion list for every target-id combobox. Filtered to non-alias
 // catalog rows of the alias's current kind so an embedding alias only
 // hints at embedding models. Aliases never re-enter the alias layer at
@@ -125,7 +181,7 @@ const save = async () => {
       target_model_id: t.target_model_id.trim(),
       rules: t.rules as Record<string, unknown>,
     })),
-    announced_metadata: (props.record?.announced_metadata ?? null) as Record<string, unknown> | null,
+    announced_metadata: announcedOverride.value as Record<string, unknown> | null,
     sort_order: props.record?.sort_order ?? 0,
   };
 
@@ -156,6 +212,35 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
 ];
+
+// Labels + formatters for the read-only view of the auto-computed
+// announced metadata. Keeping them inline (rather than reusing the
+// editor in disabled mode) keeps the override-off render compact and
+// avoids dragging the editor's mutation surface into a read path.
+const COMPUTED_LIMIT_LABELS = {
+  max_context_window_tokens: 'Context window',
+  max_prompt_tokens: 'Prompt tokens',
+  max_output_tokens: 'Output tokens',
+} as const;
+
+const formatLimit = (n: number | undefined): string => n === undefined ? '—' : n.toLocaleString('en-US');
+
+const formatModalities = (mods: readonly string[] | undefined): string =>
+  mods === undefined || mods.length === 0 ? '—' : mods.join(', ');
+
+const formatEffort = (effort: { supported: readonly string[]; default: string } | undefined): string =>
+  effort === undefined ? '—' : `${effort.supported.join(', ')} (default: ${effort.default})`;
+
+const formatBudget = (range: { min?: number; max?: number } | undefined): string => {
+  if (range === undefined) return '—';
+  const { min, max } = range;
+  if (min === undefined && max === undefined) return '—';
+  if (min !== undefined && max !== undefined) return `${min}–${max}`;
+  if (min !== undefined) return `≥ ${min}`;
+  return `≤ ${max}`;
+};
+
+const formatFlag = (flag: boolean | undefined): string => flag === true ? 'yes' : flag === false ? 'no' : '—';
 </script>
 
 <template>
@@ -226,6 +311,84 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
           />
         </div>
       </div>
+
+      <section v-if="showAnnouncedSection" class="border-t border-white/[0.06] pt-5">
+        <div class="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            class="flex flex-1 min-w-0 items-start gap-2 text-left"
+            :aria-expanded="announcedSectionExpanded"
+            aria-controls="announced-metadata-body"
+            @click="toggleAnnouncedSection"
+          >
+            <svg
+              class="mt-0.5 size-3.5 shrink-0 self-center text-gray-500 transition-transform"
+              :class="announcedSectionExpanded && 'rotate-90'"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+            <div class="min-w-0">
+              <h4 class="text-sm font-semibold text-gray-300">Announced metadata</h4>
+              <p class="mt-0.5 text-xs text-gray-500">What <code class="font-mono">/v1/models</code> reports about this alias.</p>
+            </div>
+          </button>
+          <label class="flex shrink-0 cursor-pointer items-center gap-2">
+            <Switch :model-value="overrideEnabled" @update:model-value="v => setOverrideEnabled(v === true)" />
+            <span class="text-xs text-gray-400">Enable override</span>
+          </label>
+        </div>
+
+        <div v-if="announcedSectionExpanded" id="announced-metadata-body" class="mt-4">
+          <AnnouncedMetadataEditor
+            v-if="overrideEnabled"
+            v-model="overrideBuffer"
+            :kind="kind"
+          />
+          <div v-else class="space-y-3">
+            <p class="text-xs text-gray-500">
+              Read-only — the intersection across every currently-available
+              target, with any rule-pinned sub-field treated as unsupported.
+              Enable override to publish a different payload to <code class="font-mono">/v1/models</code>.
+            </p>
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+              <div v-for="(label, key) in COMPUTED_LIMIT_LABELS" :key="key" class="flex items-baseline justify-between gap-3">
+                <dt class="text-gray-500">{{ label }}</dt>
+                <dd class="font-mono text-gray-300">{{ formatLimit(computedAnnouncedMetadata.limits?.[key]) }}</dd>
+              </div>
+              <template v-if="kind === 'chat'">
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Modalities (input)</dt>
+                  <dd class="font-mono text-gray-300">{{ formatModalities(computedAnnouncedMetadata.chat?.modalities?.input) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Modalities (output)</dt>
+                  <dd class="font-mono text-gray-300">{{ formatModalities(computedAnnouncedMetadata.chat?.modalities?.output) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Reasoning effort</dt>
+                  <dd class="font-mono text-gray-300">{{ formatEffort(computedAnnouncedMetadata.chat?.reasoning?.effort) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Reasoning budget</dt>
+                  <dd class="font-mono text-gray-300">{{ formatBudget(computedAnnouncedMetadata.chat?.reasoning?.budget_tokens) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Adaptive</dt>
+                  <dd class="font-mono text-gray-300">{{ formatFlag(computedAnnouncedMetadata.chat?.reasoning?.adaptive) }}</dd>
+                </div>
+                <div class="flex items-baseline justify-between gap-3">
+                  <dt class="text-gray-500">Mandatory</dt>
+                  <dd class="font-mono text-gray-300">{{ formatFlag(computedAnnouncedMetadata.chat?.reasoning?.mandatory) }}</dd>
+                </div>
+              </template>
+            </dl>
+          </div>
+        </div>
+      </section>
 
       <div v-if="shadowWarning" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
         This alias name shadows a real model id:
