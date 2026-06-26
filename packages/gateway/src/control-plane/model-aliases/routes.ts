@@ -43,12 +43,23 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
   const existing = await repo.modelAliases.getByAlias(aliasName);
   if (!existing) return c.json({ error: 'Alias not found' }, 404);
 
+  // Rename runs first so the merged save below targets the row at its new
+  // PK. A no-op (alias unchanged or omitted) returns ok without touching
+  // the row.
+  const nextAlias = body.alias ?? existing.alias;
+  if (nextAlias !== existing.alias) {
+    const renamed = await repo.modelAliases.rename(existing.alias, nextAlias);
+    if (!renamed.ok) {
+      return c.json({ error: { type: 'conflict', message: `Alias "${nextAlias}" already exists` } }, 409);
+    }
+  }
+
   // Field-by-field merge so an absent field preserves the existing value.
   // `displayName` accepts an explicit null to clear the operator-set label
   // back to the synthesized fallback; we use Object.hasOwn to keep the
   // absent / null distinction that `??` would collapse.
   const merged: ModelAlias = {
-    alias: existing.alias,
+    alias: nextAlias,
     targetModelId: body.targetModelId ?? existing.targetModelId,
     upstreamIds: body.upstreamIds ?? existing.upstreamIds,
     rules: body.rules ?? existing.rules,

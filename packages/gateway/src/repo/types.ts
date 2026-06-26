@@ -349,6 +349,11 @@ export interface ModelAliasesRepo {
   // UPSERT — used by the PATCH update path; preserves created_at on re-save
   // and bumps updated_at.
   save(alias: ModelAlias): Promise<void>;
+  // Updates the PK in place. Returns `notFound` when the source row is
+  // missing, `duplicate` when the destination name already exists; the
+  // route layer maps those to 404 / 409. SQLite (and D1) permit UPDATEing
+  // a PRIMARY KEY column.
+  rename(oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }>;
   // Returns whether a row was actually removed; routes treat false as 404.
   delete(alias: string): Promise<{ deleted: boolean }>;
 }

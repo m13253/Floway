@@ -35,7 +35,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import { deleteAlias, getAliasByName, insertAlias, loadAllAliases, saveAlias } from '../control-plane/model-aliases/repo.ts';
+import { deleteAlias, getAliasByName, insertAlias, loadAllAliases, renameAlias, saveAlias } from '../control-plane/model-aliases/repo.ts';
 import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
@@ -1639,6 +1639,10 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
 
   save(alias: ModelAlias): Promise<void> {
     return saveAlias(this.db, alias);
+  }
+
+  rename(oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }> {
+    return renameAlias(this.db, oldAlias, newAlias);
   }
 
   delete(alias: string): Promise<{ deleted: boolean }> {

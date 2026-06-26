@@ -694,10 +694,13 @@ export const createAliasBody = z.object({
   displayName: z.string().min(1).optional(),
 });
 
-// PATCH accepts a partial shape. `displayName` is nullable so the operator
-// can clear an existing label back to the synthesized fallback; absent vs.
-// null is meaningful and propagated through to the handler via Object.hasOwn.
+// PATCH accepts a partial shape. `alias` is the row's primary key — when
+// present and different from the path param, the handler renames the row
+// (409 on collision). `displayName` is nullable so the operator can clear
+// an existing label back to the synthesized fallback; absent vs. null is
+// meaningful and propagated through to the handler via Object.hasOwn.
 export const updateAliasBody = z.object({
+  alias: aliasNameSchema.optional(),
   targetModelId: z.string().min(1).optional(),
   upstreamIds: upstreamIdsSchema.optional(),
   rules: aliasRulesSchema.optional(),

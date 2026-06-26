@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { loadAllAliases } from './repo.ts';
+import { loadAllAliases, renameAlias } from './repo.ts';
 import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -119,4 +119,54 @@ test('loadAllAliases surfaces malformed upstream_ids_json as a descriptive error
     .run();
 
   await assertRejects(() => loadAllAliases(db), Error, 'Malformed model_aliases upstream_ids_json for bad-upstreams');
+});
+
+test('renameAlias updates the PRIMARY KEY in place', async () => {
+  const db = await createSqliteTestDb();
+  await db.exec('DELETE FROM model_aliases');
+  await db
+    .prepare(
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, display_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind('source', 'gpt-5.4', '[]', '{}', 1, 'real-only', 'Source Label', 1_700_000_000)
+    .run();
+
+  const result = await renameAlias(db, 'source', 'renamed');
+  assertEquals(result, { ok: true });
+
+  const remaining = await loadAllAliases(db);
+  assertEquals(remaining.map(a => a.alias), ['renamed']);
+  // Preserved row payload — only the PK changed; createdAt and displayName intact.
+  assertEquals(remaining[0]!.displayName, 'Source Label');
+  assertEquals(remaining[0]!.createdAt, 1_700_000_000);
+});
+
+test('renameAlias returns notFound when the source row is missing', async () => {
+  const db = await createSqliteTestDb();
+  await db.exec('DELETE FROM model_aliases');
+  const result = await renameAlias(db, 'ghost', 'new-name');
+  assertEquals(result, { ok: false, reason: 'notFound' });
+});
+
+test('renameAlias returns duplicate when the destination row already exists', async () => {
+  const db = await createSqliteTestDb();
+  await db.exec('DELETE FROM model_aliases');
+  await db
+    .prepare(
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind('source', 'gpt-5.4', '[]', '{}', 1, 'real-only', 1_700_000_000)
+    .run();
+  await db
+    .prepare(
+      'INSERT INTO model_aliases (alias, target_model_id, upstream_ids_json, rules_json, visible_in_models_list, on_conflict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind('taken', 'gpt-5.4', '[]', '{}', 1, 'real-only', 1_700_000_001)
+    .run();
+
+  const result = await renameAlias(db, 'source', 'taken');
+  assertEquals(result, { ok: false, reason: 'duplicate' });
+  // Both rows still present.
+  const remaining = (await loadAllAliases(db)).map(a => a.alias).sort();
+  assertEquals(remaining, ['source', 'taken']);
 });

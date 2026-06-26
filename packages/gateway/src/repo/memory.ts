@@ -948,6 +948,16 @@ export class MemoryModelAliasesRepo implements ModelAliasesRepo {
     return Promise.resolve();
   }
 
+  rename(oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }> {
+    if (oldAlias === newAlias) return Promise.resolve({ ok: true });
+    if (this.rows.has(newAlias)) return Promise.resolve({ ok: false, reason: 'duplicate' });
+    const existing = this.rows.get(oldAlias);
+    if (!existing) return Promise.resolve({ ok: false, reason: 'notFound' });
+    this.rows.delete(oldAlias);
+    this.rows.set(newAlias, { ...existing, alias: newAlias });
+    return Promise.resolve({ ok: true });
+  }
+
   delete(alias: string): Promise<{ deleted: boolean }> {
     return Promise.resolve({ deleted: this.rows.delete(alias) });
   }

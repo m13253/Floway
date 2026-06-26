@@ -73,6 +73,26 @@ export const deleteAlias = async (db: SqlDatabase, alias: string): Promise<{ del
   return { deleted: (result.meta.changes ?? 0) > 0 };
 };
 
+// Updates the PK column in place. A pre-flight SELECT detects the destination
+// collision so the caller gets a structured `duplicate` reason instead of a
+// driver-specific SQLITE_CONSTRAINT thrown error (shape differs between
+// node:sqlite and D1). `meta.changes === 0` after the UPDATE means the source
+// row was gone — propagated as `notFound` for the 404 mapping.
+export const renameAlias = async (db: SqlDatabase, oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }> => {
+  if (oldAlias === newAlias) return { ok: true };
+  const conflict = await db
+    .prepare('SELECT 1 FROM model_aliases WHERE alias = ?')
+    .bind(newAlias)
+    .first<{ 1: number }>();
+  if (conflict) return { ok: false, reason: 'duplicate' };
+  const result = await db
+    .prepare('UPDATE model_aliases SET alias = ?, updated_at = unixepoch() WHERE alias = ?')
+    .bind(newAlias, oldAlias)
+    .run();
+  if ((result.meta.changes ?? 0) === 0) return { ok: false, reason: 'notFound' };
+  return { ok: true };
+};
+
 const bindValues = (alias: ModelAlias): unknown[] => [
   alias.alias,
   alias.targetModelId,

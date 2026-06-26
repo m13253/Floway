@@ -204,6 +204,93 @@ test('PATCH /api/aliases/:alias returns 404 when the alias does not exist', asyn
   assertEquals(resp.status, 404);
 });
 
+test('PATCH /api/aliases/:alias renames the row when body.alias differs from the path', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.save({
+    alias: 'old-name',
+    targetModelId: 'gpt-5.4',
+    upstreamIds: ['up_a'],
+    rules: { reasoning: { effort: 'high' } },
+    visibleInModelsList: true,
+    onConflict: 'real-only',
+    displayName: 'Old Label',
+    createdAt: 1_700_000_000,
+  });
+
+  const resp = await requestApp('/api/aliases/old-name', authedJson(adminSession, 'PATCH', {
+    alias: 'new-name',
+    rules: { reasoning: { effort: 'medium' } },
+  }));
+  assertEquals(resp.status, 200);
+  const updated = (await resp.json()) as SerializedModelAlias;
+  // Response carries the new alias and the patched rules; preserved fields stay intact.
+  assertEquals(updated.alias, 'new-name');
+  assertEquals(updated.target_model_id, 'gpt-5.4');
+  assertEquals(updated.upstream_ids, ['up_a']);
+  assertEquals(updated.rules, { reasoning: { effort: 'medium' } });
+  assertEquals(updated.display_name, 'Old Label');
+  assertEquals(updated.created_at, 1_700_000_000);
+
+  // Repo state: old row gone, new row present.
+  assertEquals(await repo.modelAliases.getByAlias('old-name'), null);
+  const stored = await repo.modelAliases.getByAlias('new-name');
+  assertEquals(stored?.alias, 'new-name');
+  assertEquals(stored?.rules, { reasoning: { effort: 'medium' } });
+});
+
+test('PATCH /api/aliases/:alias returns 409 when body.alias collides with an existing row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.save({
+    alias: 'source',
+    targetModelId: 'gpt-5.4',
+    upstreamIds: [],
+    rules: {},
+    visibleInModelsList: true,
+    onConflict: 'real-only',
+    createdAt: 1_700_000_000,
+  });
+  await repo.modelAliases.save({
+    alias: 'taken',
+    targetModelId: 'gpt-5.4',
+    upstreamIds: [],
+    rules: {},
+    visibleInModelsList: true,
+    onConflict: 'real-only',
+    createdAt: 1_700_000_001,
+  });
+
+  const resp = await requestApp('/api/aliases/source', authedJson(adminSession, 'PATCH', { alias: 'taken' }));
+  assertEquals(resp.status, 409);
+  const body = (await resp.json()) as { error: { type: string; message: string } };
+  assertEquals(body.error.type, 'conflict');
+
+  // Both rows untouched.
+  assertEquals((await repo.modelAliases.getByAlias('source'))?.alias, 'source');
+  assertEquals((await repo.modelAliases.getByAlias('taken'))?.alias, 'taken');
+});
+
+test('PATCH /api/aliases/:alias treats body.alias === path as a no-op rename', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.save({
+    alias: 'same-name',
+    targetModelId: 'gpt-5.4',
+    upstreamIds: [],
+    rules: {},
+    visibleInModelsList: true,
+    onConflict: 'real-only',
+    createdAt: 1_700_000_000,
+  });
+
+  const resp = await requestApp('/api/aliases/same-name', authedJson(adminSession, 'PATCH', {
+    alias: 'same-name',
+    targetModelId: 'claude-opus-4-6',
+  }));
+  assertEquals(resp.status, 200);
+  const updated = (await resp.json()) as SerializedModelAlias;
+  assertEquals(updated.alias, 'same-name');
+  assertEquals(updated.target_model_id, 'claude-opus-4-6');
+});
+
 test('PATCH /api/aliases/:alias requires admin auth', async () => {
   const { repo, adminSession: _adminSession, apiKey } = await setupAppTest();
   await repo.modelAliases.save({
