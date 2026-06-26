@@ -86,9 +86,8 @@ export const responsesAttempt = {
     // outer result) therefore steer storage end-to-end. The generate branch
     // has one extra wrinkle handled below — a trigger item that survived
     // the chain forces a 'replace' snapshot.
-    const effectiveAction = invocation.action;
     const responseId = createStoredResponseId();
-    if (effectiveAction === 'compact') {
+    if (invocation.action === 'compact') {
       // Drain the events into a single envelope and return the value branch
       // so the http compact endpoint can JSON-encode it directly. Storage
       // still runs over the synthesized event stream so the snapshot is
