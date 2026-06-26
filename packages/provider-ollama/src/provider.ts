@@ -148,26 +148,26 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
       switch (action) {
-        case 'generate': {
-          const stream = await callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts);
-          return stream.ok
-            ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-            : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
-        }
-        case 'compact': {
-          const rawModelId = rawModelIdOf(model);
-          const response = await ollamaFetchResponsesCompact(
-            config,
-            { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-            { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
-          );
-          return response.ok
-            ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-            : { action: 'compact', ok: false, response, modelKey: rawModelId };
-        }
-        default:
-          action satisfies never;
-          throw new Error(`Unhandled ResponsesAction: ${action as string}`);
+      case 'generate': {
+        const stream = await callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
+      case 'compact': {
+        const rawModelId = rawModelIdOf(model);
+        const response = await ollamaFetchResponsesCompact(
+          config,
+          { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        );
+        return response.ok
+          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+      }
+      default:
+        action satisfies never;
+        throw new Error(`Unhandled ResponsesAction: ${action as string}`);
       }
     },
     callMessages: (model, body, signal, opts) => callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, opts),
