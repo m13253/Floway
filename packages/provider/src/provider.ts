@@ -77,15 +77,10 @@ export type ProviderStreamResult<TEvent> =
 // endpoint and produce the envelope directly; others synthesize the envelope
 // from a regular /responses turn — both return the typed value rather than a
 // re-parsed synthesized SSE body. The unified discriminated result tags which
-// branch actually ran (a provider-internal interceptor could in principle flip
-// the action between the call and the inner dispatch, though none does today),
-// so downstream consumers — snapshot mode in particular — switch on the result
-// rather than relying on the caller's input.
-// `ok: false` on either variant carries the raw upstream Response verbatim so
-// the gateway boundary can relay status + body + headers unchanged. Non-2xx-
-// but-not-SSE responses on the generate branch throw from the provider as a
-// contract violation (provider always forces stream=true on streaming
-// endpoints).
+// branch actually ran, so downstream consumers — snapshot mode in particular —
+// switch on the result rather than relying on the caller's input.
+// `ok: false` carries the raw upstream Response verbatim; see
+// `ProviderStreamResult` above for the boundary-relay contract.
 export type ProviderResponsesResult =
   | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; modelKey: string; headers?: Headers }
   | { action: 'generate'; ok: false; response: Response; modelKey: string }

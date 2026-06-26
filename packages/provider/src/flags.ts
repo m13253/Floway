@@ -72,16 +72,6 @@ export const OPTIONAL_FLAGS = [
     description: "Execute the Responses `image_generation` hosted tool through the gateway's image-capable upstream (gpt-image-*) instead of forwarding it to a Responses upstream. The orchestrator model calls a generated function tool; the shim drives the standalone /images/{generations,edits} backend and synthesizes the native image_generation_call lifecycle. (When a Responses request is routed to a non-Responses backend, the shim always runs regardless of this flag, because those targets cannot carry the hosted image_generation tool.)",
     defaultFor: ALL_PROVIDER_KINDS.filter(p => !['codex', 'claude-code'].includes(p)),
   },
-  // Compact-shim intercepts a Responses `action: 'compact'` request,
-  // summarizes the conversation against the SUMMARIZATION_PROMPT (vendored
-  // from openai/codex), and synthesizes a `response.compaction` envelope
-  // that round-trips through the gateway's snapshot layer. Default ON for
-  // upstream kinds that have no native compaction wire (claude-code routes
-  // Messages-only so any compact request is a routing error without the
-  // shim; ollama exposes `/v1/responses` but no compaction endpoint). Off
-  // by default for the four kinds with a known compaction path (codex's
-  // RemoteCompactionV2 on /codex/responses; copilot's synth-via-trigger;
-  // azure/custom can passthrough to a native /v1/responses/compact).
   {
     id: 'responses-compact-shim',
     label: 'Responses compact shim',
