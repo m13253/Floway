@@ -593,6 +593,89 @@ export const searchConfigSchema = z.object({
   jina: z.object({ apiKey: z.string() }),
 });
 
+// --- model aliases ---
+
+// Per-target chat rules. Field names mirror the IR slot each value overlays —
+// `reasoning.effort` / `verbosity` / `serviceTier` flow verbatim onto the
+// outbound request, so the schema does not narrow them against the target's
+// advertised capability metadata (the spec calls for verbatim forwarding so
+// the operator can drive a feature the catalog doesn't yet advertise).
+const chatAliasReasoningSchema = z.object({
+  effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).optional(),
+  budget_tokens: z.number().int().nonnegative().optional(),
+  adaptive: z.boolean().optional(),
+  summary: z.enum(['auto', 'concise', 'detailed', 'none']).optional(),
+  mandatory: z.boolean().optional(),
+}).strict();
+
+const chatAliasRulesSchema = z.object({
+  reasoning: chatAliasReasoningSchema.optional(),
+  verbosity: z.enum(['low', 'medium', 'high']).optional(),
+  serviceTier: z.enum(['default', 'flex', 'priority', 'scale', 'fast']).optional(),
+}).strict();
+
+// Rules are validated against the alias-level kind in a superRefine pass on
+// the body schema below — chat-kind aliases accept ChatAliasRules; other kinds
+// require an empty object. Each target_model_id is opaque (no `/` semantics
+// inside the alias layer), so the only structural check is non-emptiness.
+const aliasTargetSchema = z.object({
+  target_model_id: z.string().min(1),
+  rules: z.record(z.string(), z.unknown()),
+});
+
+const aliasBaseShape = {
+  name: z.string().min(1),
+  kind: z.enum(['chat', 'embedding', 'image']),
+  selection: z.enum(['random', 'first-available']),
+  display_name: z.string().min(1).nullable(),
+  visible_in_models_list: z.boolean(),
+  targets: z.array(aliasTargetSchema).min(1),
+  sort_order: z.number().int().optional(),
+};
+
+const aliasBodyCore = z.object(aliasBaseShape);
+
+// superRefine cross-validates each target's `rules` against the alias-level
+// kind. For chat: parse through chatAliasRulesSchema and surface the inner
+// issue verbatim. For embedding / image: today there are no per-target rules,
+// so the slot must be `{}` — populating it later just needs a fresh schema.
+const aliasBodyRulesRefinement = (
+  value: z.infer<typeof aliasBodyCore>,
+  ctx: z.core.$RefinementCtx,
+): void => {
+  value.targets.forEach((target, index) => {
+    if (value.kind === 'chat') {
+      const parsed = chatAliasRulesSchema.safeParse(target.rules);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          ctx.issues.push({
+            code: 'custom',
+            message: issue.message,
+            path: ['targets', index, 'rules', ...issue.path],
+            input: target.rules,
+          });
+        }
+      }
+      return;
+    }
+    if (Object.keys(target.rules).length !== 0) {
+      ctx.issues.push({
+        code: 'custom',
+        message: `rules must be empty for kind=${value.kind}`,
+        path: ['targets', index, 'rules'],
+        input: target.rules,
+      });
+    }
+  });
+};
+
+// Create and update share the same body shape — the difference is operational:
+// create rejects PK collisions, update reads the path `:name` as the old name
+// and treats a different `body.name` as a rename. Splitting them keeps the
+// type names self-documenting at the RPC-client surface.
+export const createAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
+export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinement);
+
 // --- data transfer ---
 
 export const importBody = z.object({
