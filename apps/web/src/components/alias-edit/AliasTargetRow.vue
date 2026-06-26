@@ -175,8 +175,8 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
       </div>
     </header>
 
-    <div v-if="expanded" class="space-y-3 border-t border-white/[0.06] p-3">
-      <template v-if="kind === 'chat'">
+    <div v-if="expanded" class="border-t border-white/[0.06] p-3">
+      <div v-if="kind === 'chat'" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning effort</label>
           <Combobox
@@ -245,7 +245,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           />
           <p v-if="warningFor('serviceTier')" class="mt-1 text-xs text-amber-300">{{ warningFor('serviceTier') }}</p>
         </div>
-      </template>
+      </div>
 
       <p v-else class="text-xs text-gray-500">No per-target rules for this kind.</p>
     </div>
