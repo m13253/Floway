@@ -59,10 +59,9 @@ export interface LayeredStatefulResponsesStoreOptions {
 //                 previous_response_id replays only the retained messages +
 //                 the encrypted compaction blob, not the original full history.
 //
-// "Do not write a snapshot" is not a mode — it is the absence of writes.
-// A store whose `snapshotWrites` is empty (HTTP `store=false`, no-op store
-// for cross-protocol callers) turns `commitSnapshot` into a no-op regardless
-// of the mode passed in.
+// Whether a snapshot is actually persisted is owned by the store's
+// `snapshotWrites` list: empty (HTTP `store=false`, no-op cross-protocol
+// store) makes `commitSnapshot` a no-op regardless of the mode passed in.
 export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
