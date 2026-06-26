@@ -50,18 +50,6 @@ export interface ResponsesAttemptInvokeArgs {
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers, snapshotMode: snapshotModeOverride } = args;
-    // Read the caller's intent `action` (NOT `invocation.action`) — the guard
-    // runs pre-chain, before any interceptor can flip the value.
-    if (action === 'compact' && candidate.targetApi !== 'responses') {
-      throw new Error(`responsesAttempt.invoke(action='compact') requires targetApi='responses', got '${candidate.targetApi}'`);
-    }
-    // Compact always replaces history wholesale; an override would be a
-    // contract violation. Only `serve.compact` reaches this branch today
-    // and it never passes one, but pin the invariant so a future caller
-    // that does pass one fails loudly instead of silently overwriting.
-    if (action === 'compact' && snapshotModeOverride !== undefined) {
-      throw new Error('responsesAttempt.invoke: snapshotMode override is not supported in the compact branch — compact always replaces');
-    }
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
