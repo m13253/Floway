@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import type { ControlPlaneModel, PublicModelAliasedFrom } from '../../api/types.ts';
-import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
-import { formatAliasRuleBadges, type AliasRuleBadge } from '@floway-dev/protocols/common';
+import { computed } from 'vue';
 
-defineProps<{
+import type { ControlPlaneModel } from '../../api/types.ts';
+import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import { formatAliasRulesInline } from '@floway-dev/protocols/common';
+
+const props = defineProps<{
   model: ControlPlaneModel;
 }>();
 
@@ -15,50 +17,51 @@ const formatTokenLimit = (n: number) => {
   return n.toString();
 };
 
-// `alias of: <target>` always leads the alias badge sequence so the operator
-// reading the row sees what the alias resolves to before scanning the rule
-// pills. The rule badges follow in the order `formatAliasRuleBadges`
-// returns, keeping dashboard and any future alias-aware tooling in lockstep.
-const aliasBadges = (aliasedFrom: PublicModelAliasedFrom): AliasRuleBadge[] => [
-  { label: 'alias of', value: aliasedFrom.targetModelId },
-  ...formatAliasRuleBadges(aliasedFrom.rules),
-];
+const rulesInline = computed(() => props.model.aliasedFrom ? formatAliasRulesInline(props.model.aliasedFrom.rules) : '');
 </script>
 
 <template>
   <div class="shrink-0 p-4 border-b border-white/[0.06]">
     <div class="flex items-center justify-between gap-4">
       <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-x-2">
-          <h3 class="text-sm font-semibold text-white">{{ model.display_name ?? model.id }}</h3>
-          <span
-            v-if="(model.display_name ?? model.id) !== model.id"
-            class="font-mono text-[11px] text-gray-500 break-all"
-          >{{ model.id }}</span>
-        </div>
-        <div class="flex flex-wrap gap-1.5 mt-2">
-          <span
-            v-for="binding in model.upstreams"
-            :key="binding.id"
-            class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
-            :class="providerBadgeClass(binding.kind)"
-            :title="providerMeta(binding.kind).label + ' · ' + binding.name"
-          >{{ binding.name }}</span>
-          <span v-if="model.limits?.max_context_window_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
-            context: {{ formatTokenLimit(model.limits.max_context_window_tokens) }}
-          </span>
-          <span v-if="model.limits?.max_prompt_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
-            prompt: {{ formatTokenLimit(model.limits.max_prompt_tokens) }}
-          </span>
-          <span v-if="model.limits?.max_output_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
-            output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
-          </span>
-          <span
-            v-for="badge in (model.aliasedFrom ? aliasBadges(model.aliasedFrom) : [])"
-            :key="`${badge.label}:${badge.value ?? ''}`"
-            class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/[0.08] text-gray-400"
-          >{{ badge.label }}{{ badge.value !== undefined ? `: ${badge.value}` : '' }}</span>
-        </div>
+        <template v-if="model.aliasedFrom">
+          <div class="flex flex-col gap-1">
+            <h3 v-if="model.aliasedFrom.displayName" class="text-sm font-semibold text-white">{{ model.aliasedFrom.displayName }}</h3>
+            <p class="font-mono text-sm flex flex-wrap items-center gap-x-2">
+              <span class="text-white break-all">{{ model.id }}</span>
+              <span class="text-gray-600">→</span>
+              <span class="text-gray-500 break-all">{{ model.aliasedFrom.targetModelId }}</span>
+            </p>
+            <p v-if="rulesInline" class="text-xs text-gray-500">{{ rulesInline }}</p>
+          </div>
+        </template>
+        <template v-else>
+          <div class="flex flex-wrap items-center gap-x-2">
+            <h3 class="text-sm font-semibold text-white">{{ model.display_name ?? model.id }}</h3>
+            <span
+              v-if="(model.display_name ?? model.id) !== model.id"
+              class="font-mono text-[11px] text-gray-500 break-all"
+            >{{ model.id }}</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5 mt-2">
+            <span
+              v-for="binding in model.upstreams"
+              :key="binding.id"
+              class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
+              :class="providerBadgeClass(binding.kind)"
+              :title="providerMeta(binding.kind).label + ' · ' + binding.name"
+            >{{ binding.name }}</span>
+            <span v-if="model.limits?.max_context_window_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
+              context: {{ formatTokenLimit(model.limits.max_context_window_tokens) }}
+            </span>
+            <span v-if="model.limits?.max_prompt_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
+              prompt: {{ formatTokenLimit(model.limits.max_prompt_tokens) }}
+            </span>
+            <span v-if="model.limits?.max_output_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
+              output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
+            </span>
+          </div>
+        </template>
       </div>
       <button class="btn-ghost text-[11px] flex shrink-0 items-center gap-1" @click="$emit('clear')">
         <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
