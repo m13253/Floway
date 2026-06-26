@@ -3,9 +3,9 @@ import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
 
-export const toPublicModel = (model: InternalModel): PublicModel => {
+export const toPublicModel = (model: ResolvedModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
     object: 'model',
@@ -13,6 +13,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
     display_name: model.display_name ?? model.id,
     limits: { ...model.limits },
     kind: model.kind,
+    endpoints: { ...model.endpoints },
   };
   if (model.owned_by !== undefined) info.owned_by = model.owned_by;
   if (model.created !== undefined) {

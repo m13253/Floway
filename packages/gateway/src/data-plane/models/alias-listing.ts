@@ -27,12 +27,12 @@
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
-import type { InternalModel, ResolvedModel } from '@floway-dev/provider';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelEndpointKey, ModelEndpoints, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
-  readonly realModels: readonly InternalModel[];
+  readonly realModels: readonly ResolvedModel[];
 }
 
 // The repo guarantees rule shape matches the row's `kind` (chat rows carry
@@ -48,6 +48,30 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
   const [head, ...tail] = arrays;
   return head.filter(value => tail.every(other => other.includes(value)));
+};
+
+// Endpoint intersection: a key survives iff every target advertises it.
+// Sub-capability flags inside a key (the inner object) are ANDed
+// conservatively — present in the result iff every contributing target
+// declares them. Today every endpoint value is the empty object, so the
+// AND collapses to an empty object too; the structure is in place so a
+// future sub-cap addition lands without re-engineering this helper.
+const intersectEndpoints = (endpointsList: readonly ModelEndpoints[]): ModelEndpoints => {
+  if (endpointsList.length === 0) return {};
+  const keys = Object.keys(endpointsList[0]) as ModelEndpointKey[];
+  const result: ModelEndpoints = {};
+  for (const key of keys) {
+    if (!endpointsList.every(e => e[key] !== undefined)) continue;
+    const subCaps = endpointsList.map(e => e[key]!);
+    const merged: Record<string, unknown> = { ...subCaps[0] };
+    for (const cap of subCaps.slice(1)) {
+      for (const flag of Object.keys(merged)) {
+        if ((cap as Record<string, unknown>)[flag] === undefined) delete merged[flag];
+      }
+    }
+    result[key] = merged as ModelEndpoints[typeof key];
+  }
+  return result;
 };
 
 // Apply the rule-driven downgrade: a target with a pinned rule reports
@@ -161,7 +185,7 @@ const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
 // the result directly or overlay it under an operator override.
 const computeAutomaticMetadata = (
   alias: ModelAliasRecord,
-  availableTargets: readonly { target: AliasTarget; real: InternalModel }[],
+  availableTargets: readonly { target: AliasTarget; real: ResolvedModel }[],
 ): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => {
   if (availableTargets.length === 0) return { limits: {}, chat: undefined };
 
@@ -191,11 +215,11 @@ const mergeWithOverride = (
   chat: override.chat ?? computed.chat,
 });
 
-const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalModel[]): PublicModel => {
+const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly ResolvedModel[]): PublicModel => {
   const realById = new Map(realModels.map(m => [m.id, m] as const));
   const availableTargets = alias.targets
     .map(target => ({ target, real: realById.get(target.target_model_id) }))
-    .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
+    .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
 
   // Display name precedence: operator-set wins; otherwise derive from the
   // sole target's id + rules when single-target; multi-target falls back to
@@ -219,6 +243,15 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalMod
     aliasedFrom: buildAliasedFrom(alias),
   };
   if (chat !== undefined) entry.chat = chat;
+
+  // Endpoints follow the available-targets intersection unconditionally
+  // — the operator can't override them (the alias's reachable surface is
+  // a fact derived from what the targets serve). Absent when no target
+  // is currently available, same shape as the chat block.
+  if (availableTargets.length > 0) {
+    const endpoints = intersectEndpoints(availableTargets.map(({ real }) => real.endpoints));
+    if (Object.keys(endpoints).length > 0) entry.endpoints = endpoints;
+  }
 
   // Single-target chat pricing rides along when available — the resolver
   // will hit that target, so the catalog can publish its rate verbatim.

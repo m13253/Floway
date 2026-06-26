@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { synthesizeListedAliases } from './alias-listing.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { ResolvedModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   name: 'gpt-fast',
@@ -18,9 +18,11 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
   ...overrides,
 });
 
-const realModel = (overrides: Partial<InternalModel> & { id: string }): InternalModel => ({
+const realModel = (overrides: Partial<ResolvedModel> & { id: string }): ResolvedModel => ({
   kind: 'chat',
   limits: {},
+  endpoints: { chatCompletions: {} },
+  providers: [],
   ...overrides,
 });
 
@@ -291,5 +293,47 @@ describe('synthesizeListedAliases', () => {
     ];
     const [entry] = synthesizeListedAliases({ aliases, realModels });
     expect(entry.chat).toEqual({ modalities: { input: ['text'], output: ['text'] } });
+  });
+
+  test('endpoints is the intersection of available targets — shared keys survive, divergent keys drop', () => {
+    const aliases = [aliasFixture({
+      name: 'multi-ep',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', endpoints: { chatCompletions: {}, responses: {} } }),
+      realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {} } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.endpoints).toEqual({ chatCompletions: {} });
+  });
+
+  test('endpoints drops a key when any target lacks it', () => {
+    const aliases = [aliasFixture({
+      name: 'one-missing',
+      targets: [
+        { target_model_id: 'has-cc', rules: {} },
+        { target_model_id: 'no-cc', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'has-cc', endpoints: { chatCompletions: {} } }),
+      realModel({ id: 'no-cc', endpoints: { responses: {} } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    // Disjoint endpoint sets → intersection is empty → field is absent.
+    expect(entry.endpoints).toBeUndefined();
+  });
+
+  test('endpoints is absent on the entry when no target is currently available', () => {
+    const aliases = [aliasFixture({
+      name: 'ghost',
+      targets: [{ target_model_id: 'missing', rules: {} }],
+    })];
+    const [entry] = synthesizeListedAliases({ aliases, realModels: [] });
+    expect(entry.endpoints).toBeUndefined();
   });
 });

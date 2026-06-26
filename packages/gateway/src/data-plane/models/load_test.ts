@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import { toPublicModel } from './load.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { ResolvedModel } from '@floway-dev/provider';
 
-const base: InternalModel = {
+const base: ResolvedModel = {
   id: 'm1',
   kind: 'chat',
   limits: { max_context_window_tokens: 100000 },
+  endpoints: { chatCompletions: {} },
+  providers: [],
 };
 
 describe('toPublicModel', () => {
@@ -20,6 +22,10 @@ describe('toPublicModel', () => {
       reasoning: { effort: { supported: ['low', 'high'] as const, default: 'low' } },
     };
     expect(toPublicModel({ ...base, chat }).chat).toEqual(chat);
+  });
+
+  test('stamps the resolved binding endpoints onto the wire entry', () => {
+    expect(toPublicModel(base).endpoints).toEqual({ chatCompletions: {} });
   });
 });
 

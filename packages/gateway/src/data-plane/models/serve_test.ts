@@ -119,7 +119,8 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
-        assertEquals(model.endpoints, undefined);
+        // `endpoints` IS surfaced — it tells callers which API families
+        // accept this id. Shape verified below.
         assertEquals(model.upstream, undefined);
         assertEquals(model.upstreamModel, undefined);
         // Copilot-only raw fields never reach the public DTO.
@@ -250,6 +251,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
             kind: 'chat',
+            endpoints: { messages: {} },
             cost: {
               input: 5,
               output: 25,
@@ -272,6 +274,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
+            endpoints: { embeddings: {} },
           },
           {
             id: 'gpt-image-2',
@@ -280,6 +283,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'gpt-image-2',
             limits: {},
             kind: 'image',
+            endpoints: { imagesGenerations: {}, imagesEdits: {} },
           },
         ],
       });
