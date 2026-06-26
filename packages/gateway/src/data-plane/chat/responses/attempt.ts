@@ -49,9 +49,6 @@ export interface ResponsesAttemptInvokeArgs {
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers, snapshotMode: snapshotModeOverride } = args;
-    if (action === 'compact' && candidate.targetApi !== 'responses') {
-      throw new Error(`responsesAttempt.invoke(action='compact') requires targetApi='responses', got '${candidate.targetApi}'`);
-    }
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
@@ -226,7 +223,7 @@ const dispatchResponses = async (
   }
   case 'messages':
     if (invocation.action === 'compact') {
-      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='messages' (filtered by serve-prep)`);
+      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='messages' — the responses-compact-shim is responsible for pivoting compact→generate before dispatch`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -240,7 +237,7 @@ const dispatchResponses = async (
     );
   case 'chat-completions':
     if (invocation.action === 'compact') {
-      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='chat-completions' (filtered by serve-prep)`);
+      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='chat-completions' — the responses-compact-shim is responsible for pivoting compact→generate before dispatch`);
     }
     return await traverseTranslation(
       invocation.payload,
