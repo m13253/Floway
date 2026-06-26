@@ -21,11 +21,8 @@ import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanc
 import { recordTokenUsage } from './telemetry/usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
-import { getRepo } from '../../repo/index.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import { stageGatewayResponseHeader } from '../chat/shared/gateway-ctx.ts';
-import { createSanitizeTraceCtx, traceAllRulesDropped } from '../chat/shared/sanitize.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -127,22 +124,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
   try {
     const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    // Aliases pass through so a `(model, lookupId)` interpretation can rewrite
-    // to the alias's target id even for non-LLM-shaped endpoints. The alias
-    // rules themselves never apply here — the inbound payload (embeddings,
-    // images, /v1/completions) has no protocol-extension slots for the rule
-    // knobs. We still surface the matched alias name on the
-    // `x-floway-alias` response header (staged via Hono's `c.header` so it
-    // survives `streamSSE`'s internal `c.newResponse` on the streaming
-    // `/v1/completions` path) and trace one log line per dropped rule so an
-    // operator can confirm the rewrite ran.
-    const aliases = await getRepo().modelAliases.loadAll();
     // Each match is one (upstream, upstream-catalog id) pair that interprets
     // the inbound public id. Iteration order follows configured sort_order
     // across upstreams, with the unprefixed interpretation pushed before the
     // prefixed one within a single upstream. The first match whose binding
     // satisfies the endpoint capability wins.
-    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler, aliases);
+    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
@@ -150,12 +137,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
     for (const match of matches) {
       if (!bindingServesEndpoint(match.binding)) continue;
-      if (match.aliasName !== undefined) {
-        stageGatewayResponseHeader(ctx, 'x-floway-alias', match.aliasName);
-        if (match.aliasRules) {
-          traceAllRulesDropped(match.aliasRules, sourceApi, createSanitizeTraceCtx(match.aliasName));
-        }
-      }
 
       const recorder = createUpstreamLatencyRecorder();
       const { response, modelKey } = await call(match.binding, {

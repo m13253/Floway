@@ -1,5 +1,4 @@
 import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
-import { getRepo } from '../../../../../repo/index.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
@@ -536,13 +535,7 @@ const resolveImageBinding = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    // The image-generation server-tool runs inside a Responses request; the
-    // outer request's matched alias (if any) has already stamped the
-    // response header. Threading aliases here keeps the second
-    // resolveModelForRequest (for the image tool's own model id) consistent
-    // with how the outer LLM call resolved its candidate.
-    const aliases = await getRepo().modelAliases.loadAll();
-    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, state.backgroundScheduler, aliases);
+    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, state.backgroundScheduler);
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }

@@ -1,12 +1,9 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
-import { getRepo } from '../../../repo/index.ts';
-import { applyAliasRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -21,11 +18,9 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
-      aliases,
       pickTarget: endpoints =>
         endpoints.chatCompletions ? 'chat-completions'
           : endpoints.messages ? 'messages'
@@ -49,12 +44,6 @@ export const chatCompletionsServe = {
           : { kind: 'model-missing', model: payload.model, failedUpstreams },
       );
     }
-    // Apply operator-locked alias rules to the inbound IR before the
-    // attempt runs its interceptor chain. The matching `x-floway-alias`
-    // header is staged via Hono's `c.header` so it survives `streamSSE`'s
-    // internal `c.newResponse`.
-    if (candidate.aliasRules) applyAliasRulesToChatCompletions(payload, candidate.aliasRules);
-    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 };

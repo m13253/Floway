@@ -192,7 +192,7 @@ const dispatchResponses = async (
   switch (candidate.targetApi) {
   case 'responses': {
     const { model: _model, ...body } = payload;
-    sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
+    sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
     const recorder = createUpstreamLatencyRecorder();
     const providerResult = await candidate.binding.provider.callResponses(
       candidate.binding.upstreamModel,
@@ -242,7 +242,7 @@ const callResponsesCompactAsExecuteResult = async (
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const { model: _model, stream: _stream, store: _store, ...body } = payload;
-  sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
+  sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.binding.provider.callResponsesCompact(
     candidate.binding.upstreamModel,

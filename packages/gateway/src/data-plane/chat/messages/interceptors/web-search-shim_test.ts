@@ -60,7 +60,6 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
-  responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
 

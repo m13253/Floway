@@ -26,7 +26,6 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     upstreamIds: null,
     wantsStream: true,
     c: stubAuthedContext(),
-    responseHeaders: new Headers(),
     requestStartedAt: 0,
     runtimeLocation: 'TEST',
     currentColo: 'TEST',

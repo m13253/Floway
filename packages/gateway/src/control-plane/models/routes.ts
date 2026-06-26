@@ -1,25 +1,21 @@
 import type { Context } from 'hono';
 
-import type { ListedModel } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { getModelsForListing } from '../../data-plane/providers/registry.ts';
+import { getModels } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { UpstreamProviderKind } from '@floway-dev/provider';
+import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every provider binding for this model as { kind, id, name }
 // triples. A single model id can be served by mixed provider kinds (e.g. one
 // azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
-// `provider`/`upstream_ids` split would misrepresent that. Alias entries
-// carry a single binding (the upstream that resolves their target) and the
-// `aliasedFrom` provenance flows through `toPublicModel`.
+// `provider`/`upstream_ids` split would misrepresent that.
 interface ControlPlaneModel extends PublicModel {
   upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
 }
@@ -28,7 +24,7 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-const toControlPlaneModel = (model: ListedModel): ControlPlaneModel => ({
+const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
   ...toPublicModel(model),
   upstreams: model.providers.map(binding => ({ kind: binding.providerKind, id: binding.upstream, name: binding.upstreamName })),
 });
@@ -39,15 +35,11 @@ export const controlPlaneModels = async (c: Context) => {
     // like the data-plane /models endpoint. On a session request there is no
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
-    // Aliases come from the same repo singleton the data plane uses, so the
-    // dashboard sees exactly the alias rows the runtime would honour.
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const aliases = await getRepo().modelAliases.loadAll();
-    const { models } = await getModelsForListing(
+    const models = await getModels(
       effectiveUpstreamIdsFromContext(c),
       fetcherForUpstream,
       backgroundSchedulerFromContext(c),
-      aliases,
     );
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {

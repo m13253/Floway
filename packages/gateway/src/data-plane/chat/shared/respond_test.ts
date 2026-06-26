@@ -47,7 +47,6 @@ const setup = (): Harness => {
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
       c: stubAuthedContext(),
-      responseHeaders: new Headers(),
     }),
   };
 };

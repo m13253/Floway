@@ -13,7 +13,6 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
-  ModelAliasesRepo,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -40,7 +39,6 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
-import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -898,7 +896,6 @@ export class InMemoryRepo implements Repo {
   proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  modelAliases: ModelAliasesRepo;
 
   constructor() {
     this.users = new MemoryUsersRepo();
@@ -914,55 +911,5 @@ export class InMemoryRepo implements Repo {
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
-    this.modelAliases = new MemoryModelAliasesRepo();
-  }
-}
-
-// Test-only in-memory backing for the alias table. Mirrors SqlModelAliasesRepo:
-// `loadAll` returns rows sorted by alias, `create` rejects PK collisions,
-// `save` upserts in place. `setAll` is the test seam: tests that pre-populate
-// the table for read-only data-plane assertions reach for it directly.
-export class MemoryModelAliasesRepo implements ModelAliasesRepo {
-  private rows = new Map<string, ModelAlias>();
-
-  loadAll(): Promise<readonly ModelAlias[]> {
-    return Promise.resolve([...this.rows.values()].sort((a, b) => a.alias.localeCompare(b.alias)));
-  }
-
-  getByAlias(alias: string): Promise<ModelAlias | null> {
-    return Promise.resolve(this.rows.get(alias) ?? null);
-  }
-
-  create(alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }> {
-    if (this.rows.has(alias.alias)) return Promise.resolve({ ok: false, reason: 'duplicate' });
-    this.rows.set(alias.alias, alias);
-    return Promise.resolve({ ok: true });
-  }
-
-  save(alias: ModelAlias): Promise<void> {
-    // Preserve the original row's createdAt on an upsert so re-saves do not
-    // overwrite the local deployment's first-seen timestamp.
-    const existing = this.rows.get(alias.alias);
-    const preserved = existing ? { ...alias, createdAt: existing.createdAt } : alias;
-    this.rows.set(preserved.alias, preserved);
-    return Promise.resolve();
-  }
-
-  rename(oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }> {
-    if (oldAlias === newAlias) return Promise.resolve({ ok: true });
-    if (this.rows.has(newAlias)) return Promise.resolve({ ok: false, reason: 'duplicate' });
-    const existing = this.rows.get(oldAlias);
-    if (!existing) return Promise.resolve({ ok: false, reason: 'notFound' });
-    this.rows.delete(oldAlias);
-    this.rows.set(newAlias, { ...existing, alias: newAlias });
-    return Promise.resolve({ ok: true });
-  }
-
-  delete(alias: string): Promise<{ deleted: boolean }> {
-    return Promise.resolve({ deleted: this.rows.delete(alias) });
-  }
-
-  setAll(rows: readonly ModelAlias[]): void {
-    this.rows = new Map(rows.map(row => [row.alias, row]));
   }
 }

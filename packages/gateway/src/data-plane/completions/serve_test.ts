@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
-import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -397,50 +396,4 @@ test('/v1/completions streaming records usage row, request_total+upstream_succes
     }
     assertEquals(frames[3]?.type, 'done');
   }
-});
-
-// Alias header coverage for /v1/completions: the matched alias name rides
-// out on `x-floway-alias`. Non-streaming path uses passthrough's `json`
-// branch; the streaming path stamps the same header via Hono's `c.header`
-// before `streamSSE` builds the response.
-test('/v1/completions stamps x-floway-alias when the request hits an aliased model', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerCompletionsUpstream(repo);
-  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
-    {
-      alias: 'completions-alias',
-      targetModelId: 'davinci-002',
-      upstreamIds: [],
-      rules: {},
-      visibleInModelsList: true,
-      onConflict: 'real-only',
-      createdAt: 0,
-    },
-  ]);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        return jsonResponse({
-          id: 'cmpl_resp',
-          object: 'text_completion',
-          created: 1,
-          model: 'davinci-002',
-          choices: [{ index: 0, text: ' world', finish_reason: 'stop' }],
-          usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'completions-alias', prompt: 'hello' }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get('x-floway-alias'), 'completions-alias');
-    },
-  );
 });

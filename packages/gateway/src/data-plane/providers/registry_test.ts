@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
-import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
@@ -610,20 +609,20 @@ describe('enumerateModelInterpretations', () => {
     // A: no prefix, bare always accepted. B: prefixed-only addressable — bare
     // is not accepted. C: dual-addressable, bare accepted; the prefixed form
     // does not apply because `gpt-4o` does not start with `cx/`.
-    assertEquals(shape(enumerateModelInterpretations('gpt-4o', [A, B, C], [])), [
+    assertEquals(shape(enumerateModelInterpretations('gpt-4o', [A, B, C])), [
       { upstream: 'A', lookupId: 'gpt-4o' },
       { upstream: 'C', lookupId: 'gpt-4o' },
     ]);
   });
 
   test('prefix-only-addressable upstream strips the prefix when it matches', () => {
-    assertEquals(shape(enumerateModelInterpretations('or/gpt-4o', [B], [])), [
+    assertEquals(shape(enumerateModelInterpretations('or/gpt-4o', [B])), [
       { upstream: 'B', lookupId: 'gpt-4o' },
     ]);
   });
 
   test('prefix-only-addressable upstream is silent when the prefix does not match', () => {
-    assertEquals(enumerateModelInterpretations('gpt-4o', [B], []), []);
+    assertEquals(enumerateModelInterpretations('gpt-4o', [B]), []);
   });
 
   test('dual-addressable upstream produces two interpretations when the prefix matches', () => {
@@ -634,7 +633,7 @@ describe('enumerateModelInterpretations', () => {
       upstream: 'D', name: 'd',
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     });
-    assertEquals(shape(enumerateModelInterpretations('or/gpt-4o', [D], [])), [
+    assertEquals(shape(enumerateModelInterpretations('or/gpt-4o', [D])), [
       { upstream: 'D', lookupId: 'or/gpt-4o' },
       { upstream: 'D', lookupId: 'gpt-4o' },
     ]);
@@ -654,7 +653,7 @@ describe('enumerateModelInterpretations', () => {
       modelPrefix: { prefix: 'aa/bb/', addressable: ['prefixed'], listed: ['prefixed'] },
     });
     const Z = fakeProvider({ upstream: 'Z', name: 'z', modelPrefix: null });
-    assertEquals(shape(enumerateModelInterpretations('aa/bb/gpt-5', [X, Y, Z], [])), [
+    assertEquals(shape(enumerateModelInterpretations('aa/bb/gpt-5', [X, Y, Z])), [
       { upstream: 'X', lookupId: 'bb/gpt-5' },
       { upstream: 'Y', lookupId: 'gpt-5' },
       { upstream: 'Z', lookupId: 'aa/bb/gpt-5' },
@@ -905,204 +904,5 @@ describe('catalog listing under modelPrefix', () => {
         assertEquals(resolved.matches.map(m => m.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
       },
     );
-  });
-});
-
-// Synthetic-catalog alias matching against a single provider. Verifies that
-// each `onConflict` mode emits the right interpretation shape from
-// `enumerateModelInterpretations`. The downstream `collectInterpretationOutcomes`
-// pass is exercised in the e2e suite below.
-describe('enumerateModelInterpretations with alias matching', () => {
-  const provider = fakeProvider({ upstream: 'U', name: 'u', modelPrefix: null });
-
-  const makeAlias = (over: Partial<ModelAlias>): ModelAlias => ({
-    alias: 'codex-auto-review',
-    targetModelId: 'gpt-5.4',
-    upstreamIds: [],
-    rules: { reasoning: { effort: 'low' } },
-    visibleInModelsList: true,
-    onConflict: 'real-only',
-    createdAt: 0,
-    ...over,
-  });
-
-  test('alias-only emits exactly the alias-rewrite interpretation, with rules', () => {
-    const aliases = [makeAlias({ onConflict: 'alias-only' })];
-    const out = enumerateModelInterpretations('codex-auto-review', [provider], aliases);
-    assertEquals(out.length, 1);
-    assertEquals(out[0].lookupId, 'gpt-5.4');
-    assertEquals(out[0].aliasRules, { reasoning: { effort: 'low' } });
-    assertEquals(out[0].aliasName, 'codex-auto-review');
-    assertEquals(out[0].conflictGroup, undefined);
-  });
-
-  test('real-only emits both halves, tagged with a shared conflictGroup', () => {
-    const aliases = [makeAlias({ onConflict: 'real-only' })];
-    const out = enumerateModelInterpretations('codex-auto-review', [provider], aliases);
-    assertEquals(out.length, 2);
-    // Real first, alias second — the prune step removes the alias when
-    // real resolved, so real-first keeps the natural iteration order.
-    assertEquals(out[0].lookupId, 'codex-auto-review');
-    assertEquals(out[0].aliasRules, undefined);
-    assertEquals(out[1].lookupId, 'gpt-5.4');
-    assertEquals(out[1].aliasRules, { reasoning: { effort: 'low' } });
-    expect(out[0].conflictGroup).toBeDefined();
-    expect(out[0].conflictGroup).toBe(out[1].conflictGroup);
-  });
-
-  test('both-real-first emits real then alias, neither group-tagged', () => {
-    const aliases = [makeAlias({ onConflict: 'both-real-first' })];
-    const out = enumerateModelInterpretations('codex-auto-review', [provider], aliases);
-    assertEquals(out.length, 2);
-    assertEquals(out[0].lookupId, 'codex-auto-review');
-    assertEquals(out[0].aliasRules, undefined);
-    assertEquals(out[1].lookupId, 'gpt-5.4');
-    assertEquals(out[1].aliasRules, { reasoning: { effort: 'low' } });
-    assertEquals(out[0].conflictGroup, undefined);
-    assertEquals(out[1].conflictGroup, undefined);
-  });
-
-  test('both-alias-first emits alias then real, neither group-tagged', () => {
-    const aliases = [makeAlias({ onConflict: 'both-alias-first' })];
-    const out = enumerateModelInterpretations('codex-auto-review', [provider], aliases);
-    assertEquals(out.length, 2);
-    assertEquals(out[0].lookupId, 'gpt-5.4');
-    assertEquals(out[0].aliasRules, { reasoning: { effort: 'low' } });
-    assertEquals(out[1].lookupId, 'codex-auto-review');
-    assertEquals(out[1].aliasRules, undefined);
-  });
-
-  test('upstreamIds filter skips the alias on providers outside the allowlist', () => {
-    const aliases = [makeAlias({ onConflict: 'alias-only', upstreamIds: ['OTHER'] })];
-    const out = enumerateModelInterpretations('codex-auto-review', [provider], aliases);
-    // The alias only applies to OTHER, so this provider sees a literal
-    // (no-rewrite) interpretation.
-    assertEquals(out.length, 1);
-    assertEquals(out[0].lookupId, 'codex-auto-review');
-    assertEquals(out[0].aliasRules, undefined);
-  });
-
-  test('prefix-strip happens before alias matching (semantic P)', () => {
-    // Configure the provider with a prefix; the inbound `cx/codex-auto-review`
-    // strips to `codex-auto-review` and matches the alias. The alias-rewrite
-    // interpretation carries the target id `gpt-5.4`.
-    const prefixedProvider = fakeProvider({
-      upstream: 'P', name: 'p',
-      modelPrefix: { prefix: 'cx/', addressable: ['prefixed'], listed: ['prefixed'] },
-    });
-    const aliases = [makeAlias({ onConflict: 'alias-only' })];
-    const out = enumerateModelInterpretations('cx/codex-auto-review', [prefixedProvider], aliases);
-    assertEquals(out.length, 1);
-    assertEquals(out[0].lookupId, 'gpt-5.4');
-    assertEquals(out[0].aliasName, 'codex-auto-review');
-  });
-});
-
-// E2E coverage of the post-resolution prune. Uses a real Azure-backed
-// catalog (resolved without HTTP) so the conflict pruning behavior is
-// observed end-to-end via `resolveModelForRequest`.
-describe('resolveModelForRequest applies alias onConflict pruning', () => {
-  // Helper that stages a single Azure upstream exposing both the real
-  // alias-named model and the alias's target model.
-  const stageBothNamesUpstream = async (): Promise<void> => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await repo.upstreams.save({
-      id: 'up_a',
-      provider: 'azure',
-      name: 'A',
-      enabled: true,
-      sortOrder: 1,
-      createdAt: '2026-05-21T00:00:00.000Z',
-      updatedAt: '2026-05-21T00:00:00.000Z',
-      config: {
-        endpoint: 'https://a.openai.azure.com',
-        apiKey: 'az-key',
-        models: [
-          { upstreamModelId: 'codex-auto-review', endpoints: { chatCompletions: {} } },
-          { upstreamModelId: 'gpt-5.4', endpoints: { chatCompletions: {} } },
-        ],
-      },
-      flagOverrides: {},
-      disabledPublicModelIds: [],
-      proxyFallbackList: [],
-      modelPrefix: null,
-      state: null,
-    });
-  };
-
-  // Helper that stages a single Azure upstream exposing ONLY the alias's
-  // target model (no real `codex-auto-review` collision).
-  const stageTargetOnlyUpstream = async (): Promise<void> => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await repo.upstreams.save({
-      id: 'up_a',
-      provider: 'azure',
-      name: 'A',
-      enabled: true,
-      sortOrder: 1,
-      createdAt: '2026-05-21T00:00:00.000Z',
-      updatedAt: '2026-05-21T00:00:00.000Z',
-      config: {
-        endpoint: 'https://a.openai.azure.com',
-        apiKey: 'az-key',
-        models: [
-          { upstreamModelId: 'gpt-5.4', endpoints: { chatCompletions: {} } },
-        ],
-      },
-      flagOverrides: {},
-      disabledPublicModelIds: [],
-      proxyFallbackList: [],
-      modelPrefix: null,
-      state: null,
-    });
-  };
-
-  const aliasOf = (onConflict: ModelAlias['onConflict']): ModelAlias => ({
-    alias: 'codex-auto-review',
-    targetModelId: 'gpt-5.4',
-    upstreamIds: [],
-    rules: { reasoning: { effort: 'low' } },
-    visibleInModelsList: true,
-    onConflict,
-    createdAt: 0,
-  });
-
-  test('alias-only resolves to a single match against the alias target id', async () => {
-    await stageBothNamesUpstream();
-    const resolved = await resolveModelForRequest('codex-auto-review', null, () => directFetcher, testScheduler, [aliasOf('alias-only')]);
-    assertEquals(resolved.matches.length, 1);
-    assertEquals(resolved.matches[0].id, 'gpt-5.4');
-  });
-
-  test('real-only drops the alias-rewrite resolution when the real-name resolves too', async () => {
-    await stageBothNamesUpstream();
-    const resolved = await resolveModelForRequest('codex-auto-review', null, () => directFetcher, testScheduler, [aliasOf('real-only')]);
-    assertEquals(resolved.matches.length, 1);
-    assertEquals(resolved.matches[0].id, 'codex-auto-review');
-  });
-
-  test('real-only keeps the alias-rewrite resolution when the real-name catalog lookup misses', async () => {
-    await stageTargetOnlyUpstream();
-    const resolved = await resolveModelForRequest('codex-auto-review', null, () => directFetcher, testScheduler, [aliasOf('real-only')]);
-    assertEquals(resolved.matches.length, 1);
-    assertEquals(resolved.matches[0].id, 'gpt-5.4');
-  });
-
-  test('both-real-first resolves to two matches, real first', async () => {
-    await stageBothNamesUpstream();
-    const resolved = await resolveModelForRequest('codex-auto-review', null, () => directFetcher, testScheduler, [aliasOf('both-real-first')]);
-    assertEquals(resolved.matches.length, 2);
-    assertEquals(resolved.matches[0].id, 'codex-auto-review');
-    assertEquals(resolved.matches[1].id, 'gpt-5.4');
-  });
-
-  test('both-alias-first resolves to two matches, alias first', async () => {
-    await stageBothNamesUpstream();
-    const resolved = await resolveModelForRequest('codex-auto-review', null, () => directFetcher, testScheduler, [aliasOf('both-alias-first')]);
-    assertEquals(resolved.matches.length, 2);
-    assertEquals(resolved.matches[0].id, 'gpt-5.4');
-    assertEquals(resolved.matches[1].id, 'codex-auto-review');
   });
 });

@@ -1,12 +1,9 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
-import { getRepo } from '../../../repo/index.ts';
-import { applyAliasRulesToMessages } from '../../model-aliases/apply.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { stageGatewayResponseHeader } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -28,11 +25,9 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
-      aliases,
       pickTarget: endpoints =>
         endpoints.messages ? 'messages'
           : endpoints.responses ? 'responses'
@@ -57,23 +52,14 @@ export const messagesServe = {
         'generate',
       );
     }
-    // Operator-locked alias rules go onto the inbound IR before the attempt
-    // begins so the per-protocol interceptor chain (and any downstream
-    // translate pass) sees the already-injected fields. The matching
-    // `x-floway-alias` header is staged via Hono's `c.header` so it
-    // survives `streamSSE`'s internal `c.newResponse`.
-    if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
-    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await messagesAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
-    const aliases = await getRepo().modelAliases.loadAll();
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
-      aliases,
       pickTarget: endpoints => endpoints.messages ? 'messages' : null,
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
@@ -93,11 +79,6 @@ export const messagesServe = {
         'countTokens',
       );
     }
-    // count_tokens carries the same alias semantics as generate — operator
-    // rules apply uniformly regardless of endpoint, and the response header
-    // rides out the same way.
-    if (candidate.aliasRules) applyAliasRulesToMessages(payload, candidate.aliasRules);
-    if (candidate.aliasName) stageGatewayResponseHeader(ctx, 'x-floway-alias', candidate.aliasName);
     return await messagesAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

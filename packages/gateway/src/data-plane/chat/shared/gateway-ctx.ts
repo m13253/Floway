@@ -6,13 +6,7 @@ import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface GatewayCtx {
-  // The inbound Hono context. Carried so the serve layer can stage
-  // response headers via `c.header(name, value)` — the Hono-documented
-  // knob that survives `streamSSE`'s internal `c.newResponse` for the
-  // streaming surfaces. For non-streaming surfaces that build the
-  // outgoing Response via the Web `Response.json` constructor (which
-  // bypasses Hono's context), the same value also lands on
-  // `responseHeaders` so `finalizeGatewayResponse` can stamp it.
+  // The inbound Hono context.
   readonly c: AuthedContext;
   readonly apiKeyId: string;
   readonly upstreamIds: readonly string[] | null;
@@ -31,15 +25,8 @@ export interface GatewayCtx {
   readonly currentColo: string;
   // Null when the api key has no retention configured, in which case
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
-  // response untouched (entries from `responseHeaders` are still applied).
+  // response untouched.
   readonly dump: DumpAccumulator | null;
-  // Per-request response-header staging for the non-streaming and error
-  // paths that build their Response via the Web `Response.json` constructor
-  // rather than through Hono's `c.json`/`streamSSE`. The serve layer writes
-  // gateway-stamped headers (e.g. `x-floway-alias`) here in lockstep with
-  // its `ctx.c.header(...)` call; `finalizeGatewayResponse` then merges
-  // them onto the outgoing Response.
-  readonly responseHeaders: Headers;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -86,27 +73,12 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     runtimeLocation: colo,
     currentColo: colo,
     dump,
-    responseHeaders: new Headers(),
   };
 };
 
-// Stage one gateway response header so it lands on the outgoing Response
-// regardless of which builder produced it. Calls Hono's `c.header` (the
-// only knob that survives `streamSSE`'s internal `c.newResponse`) AND
-// stages on the per-ctx `responseHeaders` bag that `finalizeGatewayResponse`
-// merges onto Web-`Response.json`-built non-streaming responses.
-export const stageGatewayResponseHeader = (ctx: GatewayCtx, name: string, value: string): void => {
-  ctx.c.header(name, value);
-  ctx.responseHeaders.set(name, value);
-};
-
-// Apply ctx-stamped response headers onto the outgoing Response and then run
-// the dump-accumulator's finalize tee. Every inbound HTTP wrapper returns its
-// response through this seam so gateway-stamped headers ride out uniformly
-// across happy-path, error, and passthrough paths — including the
-// non-streaming surfaces that build their Response via Web `Response.json`
-// rather than Hono's `c.json`.
+// Run the dump-accumulator's finalize tee on the outgoing Response. Every
+// inbound HTTP wrapper returns its response through this seam so the dump
+// pipeline applies uniformly across happy-path, error, and passthrough paths.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
-  for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
   return ctx.dump?.finalize(response) ?? response;
 };

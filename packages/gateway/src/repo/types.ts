@@ -1,4 +1,3 @@
-import type { ModelAlias } from '../control-plane/model-aliases/types.ts';
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
@@ -333,27 +332,4 @@ export interface Repo {
   proxyBackoffs: ProxyBackoffRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  modelAliases: ModelAliasesRepo;
-}
-
-// Operator-managed alias table; small (dozens of rows at most) and read
-// per request, so the repo deliberately exposes only a full-table fetch
-// plus the targeted mutations the control-plane CRUD needs.
-export interface ModelAliasesRepo {
-  loadAll(): Promise<readonly ModelAlias[]>;
-  getByAlias(alias: string): Promise<ModelAlias | null>;
-  // INSERT-only — fails with `duplicate` on PK conflict so the route layer
-  // surfaces 409 to the dashboard instead of silently overwriting an
-  // existing row.
-  create(alias: ModelAlias): Promise<{ ok: true } | { ok: false; reason: 'duplicate' }>;
-  // UPSERT — used by the PATCH update path; preserves created_at on re-save
-  // and bumps updated_at.
-  save(alias: ModelAlias): Promise<void>;
-  // Updates the PK in place. Returns `notFound` when the source row is
-  // missing, `duplicate` when the destination name already exists; the
-  // route layer maps those to 404 / 409. SQLite (and D1) permit UPDATEing
-  // a PRIMARY KEY column.
-  rename(oldAlias: string, newAlias: string): Promise<{ ok: true } | { ok: false; reason: 'duplicate' | 'notFound' }>;
-  // Returns whether a row was actually removed; routes treat false as 404.
-  delete(alias: string): Promise<{ deleted: boolean }>;
 }

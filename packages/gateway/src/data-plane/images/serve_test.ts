@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -233,63 +232,4 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && row.tokens.input === 7 && row.tokens.output === 11), true);
-});
-
-// Alias header coverage for /v1/images/generations: an alias whose target is
-// an image-generation model must surface its name on `x-floway-alias` for
-// downstream observability.
-test('/v1/images/generations stamps x-floway-alias when the request hits an aliased model', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  clearInProcessCopilotTokenCache();
-  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
-    {
-      alias: 'image-alias',
-      targetModelId: 'gpt-image-2',
-      upstreamIds: [],
-      rules: {},
-      visibleInModelsList: true,
-      onConflict: 'real-only',
-      createdAt: 0,
-    },
-  ]);
-  await repo.upstreams.save(buildCustomUpstreamRecord({
-    id: 'up_images',
-    name: 'Custom Image Provider',
-    sortOrder: 100,
-    config: {
-      baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
-      apiKey: 'sk-images',
-      endpoints: {},
-    },
-  }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
-      }
-      if (url.hostname === 'images.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
-      }
-      if (url.hostname === 'images.example.com' && url.pathname === '/v1/images/generations') {
-        return jsonResponse({ data: [{ b64_json: 'aGVsbG8=' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/images/generations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'image-alias', prompt: 'hi' }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get('x-floway-alias'), 'image-alias');
-    },
-  );
 });

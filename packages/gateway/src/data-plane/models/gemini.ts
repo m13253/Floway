@@ -1,14 +1,12 @@
 import type { Context } from 'hono';
 
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
-import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
-import { getModelsForListing } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
@@ -32,10 +30,6 @@ interface GeminiModel {
   cost?: ModelPricing;
 }
 
-// Gemini's Model resource is closed (no `aliasedFrom` extension), so an alias
-// arrives here through `getModelsForListing` looking like any other chat
-// model — `id`, `display_name`, `limits`, `cost` already finalized by
-// `synthesizeListedAliases` — and the mapper has no alias-specific branch.
 const toGeminiModel = (model: InternalModel): GeminiModel => {
   const limits = model.limits;
   const inputTokenLimit = limits.max_prompt_tokens ?? limits.max_context_window_tokens;
@@ -72,20 +66,16 @@ const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-  aliases: readonly ModelAlias[],
 ): Promise<GeminiModel[]> => {
-  const { models } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler, aliases);
-  // Only chat models are representable in the Gemini /models shape — alias
-  // entries whose target is non-chat fall out of this filter just like real
-  // non-chat catalog entries do.
+  const models = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
+  // Only chat models are representable in the Gemini /models shape.
   return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const aliases = await getRepo().modelAliases.loadAll();
-    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), aliases) });
+    return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c)) });
   } catch (error) {
     return geminiModelLoadError(error);
   }
@@ -98,8 +88,7 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
   const modelId = rawModelId.replace(/^models\//, '');
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const aliases = await getRepo().modelAliases.loadAll();
-    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), aliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
+    const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c))).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {

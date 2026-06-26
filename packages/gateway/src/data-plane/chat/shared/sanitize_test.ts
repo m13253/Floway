@@ -11,20 +11,22 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 type TraceLine = { alias?: string; field: string; targetProtocol: string };
 
-const makeTrace = (aliasName?: string): { ctx: SanitizeTraceCtx; lines: TraceLine[] } => {
+const makeTrace = (): { ctx: SanitizeTraceCtx; lines: TraceLine[] } => {
   const lines: TraceLine[] = [];
   return {
-    ctx: { aliasName, emit: line => lines.push(line) },
+    ctx: { emit: line => lines.push(line) },
     lines,
   };
 };
 
 test('sanitizeForMessagesUpstream strips verbosity and emits one trace line', () => {
   const body: Record<string, unknown> = { verbosity: 'low', model: 'x' };
-  const { ctx, lines } = makeTrace('codex-auto-review');
+  const { ctx, lines } = makeTrace();
   sanitizeForMessagesUpstream(body, ctx);
   assertEquals(body, { model: 'x' });
-  assertEquals(lines, [{ alias: 'codex-auto-review', field: 'verbosity', targetProtocol: 'messages' }]);
+  assertEquals(lines.length, 1);
+  assertEquals(lines[0].field, 'verbosity');
+  assertEquals(lines[0].targetProtocol, 'messages');
 });
 
 test('sanitizeForChatCompletionsUpstream strips Floway extensions and leaves native fields', () => {
@@ -34,11 +36,11 @@ test('sanitizeForChatCompletionsUpstream strips Floway extensions and leaves nat
     reasoning_effort: 'high',
     model: 'x',
   };
-  const { ctx, lines } = makeTrace('alias-1');
+  const { ctx, lines } = makeTrace();
   sanitizeForChatCompletionsUpstream(body, ctx);
   assertEquals(body, { reasoning_effort: 'high', model: 'x' });
   assertEquals(lines.length, 2);
-  assertEquals(lines.every(l => l.alias === 'alias-1' && l.targetProtocol === 'chat-completions'), true);
+  assertEquals(lines.every(l => l.targetProtocol === 'chat-completions'), true);
   const droppedFields = lines.map(l => l.field).sort();
   assertEquals(droppedFields, ['anthropic_beta', 'thinking_budget']);
 });
@@ -54,13 +56,13 @@ test('sanitizeForGeminiUpstream walks top-level and generationConfig', () => {
     generationConfig: { verbosity: 'low', thinkingConfig: { thinkingBudget: 100 } },
     anthropicBeta: ['ctx-1m'],
   };
-  const { ctx, lines } = makeTrace('alias-g');
+  const { ctx, lines } = makeTrace();
   sanitizeForGeminiUpstream(body, ctx);
   assertEquals(body, { generationConfig: { thinkingConfig: { thinkingBudget: 100 } } });
   assertEquals(lines.length, 2);
   const droppedFields = lines.map(l => l.field).sort();
   assertEquals(droppedFields, ['anthropicBeta', 'generationConfig.verbosity']);
-  assertEquals(lines.every(l => l.alias === 'alias-g' && l.targetProtocol === 'gemini'), true);
+  assertEquals(lines.every(l => l.targetProtocol === 'gemini'), true);
 });
 
 test('sanitizer is idempotent — a second run emits no additional traces', () => {

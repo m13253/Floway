@@ -18,7 +18,6 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
-import { applyAnthropicBetaToHeaders } from '@floway-dev/translate/via-messages/anthropic-extensions';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MessagesAttemptGenerateArgs {
@@ -50,21 +49,13 @@ export const messagesAttempt = {
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (candidate.targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
-        // The candidate's `anthropic_beta` alias rule merges onto the
-        // anthropic-beta header (the wire path; the body slot is rejected
-        // by the http entry). Body extensions are stripped just before the
-        // upstream call, after every interceptor has had its say.
-        const outgoingHeaders = new Headers(invocation.headers);
-        if (candidate.aliasRules?.anthropicBeta?.length) {
-          applyAnthropicBetaToHeaders(outgoingHeaders, candidate.aliasRules.anthropicBeta);
-        }
-        sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
+        sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
         const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.binding.provider.callMessages(
           candidate.binding.upstreamModel,
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, recorder.record, outgoingHeaders),
+          buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
         return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
       }
@@ -109,16 +100,12 @@ export const messagesAttempt = {
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
-      const outgoingHeaders = new Headers(invocation.headers);
-      if (candidate.aliasRules?.anthropicBeta?.length) {
-        applyAnthropicBetaToHeaders(outgoingHeaders, candidate.aliasRules.anthropicBeta);
-      }
-      sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
+      sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
       const { response } = await candidate.binding.provider.callMessagesCountTokens(
         candidate.binding.upstreamModel,
         body,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record, outgoingHeaders),
+        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
       );
       return response;
     });

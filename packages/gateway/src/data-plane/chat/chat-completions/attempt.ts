@@ -103,7 +103,7 @@ const callChatCompletionsAsExecuteResult = async (
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
-  sanitizeForChatCompletionsUpstream(body as Record<string, unknown>, createSanitizeTraceCtx(candidate.aliasName));
+  sanitizeForChatCompletionsUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.binding.provider.callChatCompletions(
     candidate.binding.upstreamModel,

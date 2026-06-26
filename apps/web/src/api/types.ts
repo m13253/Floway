@@ -6,11 +6,10 @@ import type {
   ModelEndpoints,
   ModelKind,
   ModelPricing,
-  PublicModelAliasedFrom,
 } from '@floway-dev/protocols/common';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
-export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing, PublicModelAliasedFrom };
+export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
@@ -305,8 +304,6 @@ export interface FlagDef {
 // than redeclaring the shape) makes any future field rename a compile error
 // here instead of a runtime mismatch the next time someone refreshes the page.
 export type { SerializedProxyRecord as ProxyRecord, SerializedBackoffRow as BackoffRow } from '@floway-dev/gateway/control-plane/proxies/serialize';
-export type { SerializedModelAlias as ModelAlias } from '@floway-dev/gateway/control-plane/model-aliases/serialize';
-export type { ModelAliasRules, OnConflict as ModelAliasOnConflict } from '@floway-dev/gateway/control-plane/model-aliases/types';
 
 // 409 body returned by DELETE /api/proxies/:id when the row is referenced
 // by an upstream's fallback list.
@@ -343,7 +340,6 @@ export interface PublicModel {
   endpoints?: Record<string, ModelEndpointInfo>;
   cost?: ModelPricing;
   kind?: ModelKind;
-  aliasedFrom?: PublicModelAliasedFrom;
 }
 
 export interface ControlPlaneModel extends PublicModel {

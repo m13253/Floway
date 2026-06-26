@@ -350,7 +350,6 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
-  responseHeaders: new Headers(),
   requestStartedAt: 0,
 });
 
@@ -4500,7 +4499,6 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     dump: null,
     backgroundScheduler: () => {},
     c: stubAuthedContext(),
-    responseHeaders: new Headers(),
     requestStartedAt: 0,
     abortSignal: controller.signal,
   };

@@ -1,11 +1,10 @@
 import type { GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 import type { AuthedContext } from '../middleware/auth.ts';
 
-// Minimal stub for the Hono `c` carried on `GatewayCtx`. Only `c.header`
-// is touched by the serve layer (to stamp `x-floway-alias`); unit tests
-// that don't exercise the alias branch never call it. Integration tests
-// that need real Hono behavior build the ctx via `createGatewayCtxFromHono`
-// against a real `makeApp()` request rather than going through this stub.
+// Minimal stub for the Hono `c` carried on `GatewayCtx`. Unit tests rarely
+// touch any methods on it; integration tests that need real Hono behavior
+// build the ctx via `createGatewayCtxFromHono` against a real `makeApp()`
+// request rather than going through this stub.
 export const stubAuthedContext = (): AuthedContext =>
   ({ header: () => {} } as unknown as AuthedContext);
 
@@ -25,6 +24,5 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   dump: null,
   backgroundScheduler: promise => { void promise; },
   requestStartedAt: 0,
-  responseHeaders: new Headers(),
   ...overrides,
 });

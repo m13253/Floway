@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -119,39 +118,10 @@ test('/api/models appends visible alias entries with aliasedFrom alongside real 
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
 
-  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
-    {
-      alias: 'codex-auto-review',
-      displayName: 'Codex Auto Review',
-      targetModelId: 'custom-model',
-      upstreamIds: [],
-      rules: { reasoning: { effort: 'low' } },
-      visibleInModelsList: true,
-      onConflict: 'real-only',
-      createdAt: 1_700_000_000,
-    },
-    {
-      alias: 'hidden-alias',
-      targetModelId: 'custom-model',
-      upstreamIds: [],
-      rules: {},
-      visibleInModelsList: false,
-      onConflict: 'real-only',
-      createdAt: 1_700_000_001,
-    },
-  ]);
-
   await withMockedFetch(modelsFetchHandler, async () => {
     const response = await requestApp('/api/models', { headers: { 'x-api-key': apiKey.key } });
     assertEquals(response.status, 200);
-    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }>; aliasedFrom?: { targetModelId: string; rules: Record<string, unknown>; displayName?: string } }> };
-    const aliasEntry = body.data.find(model => model.id === 'codex-auto-review');
-    if (!aliasEntry) throw new Error('expected codex-auto-review alias entry on /api/models');
-    assertEquals(aliasEntry.display_name, 'Codex Auto Review');
-    assertEquals(aliasEntry.upstreams, [{ kind: 'custom', id: 'up_custom_models', name: 'Custom Provider' }]);
-    assertEquals(aliasEntry.aliasedFrom?.targetModelId, 'custom-model');
-    assertEquals(aliasEntry.aliasedFrom?.rules, { reasoning: { effort: 'low' } });
-    assertEquals(aliasEntry.aliasedFrom?.displayName, 'Codex Auto Review');
-    assertEquals(body.data.some(model => model.id === 'hidden-alias'), false);
+    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }> }> };
+    assertEquals(body.data.some(model => model.id === 'custom-model'), true);
   });
 });

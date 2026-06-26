@@ -536,7 +536,6 @@ const makeRespondCtx = (): GatewayCtx => ({
   runtimeLocation: 'TEST',
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
-  responseHeaders: new Headers(),
   requestStartedAt: 0,
   currentColo: 'TEST',
   dump: null,

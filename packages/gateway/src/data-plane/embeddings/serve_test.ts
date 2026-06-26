@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import type { MemoryModelAliasesRepo } from '../../repo/memory.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -493,61 +492,6 @@ test('/v1/embeddings rejects malformed body at the provider-independent boundary
       assertEquals(response.status, 400);
       const body = await response.json();
       assertEquals(body.error.type, 'api_error');
-    },
-  );
-});
-
-// Critical alias header coverage for the passthrough surface: the matched
-// alias name must ride out on `x-floway-alias` so downstream observers can
-// tell a real-model hit from an alias-routed one. Goes through Hono's
-// `c.header` in `passthroughServe`, mirroring the chat path.
-test('/v1/embeddings stamps x-floway-alias when the request hits an aliased model', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
-    {
-      alias: 'embed-alias',
-      targetModelId: 'text-embedding-real',
-      upstreamIds: [],
-      rules: {},
-      visibleInModelsList: true,
-      onConflict: 'real-only',
-      createdAt: 0,
-    },
-  ]);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-          endpoints: { api: 'https://api.individual.githubcopilot.com' },
-        });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'text-embedding-real', supported_endpoints: ['/embeddings'] }]));
-      }
-      if (url.pathname === '/embeddings') {
-        return jsonResponse({
-          object: 'list',
-          model: 'text-embedding-real',
-          data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/embeddings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'embed-alias', input: 'hello' }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get('x-floway-alias'), 'embed-alias');
     },
   );
 });

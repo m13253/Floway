@@ -1,15 +1,9 @@
-import type { ListedModel } from './alias-listing.ts';
-import type { ModelAlias } from '../../control-plane/model-aliases/types.ts';
-import { getModelsForListing } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
-// Maps a single listed catalog entry (real or alias) to the wire DTO. Alias
-// entries arrive with `aliasedFrom` pre-populated by
-// `synthesizeListedAliases`; this mapper just rides it through so every
-// listing surface sees the same provenance field.
-export const toPublicModel = (model: InternalModel & { aliasedFrom?: ListedModel['aliasedFrom'] }): PublicModel => {
+export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
     object: 'model',
@@ -24,7 +18,6 @@ export const toPublicModel = (model: InternalModel & { aliasedFrom?: ListedModel
     info.created_at = new Date(model.created * 1000).toISOString();
   }
   if (model.cost) info.cost = model.cost;
-  if (model.aliasedFrom) info.aliasedFrom = model.aliasedFrom;
   if (model.chat) info.chat = model.chat;
   return info;
 };
@@ -33,9 +26,8 @@ export const loadModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-  aliases: readonly ModelAlias[],
 ): Promise<PublicModelsResponse> => {
-  const { models } = await getModelsForListing(upstreamFilter, fetcherForUpstream, scheduler, aliases);
+  const models = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
   const data = models.map(toPublicModel);
   return {
     object: 'list',

@@ -47,7 +47,6 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   dump: null,
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
-  responseHeaders: new Headers(),
   requestStartedAt: 0,
   ...overrides,
 });
