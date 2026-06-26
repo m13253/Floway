@@ -25,7 +25,7 @@ const realModel = (overrides: Partial<InternalModel> & { id: string }): Internal
 });
 
 describe('synthesizeListedAliases', () => {
-  test('single-target alias narrows reasoning.effort to the fixed value', () => {
+  test('single-target alias with a pinned reasoning.effort drops the effort block', () => {
     const aliases = [aliasFixture({
       name: 'gpt-fast',
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
@@ -42,7 +42,9 @@ describe('synthesizeListedAliases', () => {
     const [entry] = synthesizeListedAliases({ aliases, realModels });
     expect(entry.id).toBe('gpt-fast');
     expect(entry.display_name).toBe('gpt-5.4 (low effort)');
-    expect(entry.chat?.reasoning?.effort).toEqual({ supported: ['low'], default: 'low' });
+    // The rule pins effort, so the announced metadata drops it — the
+    // caller already knows the value because the alias fixes it.
+    expect(entry.chat?.reasoning).toBeUndefined();
     expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
     expect(entry.aliasedFrom).toEqual({
       name: 'gpt-fast',
@@ -52,7 +54,7 @@ describe('synthesizeListedAliases', () => {
     });
   });
 
-  test('single-target alias narrows reasoning.budget_tokens to a single point', () => {
+  test('single-target alias with a pinned reasoning.budget_tokens drops the budget block', () => {
     const aliases = [aliasFixture({
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { budget_tokens: 4096 } } }],
     })];
@@ -61,7 +63,7 @@ describe('synthesizeListedAliases', () => {
       chat: { reasoning: { budget_tokens: { min: 1024, max: 65536 } } },
     })];
     const [entry] = synthesizeListedAliases({ aliases, realModels });
-    expect(entry.chat?.reasoning?.budget_tokens).toEqual({ min: 4096, max: 4096 });
+    expect(entry.chat?.reasoning).toBeUndefined();
   });
 
   test('multi-target alias intersects chat.modalities across every target', () => {
@@ -183,5 +185,111 @@ describe('synthesizeListedAliases', () => {
     const realModels = [realModel({ id: 'gpt-5.4' })];
     const [entry] = synthesizeListedAliases({ aliases, realModels });
     expect(entry.display_name).toBe('My Fast GPT');
+  });
+
+  test('multi-target alias whose first target pins reasoning.effort drops the alias-wide effort block', () => {
+    // The pinned target counts as unsupported for effort, so the
+    // intersection collapses — effort never makes it onto the listing.
+    const aliases = [aliasFixture({
+      name: 'mixed',
+      targets: [
+        { target_model_id: 'a', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
+      realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.chat?.reasoning).toBeUndefined();
+  });
+
+  test('multi-target alias without rules intersects reasoning.effort across targets', () => {
+    const aliases = [aliasFixture({
+      name: 'unfixed',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
+      realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['medium', 'high'], default: 'medium' } } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.chat?.reasoning?.effort).toEqual({ supported: ['medium', 'high'], default: 'medium' });
+  });
+
+  test('rules.reasoning.adaptive=true at any target drops adaptive from the announced metadata', () => {
+    const aliases = [aliasFixture({
+      name: 'pinned-adaptive',
+      targets: [
+        { target_model_id: 'a', rules: { reasoning: { adaptive: true } } },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { reasoning: { adaptive: true } } }),
+      realModel({ id: 'b', chat: { reasoning: { adaptive: true } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.chat?.reasoning).toBeUndefined();
+  });
+
+  test('limits intersection emits min across targets; absent when any target lacks the field', () => {
+    const aliases = [aliasFixture({
+      name: 'multi-limits',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', limits: { max_context_window_tokens: 128000, max_output_tokens: 16000 } }),
+      realModel({ id: 'b', limits: { max_context_window_tokens: 200000 } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    // Both targets advertise max_context_window_tokens — emit the min.
+    expect(entry.limits.max_context_window_tokens).toBe(128000);
+    // Only `a` declares max_output_tokens, so it drops out.
+    expect(entry.limits.max_output_tokens).toBeUndefined();
+  });
+
+  test('operator override pins limits.max_output_tokens; chat falls back to computed intersection', () => {
+    const aliases = [aliasFixture({
+      name: 'overridden',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+      announcedMetadata: {
+        limits: { max_output_tokens: 8192 },
+      },
+    })];
+    const realModels = [
+      realModel({ id: 'a', limits: { max_context_window_tokens: 128000 }, chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+      realModel({ id: 'b', limits: { max_context_window_tokens: 200000 }, chat: { modalities: { input: ['text'], output: ['text'] } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    // The override carries the operator's pinned ceiling verbatim …
+    expect(entry.limits).toEqual({ max_output_tokens: 8192 });
+    // … while chat falls back to the rule-aware intersection.
+    expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
+  });
+
+  test('operator override fully replaces chat when set, regardless of computed', () => {
+    const aliases = [aliasFixture({
+      name: 'chat-override',
+      targets: [{ target_model_id: 'a', rules: {} }],
+      announcedMetadata: {
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      },
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.chat).toEqual({ modalities: { input: ['text'], output: ['text'] } });
   });
 });

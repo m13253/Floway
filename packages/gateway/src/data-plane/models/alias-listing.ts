@@ -3,11 +3,20 @@
 // carries an `aliasedFrom` block so an alias-aware UI can render the
 // alias-of relationship without a second round trip.
 //
-// Capability metadata is the safe lower bound for the inbound request:
-// single-target reports the sole target's metadata narrowed by the
-// alias's rules; multi-target reports the intersection across every
-// currently-available target so whichever target gets picked at request
-// time supports whatever the catalog reported.
+// `limits` and `chat` come from the alias's announced metadata payload:
+// the operator's stored override when set (sparse — any sub-field they
+// did not provide falls back to the automatic computation), otherwise
+// the rule-aware intersection across the alias's available targets. The
+// intersection is the safe lower bound for the inbound request — every
+// reported capability survives no matter which target the resolver
+// picks at request time.
+//
+// The rule-aware part: when an alias's rule pins a value at a target,
+// that target is treated as "unsupported" for the corresponding
+// sub-field for the purposes of the intersection. A pinned rule
+// already fixes whatever value the listing would have advertised, so
+// dropping the sub-field from the announced metadata keeps the wire
+// surface honest about what the operator left for the caller to set.
 //
 // Collision: when an alias's `name` exactly equals a real model id, the
 // alias entry replaces the real entry in the final catalog. Two entries
@@ -18,7 +27,7 @@
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalModel, ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
@@ -39,6 +48,25 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
   const [head, ...tail] = arrays;
   return head.filter(value => tail.every(other => other.includes(value)));
+};
+
+// Apply the rule-driven downgrade: a target with a pinned rule reports
+// the corresponding catalog sub-field as unsupported (= undefined) for
+// the purposes of intersection. Fields the rule doesn't touch pass
+// through unchanged.
+const effectiveChatForIntersection = (chat: ChatModelInfo | undefined, target: AliasTarget): ChatModelInfo | undefined => {
+  if (chat === undefined) return undefined;
+  const rules = chatRules(target);
+  const ruleReasoning = rules.reasoning;
+  if (ruleReasoning === undefined) return chat;
+  if (chat.reasoning === undefined) return chat;
+
+  const reasoning: NonNullable<ChatModelInfo['reasoning']> = { ...chat.reasoning };
+  if (ruleReasoning.effort !== undefined) delete reasoning.effort;
+  if (ruleReasoning.budget_tokens !== undefined) delete reasoning.budget_tokens;
+  if (ruleReasoning.adaptive === true) delete reasoning.adaptive;
+
+  return { ...chat, reasoning };
 };
 
 const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
@@ -103,26 +131,20 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   return Object.keys(result).length > 0 ? result : undefined;
 };
 
-// Narrow the single target's chat metadata against the alias's rule
-// overlay. Fields the rule doesn't touch pass through unchanged.
-const narrowChatByRules = (chat: ChatModelInfo | undefined, target: AliasTarget): ChatModelInfo | undefined => {
-  if (chat === undefined) return undefined;
-  const rules = chatRules(target);
-  if (rules.reasoning === undefined) return chat;
-  const out: ChatModelInfo = { ...chat };
-  if (chat.reasoning !== undefined) {
-    const reasoning: NonNullable<ChatModelInfo['reasoning']> = { ...chat.reasoning };
-    if (rules.reasoning.effort !== undefined) {
-      const fixed = rules.reasoning.effort;
-      reasoning.effort = { supported: [fixed], default: fixed };
-    }
-    if (rules.reasoning.budget_tokens !== undefined) {
-      const fixed = rules.reasoning.budget_tokens;
-      reasoning.budget_tokens = { min: fixed, max: fixed };
-    }
-    out.reasoning = reasoning;
+// `limits` intersection: min across targets per field; the field is
+// absent when any target leaves it undeclared. Matches the safe-lower-
+// bound contract — whichever target the resolver picks, the reported
+// window is one every target can actually serve.
+const LIMIT_KEYS = ['max_context_window_tokens', 'max_prompt_tokens', 'max_output_tokens'] as const;
+
+const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelLimits => {
+  if (limitsList.length === 0) return {};
+  const result: PublicModelLimits = {};
+  for (const key of LIMIT_KEYS) {
+    const values = limitsList.map(l => l[key]).filter((v): v is number => v !== undefined);
+    if (values.length === limitsList.length) result[key] = Math.min(...values);
   }
-  return out;
+  return result;
 };
 
 const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
@@ -132,6 +154,41 @@ const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
   // Every configured target — including ones the live catalog can not
   // serve — so the dashboard can show the full configuration.
   targets: alias.targets,
+});
+
+// Compute the rule-aware intersection (`limits` + `chat`) over the
+// alias's currently-available targets. Caller decides whether to use
+// the result directly or overlay it under an operator override.
+const computeAutomaticMetadata = (
+  alias: ModelAliasRecord,
+  availableTargets: readonly { target: AliasTarget; real: InternalModel }[],
+): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => {
+  if (availableTargets.length === 0) return { limits: {}, chat: undefined };
+
+  const limits = intersectLimits(availableTargets.map(({ real }) => real.limits));
+
+  const effectiveChats = availableTargets
+    .map(({ target, real }) => effectiveChatForIntersection(real.chat, target))
+    .filter((c): c is ChatModelInfo => c !== undefined);
+  // Intersect chat metadata only when every available target carries it
+  // (post-downgrade); a half-declared block would leak the metadata of
+  // whichever subset happened to carry it.
+  const chat = effectiveChats.length === availableTargets.length
+    ? intersectChat(effectiveChats)
+    : undefined;
+
+  return { limits, chat };
+};
+
+// Merge the operator's override on top of the computed payload, per the
+// sparse-override contract: any sub-field the operator omitted falls
+// back to the computed value for that sub-field.
+const mergeWithOverride = (
+  computed: { limits: PublicModelLimits; chat: ChatModelInfo | undefined },
+  override: AnnouncedMetadata,
+): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => ({
+  limits: override.limits ?? computed.limits,
+  chat: override.chat ?? computed.chat,
 });
 
 const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalModel[]): PublicModel => {
@@ -147,38 +204,29 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalMod
     ? composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules)
     : alias.name);
 
+  const computed = computeAutomaticMetadata(alias, availableTargets);
+  const { limits, chat } = alias.announcedMetadata !== null
+    ? mergeWithOverride(computed, alias.announcedMetadata)
+    : computed;
+
   const entry: PublicModel = {
     id: alias.name,
     object: 'model',
     type: 'model',
     display_name: displayName,
-    limits: {},
+    limits,
     kind: alias.kind,
     aliasedFrom: buildAliasedFrom(alias),
   };
+  if (chat !== undefined) entry.chat = chat;
 
-  // No backing target — still emit the row so the dashboard can show the
-  // alias with a no-target warning.
-  if (availableTargets.length === 0) return entry;
-
+  // Single-target chat pricing rides along when available — the resolver
+  // will hit that target, so the catalog can publish its rate verbatim.
   if (availableTargets.length === 1) {
-    const [{ target, real }] = availableTargets;
-    if (real.chat !== undefined) {
-      const chat = narrowChatByRules(real.chat, target);
-      if (chat !== undefined) entry.chat = chat;
-    }
+    const [{ real }] = availableTargets;
     if (real.cost !== undefined) entry.cost = real.cost;
-    return entry;
   }
 
-  const chats = availableTargets.map(({ real }) => real.chat).filter((c): c is ChatModelInfo => c !== undefined);
-  // Intersect chat metadata only when every available target declares it;
-  // a half-declared block would leak the metadata of whichever subset
-  // happened to carry it.
-  if (chats.length === availableTargets.length) {
-    const chat = intersectChat(chats);
-    if (chat !== undefined) entry.chat = chat;
-  }
   return entry;
 };
 
