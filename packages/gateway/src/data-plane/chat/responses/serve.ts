@@ -1,6 +1,6 @@
 import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
-import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import type { StatefulResponsesStore } from './items/store.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -12,12 +12,6 @@ export interface ResponsesServeGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly headers: Headers;
-  // WS overrides this to 'append' regardless of payload.store; the
-  // session-cache layer (StatefulResponsesStore) already filters durable
-  // writes — the WS path wants in-session snapshots even when the caller
-  // opted out of durable storage. HTTP omits the override so the attempt's
-  // post-chain derivation runs.
-  readonly snapshotMode?: ResponsesSnapshotMode;
 }
 
 export interface ResponsesServeCompactArgs {
@@ -29,7 +23,7 @@ export interface ResponsesServeCompactArgs {
 
 export const responsesServe = {
   generate: async (args: ResponsesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, headers, snapshotMode } = args;
+    const { payload, ctx, store, headers } = args;
     const plan = await prepareResponsesServePlan({
       payload, ctx, store,
       pickTarget: endpoints =>
@@ -39,7 +33,7 @@ export const responsesServe = {
               : null,
     });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers, ...(snapshotMode !== undefined ? { snapshotMode } : {}) });
+    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers });
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
