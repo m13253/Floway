@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 
 import type { ModelAlias } from '../../api/types.ts';
-import { formatAliasRuleBadges } from '@floway-dev/protocols/common';
+import { formatAliasRulesInline } from '@floway-dev/protocols/common';
 
 const props = defineProps<{
   alias: ModelAlias;
@@ -13,46 +13,24 @@ defineEmits<{
   delete: [];
 }>();
 
-// Effective label: operator-set display name when present, otherwise fall
-// back to the alias id itself. The "→ target" annotation is rendered
-// alongside the label rather than substituted in so an operator who picks a
-// long display name still sees what the alias points at.
-const labelText = computed(() => props.alias.display_name ?? props.alias.alias);
-
-const badges = computed(() => formatAliasRuleBadges(props.alias.rules));
+const rulesInline = computed(() => formatAliasRulesInline(props.alias.rules));
 </script>
 
 <template>
-  <div class="flex items-center gap-3 rounded-lg border border-white/5 bg-surface-800/80 px-3 py-2">
-    <div class="min-w-0 flex-1 truncate">
-      <span class="font-mono text-xs text-gray-500">{{ alias.alias }}</span>
-      <span class="ml-2 text-sm font-semibold text-white">{{ labelText }}</span>
-      <span class="ml-2 text-xs text-gray-500">&rarr; {{ alias.target_model_id }}</span>
+  <div class="flex items-start gap-3 rounded-lg border border-white/5 bg-surface-800/80 px-3 py-2.5">
+    <div class="min-w-0 flex-1 flex flex-col gap-1">
+      <h4 v-if="alias.display_name" class="text-sm font-semibold text-white">{{ alias.display_name }}</h4>
+      <p class="font-mono text-sm flex flex-wrap items-center gap-x-2">
+        <span class="text-white break-all">{{ alias.alias }}</span>
+        <span class="text-gray-600">&rarr;</span>
+        <span class="text-gray-500 break-all">{{ alias.target_model_id }}</span>
+      </p>
+      <p v-if="rulesInline" class="text-xs text-gray-500">{{ rulesInline }}</p>
+      <p
+        v-if="!alias.visible_in_models_list"
+        class="text-[10px] uppercase tracking-wide text-amber-300"
+      >hidden from <code class="font-mono normal-case">/v1/models</code></p>
     </div>
-
-    <div v-if="alias.upstream_ids.length > 0" class="hidden shrink-0 items-center gap-1 sm:flex">
-      <span
-        v-for="id in alias.upstream_ids"
-        :key="id"
-        class="rounded border border-white/10 bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] text-gray-400"
-      >{{ id }}</span>
-    </div>
-
-    <div v-if="badges.length > 0" class="hidden shrink-0 items-center gap-1 sm:flex">
-      <span
-        v-for="badge in badges"
-        :key="badge.label"
-        class="rounded border border-white/10 bg-white/[0.02] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-400"
-      >
-        {{ badge.label }}<template v-if="badge.value !== undefined">: <span class="text-gray-300 normal-case">{{ badge.value }}</span></template>
-      </span>
-    </div>
-
-    <span
-      v-if="!alias.visible_in_models_list"
-      class="hidden shrink-0 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300 sm:inline"
-      title="Hidden from /v1/models"
-    >hidden</span>
 
     <div class="flex shrink-0 items-center gap-1">
       <button

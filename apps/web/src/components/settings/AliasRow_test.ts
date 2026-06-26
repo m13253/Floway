@@ -40,13 +40,18 @@ describe('AliasRow', () => {
     expect(wrapper.text()).not.toContain('alias-only');
   });
 
-  test('renders upstream-id pills when the alias whitelists upstreams', () => {
+  test('does not render per-upstream pills (upstream restriction is shown in the edit dialog instead)', () => {
+    // The row used to surface alias.upstream_ids as small font-mono pills.
+    // Operator feedback pushed all alias detail beyond the 3-line text block
+    // (display name, id mapping, rules summary) into the edit dialog so the
+    // listing reads at a glance. Assert the upstream id strings stay out of
+    // the row text — they live in the dialog now.
     const wrapper = mount(AliasRow, {
       props: { alias: { ...baseAlias, upstream_ids: ['up_anth', 'up_oai'] } },
     });
     const text = wrapper.text();
-    expect(text).toContain('up_anth');
-    expect(text).toContain('up_oai');
+    expect(text).not.toContain('up_anth');
+    expect(text).not.toContain('up_oai');
   });
 
   test('falls back to alias name when display_name is null', () => {
@@ -70,7 +75,7 @@ describe('AliasRow', () => {
     expect(wrapper.text()).toContain('hidden');
   });
 
-  test('renders one rule badge per active rule field', () => {
+  test('renders the rules summary inline as one comma-joined line', () => {
     const wrapper = mount(AliasRow, {
       props: {
         alias: {
@@ -79,11 +84,18 @@ describe('AliasRow', () => {
         },
       },
     });
-    // formatAliasRuleBadges drives the order: effort, verbosity, service tier.
-    const text = wrapper.text();
-    expect(text).toContain('effort: high');
-    expect(text).toContain('verbosity: low');
-    expect(text).toContain('service tier: priority');
+    // formatAliasRulesInline produces "value label, ..." in the same order
+    // composeAliasDisplayName uses for its parenthesized suffix.
+    expect(wrapper.text()).toContain('high effort, low verbosity, priority tier');
+  });
+
+  test('omits the rules summary line entirely when no rules are set', () => {
+    const wrapper = mount(AliasRow, {
+      props: { alias: { ...baseAlias, rules: {} } },
+    });
+    expect(wrapper.text()).not.toContain('effort');
+    expect(wrapper.text()).not.toContain('verbosity');
+    expect(wrapper.text()).not.toContain('tier');
   });
 });
 
