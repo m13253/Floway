@@ -1,8 +1,9 @@
+import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
 import { type AliasResolution, resolveAlias } from '../model-aliases/resolve.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
@@ -80,18 +81,6 @@ export const listModelProviders = async (
   return providers;
 };
 
-// Merge two capability maps: a key present in either side is present in the
-// result, and its sub-capability flags are OR-ed so a sub-cap advertised by
-// either provider survives.
-const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
-  const result: ModelEndpoints = { ...a };
-  for (const key of Object.keys(b) as ModelEndpointKey[]) {
-    const merged = { ...result[key], ...b[key] };
-    (result as Record<ModelEndpointKey, object>)[key] = merged;
-  }
-  return result;
-};
-
 const resolvedFromUpstreamModel = (upstreamModel: UpstreamModel, record: ProviderModelRecord): ResolvedModel => {
   const { providerData: _providerData, endpoints, ...internal } = upstreamModel;
   return {
@@ -127,7 +116,7 @@ const mergeIntoCatalog = (
     byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
     return;
   }
-  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+  const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
   byId.set(publicId, {
     ...existing,
     endpoints,

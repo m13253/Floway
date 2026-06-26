@@ -27,8 +27,9 @@
 // at the `loadModels` merge step.
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import { unionEndpoints } from '../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelEndpointKey, ModelEndpoints, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
@@ -49,25 +50,6 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
   const [head, ...tail] = arrays;
   return head.filter(value => tail.every(other => other.includes(value)));
-};
-
-// Endpoint union across the alias's available targets: a key appears in
-// the alias's advertised endpoints whenever ANY target serves it. Sub-cap
-// flags inside a key are ORed conservatively — present in the result iff
-// any contributing target declares them. The pool-narrowing at request
-// time picks among the targets that actually serve the inbound endpoint,
-// so every endpoint advertised here is reachable through at least one
-// target.
-const unionEndpoints = (endpointsList: readonly ModelEndpoints[]): ModelEndpoints => {
-  const result: ModelEndpoints = {};
-  for (const endpoints of endpointsList) {
-    for (const key of Object.keys(endpoints) as ModelEndpointKey[]) {
-      const incoming = endpoints[key];
-      if (incoming === undefined) continue;
-      result[key] = { ...result[key], ...incoming };
-    }
-  }
-  return result;
 };
 
 // Apply the rule-driven downgrade: a target with a pinned rule reports
