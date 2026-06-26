@@ -43,8 +43,8 @@ export interface ResponsesAttemptInvokeArgs {
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
 // The interceptor chain owns the action through `invocation.action` and may
-// flip it; post-chain the provider's tagged result drives snapshot mode
-// ('replace' for compact, 'append'/'none' for generate) and decides whether
+// flip it; post-chain we read `invocation.action` to pick snapshot mode
+// ('replace' for compact, 'append'/'none' for generate) and decide whether
 // to drain the event stream into a single compaction envelope.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {

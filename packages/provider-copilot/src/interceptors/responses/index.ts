@@ -26,14 +26,16 @@ export const COPILOT_RESPONSES_BOUNDARY = [
   withInitiatorHeaderSet,
 ] as const satisfies readonly CopilotResponsesBoundaryInterceptor[];
 
-// Non-streaming `/responses/compact` chain. The compact terminal produces a
-// `response.compaction` envelope as a value, not a stream, so the two
-// event-stream mutators (`withToolArgumentWhitespaceAborted`,
+// Non-streaming compaction chain. Copilot has no native compact endpoint, so
+// the provider synthesizes compaction by driving `/responses` with
+// stream:false plus a `compaction_trigger` input item. The compact terminal
+// produces the `response.compaction` envelope as a value, not a stream, so
+// the two event-stream mutators (`withToolArgumentWhitespaceAborted`,
 // `withOutputItemIdsSynchronized`) are omitted — they only inspect frames
 // after `run()` resolves. Every other Copilot-side payload/header workaround
-// applies identically: `/responses/compact` still rejects `store: true`,
-// still chokes on `image_generation` tools, still ignores `service_tier`,
-// and still wants the same vision / initiator headers when applicable.
+// applies identically: the upstream still rejects `store: true`, still chokes
+// on `image_generation` tools, still ignores `service_tier`, and still wants
+// the same vision / initiator headers when applicable.
 export const COPILOT_RESPONSES_COMPACT_BOUNDARY = [
   withInlineImagesCompressed,
   withServiceTierStripped,

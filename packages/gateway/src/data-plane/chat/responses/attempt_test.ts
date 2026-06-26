@@ -285,9 +285,9 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
   // Native /responses/compact returns a fully-shaped compaction envelope —
-  // `provider.callResponsesCompact` already does the Copilot
-  // compaction_trigger reshape internally — so the attempt receives a
-  // ResponsesResult, expands it into synthetic frames, and wraps the
+  // the `action: 'compact'` branch of `provider.callResponses` does the
+  // Copilot compaction_trigger reshape internally — so the attempt receives
+  // a ResponsesResult, expands it into synthetic frames, and wraps the
   // output for storage.
   const compactionItem = {
     type: 'compaction' as const,
