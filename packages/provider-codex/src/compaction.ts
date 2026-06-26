@@ -10,7 +10,7 @@ export type CodexCompactionCallResult =
   | { ok: true; result: ResponsesResult; modelKey: string }
   | { ok: false; response: Response; modelKey: string };
 
-export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponsesOptions, 'body'> {
+export interface CallCodexResponsesCompactOptions extends Omit<CallCodexResponsesOptions, 'body' | 'additionalHeaders'> {
   body: Omit<ResponsesCompactPayload, 'model' | 'store'>;
 }
 
@@ -60,7 +60,6 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
     additionalHeaders: {
       'x-codex-beta-features': CODEX_REMOTE_COMPACTION_BETA,
       'x-codex-turn-metadata': JSON.stringify(turnMetadata),
-      ...opts.additionalHeaders,
     },
   });
 
