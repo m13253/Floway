@@ -351,9 +351,10 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Adaptive reasoning</label>
           <div class="flex h-9 items-center gap-2">
             <Switch v-model="reasoningAdaptive" />
-            <span class="text-sm text-gray-300">Adaptive reasoning</span>
+            <span class="text-sm text-gray-300">Enable</span>
           </div>
           <p v-if="reasoningAdaptive && !adaptiveSupported" class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
             Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
