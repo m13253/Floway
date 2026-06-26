@@ -183,7 +183,6 @@ test('generate native success wraps the upstream event stream once', async () =>
     ctx,
     store,
     candidate,
-    snapshotMode: 'append',
     headers: new Headers(),
   });
 
@@ -238,7 +237,6 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    snapshotMode: 'append',
     headers: new Headers(),
   });
 
@@ -268,7 +266,6 @@ test('generate passes non-events provider result through unchanged', async () =>
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
-    snapshotMode: 'append',
     headers: new Headers(),
   });
 
@@ -280,7 +277,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   wrapSpy.mockRestore();
 });
 
-test('compact reshapes the trigger turn into a result and forwards snapshotMode=replace', async () => {
+test('compact action drives a replace-mode snapshot off the synthesized envelope', async () => {
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
@@ -389,7 +386,6 @@ test('generate inherits invocation headers across translation to Messages', asyn
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
-    snapshotMode: 'append',
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -500,7 +496,6 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    snapshotMode: 'append',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');
@@ -549,7 +544,6 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    snapshotMode: 'append',
     headers: new Headers(),
   });
 

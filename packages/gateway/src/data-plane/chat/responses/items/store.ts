@@ -270,11 +270,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
     // `compaction_trigger` is a per-request control signal, not content:
     // payload-free, idless, never persisted in codex's own rollout/history,
-    // and never re-sent on subsequent turns. A trigger-bearing generate is
-    // treated as a compaction (serve forces snapshotMode='replace') so the
-    // next snapshot is the resulting `compaction` blob alone; this row
-    // would have no reader. Skipping it also keeps `createStoredResponsesItemId`
-    // from minting a prefix for a type that never needs one.
+    // and never re-sent on subsequent turns. The copilot provider's compact
+    // branch is the only thing that appends one (on the wire, to drive the
+    // `/responses` endpoint into compaction mode), so the trigger never
+    // arrives back through the staging path on any subsequent turn anyway.
+    // Skipping it also keeps `createStoredResponsesItemId` from minting a
+    // prefix for a type that never needs one.
     if (item.type === 'compaction_trigger') return;
 
     if (item.type === 'item_reference') {

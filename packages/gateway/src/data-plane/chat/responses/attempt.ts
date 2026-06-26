@@ -4,7 +4,7 @@ import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
-import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
@@ -29,14 +29,6 @@ export interface ResponsesAttemptInvokeArgs {
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
   readonly headers: Headers;
-  // Cross-protocol translation paths (Messages/Gemini/ChatCompletions
-  // translating into Responses) own snapshot persistence at the outer
-  // protocol's attempt and pass `'none'` so the inner Responses call does
-  // not double-write. Native Responses HTTP/WS leaves this absent so the
-  // attempt derives snapshot mode from the post-chain action +
-  // `payload.store` (compact → 'replace'; generate with store=false →
-  // 'none'; generate otherwise → 'append').
-  readonly snapshotMode?: ResponsesSnapshotMode;
 }
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
@@ -44,11 +36,13 @@ export interface ResponsesAttemptInvokeArgs {
 // flip it (the responses-compact-shim turns 'compact' into 'generate' so the
 // inner call summarizes against SUMMARIZATION_PROMPT, then re-tags
 // `invocation.action` back to 'compact' before returning). Post-chain the
-// final `invocation.action` is what drives snapshot mode (`replace` for
-// compact, `append`/`none` for generate).
+// final `invocation.action` is what drives snapshot mode ('replace' for
+// compact, 'append' for generate). Where those writes actually land —
+// durable repo, WS session memory, or nowhere — is fully owned by the
+// store factory the caller supplied (see items/store.ts factories).
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, action, ctx, store, candidate, headers, snapshotMode: snapshotModeOverride } = args;
+    const { payload, action, ctx, store, candidate, headers } = args;
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
@@ -107,10 +101,6 @@ export const responsesAttempt = {
       };
     }
 
-    const snapshotMode: ResponsesSnapshotMode = snapshotModeOverride
-      ?? (containsCompactionTrigger(normalized.input)
-        ? 'replace'
-        : (normalized.store === false ? 'none' : 'append'));
     // Persistence and id rewriting wrap the *outermost* stream — after every
     // interceptor (including the server-tool shim) has emitted its final
     // events. This is the only seam at which the gateway-owned response id
@@ -123,7 +113,7 @@ export const responsesAttempt = {
       wrapResponsesOutputForStorage(chainResult.events, {
         store,
         upstream: candidate.binding.upstream,
-        snapshotMode,
+        snapshotMode: 'append',
         targetApi: candidate.targetApi,
         responseId,
       }),
@@ -149,18 +139,6 @@ export const responsesAttempt = {
     return result;
   },
 };
-
-// Codex's RemoteCompactionV2 performs compaction through the generate path
-// by appending a `compaction_trigger` control item to the input. Semantically
-// this is the same operation as `/responses/compact`: the upstream replaces
-// the prior history with a single `compaction` output, and any later
-// `previous_response_id` should resolve to that blob alone — not the dropped
-// history. Treat such a request like compact at the snapshot seam even when
-// the action stays 'generate' (the codex provider's compact branch goes
-// through action='compact', but a direct generate carrying the trigger
-// reaches the same upstream behavior).
-const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
 
 type RewriteOutcome =
   | RewrittenResponsesPayload
