@@ -1,5 +1,4 @@
 import type { AliasKind, AliasSelection, AliasTarget } from './aliases.ts';
-import type { ModelEndpoints } from './capabilities.ts';
 
 // Disjoint billing dimensions a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
@@ -154,14 +153,6 @@ export interface PublicModel {
   // Non-standard extra fields below.
   limits: PublicModelLimits;
   kind: ModelKind;
-  // Per-endpoint availability map. Mirrors the upstream-side `ModelEndpoints`
-  // verbatim: a key present means the model is reachable over that endpoint.
-  // Real-model entries inherit it from the resolved binding; alias entries
-  // surface the intersection of every available target's endpoint map.
-  // Optional — clients that only care about /v1/models for capability
-  // discovery may ignore it. Operator-editable on real models via the
-  // ModelEditor; not editable on aliases (it follows from the target set).
-  endpoints?: ModelEndpoints;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
   // Present only on entries the gateway synthesized from an operator-defined
