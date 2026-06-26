@@ -27,12 +27,12 @@
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
-import type { InternalModel, ResolvedModel } from '@floway-dev/provider';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelEndpointKey, ModelEndpoints, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
-  readonly realModels: readonly InternalModel[];
+  readonly realModels: readonly ResolvedModel[];
 }
 
 // The repo guarantees rule shape matches the row's `kind` (chat rows carry
@@ -48,6 +48,25 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
   const [head, ...tail] = arrays;
   return head.filter(value => tail.every(other => other.includes(value)));
+};
+
+// Endpoint union across the alias's available targets: a key appears in
+// the alias's advertised endpoints whenever ANY target serves it. Sub-cap
+// flags inside a key are ORed conservatively — present in the result iff
+// any contributing target declares them. The pool-narrowing at request
+// time picks among the targets that actually serve the inbound endpoint,
+// so every endpoint advertised here is reachable through at least one
+// target.
+const unionEndpoints = (endpointsList: readonly ModelEndpoints[]): ModelEndpoints => {
+  const result: ModelEndpoints = {};
+  for (const endpoints of endpointsList) {
+    for (const key of Object.keys(endpoints) as ModelEndpointKey[]) {
+      const incoming = endpoints[key];
+      if (incoming === undefined) continue;
+      result[key] = { ...result[key], ...incoming };
+    }
+  }
+  return result;
 };
 
 // Apply the rule-driven downgrade: a target with a pinned rule reports
@@ -161,7 +180,7 @@ const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
 // the result directly or overlay it under an operator override.
 const computeAutomaticMetadata = (
   alias: ModelAliasRecord,
-  availableTargets: readonly { target: AliasTarget; real: InternalModel }[],
+  availableTargets: readonly { target: AliasTarget; real: ResolvedModel }[],
 ): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => {
   if (availableTargets.length === 0) return { limits: {}, chat: undefined };
 
@@ -191,11 +210,11 @@ const mergeWithOverride = (
   chat: override.chat ?? computed.chat,
 });
 
-const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalModel[]): PublicModel => {
+const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly ResolvedModel[]): PublicModel => {
   const realById = new Map(realModels.map(m => [m.id, m] as const));
   const availableTargets = alias.targets
     .map(target => ({ target, real: realById.get(target.target_model_id) }))
-    .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
+    .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
 
   // Display name precedence: operator-set wins; otherwise derive from the
   // sole target's id + rules when single-target; multi-target falls back to
@@ -219,6 +238,18 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly InternalMod
     aliasedFrom: buildAliasedFrom(alias),
   };
   if (chat !== undefined) entry.chat = chat;
+
+  // Endpoints follow the available-targets UNION, not an intersection —
+  // every endpoint reachable through ANY target is advertised, because
+  // the resolver's request-time pool narrows to targets that serve the
+  // inbound endpoint and the first-available / random pick happens
+  // within that narrowed pool. Operator can't override endpoints (they
+  // follow the target set, not a stored override). Absent when no
+  // target is currently available, same shape as the chat block.
+  if (availableTargets.length > 0) {
+    const endpoints = unionEndpoints(availableTargets.map(({ real }) => real.endpoints));
+    if (Object.keys(endpoints).length > 0) entry.endpoints = endpoints;
+  }
 
   // Single-target chat pricing rides along when available — the resolver
   // will hit that target, so the catalog can publish its rate verbatim.

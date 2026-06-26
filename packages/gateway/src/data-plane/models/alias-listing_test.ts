@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { synthesizeListedAliases } from './alias-listing.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { ResolvedModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   name: 'gpt-fast',
@@ -18,9 +18,11 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
   ...overrides,
 });
 
-const realModel = (overrides: Partial<InternalModel> & { id: string }): InternalModel => ({
+const realModel = (overrides: Partial<ResolvedModel> & { id: string }): ResolvedModel => ({
   kind: 'chat',
   limits: {},
+  endpoints: { chatCompletions: {}, messages: {}, responses: {} },
+  providers: [],
   ...overrides,
 });
 
@@ -291,5 +293,55 @@ describe('synthesizeListedAliases', () => {
     ];
     const [entry] = synthesizeListedAliases({ aliases, realModels });
     expect(entry.chat).toEqual({ modalities: { input: ['text'], output: ['text'] } });
+  });
+
+  test('endpoints is the union across available targets — every reachable endpoint surfaces', () => {
+    const aliases = [aliasFixture({
+      name: 'mixed',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      // Target a serves the three chat endpoints + /completions.
+      realModel({ id: 'a', endpoints: { chatCompletions: {}, messages: {}, responses: {}, completions: {} } }),
+      // Target b only serves the three chat endpoints.
+      realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    // Union: every key surfaces. Resolver narrows to the supporting subset
+    // at request time, so first-available / random stays sound per-endpoint.
+    expect(entry.endpoints).toEqual({
+      chatCompletions: {},
+      messages: {},
+      responses: {},
+      completions: {},
+    });
+  });
+
+  test('endpoints union surfaces both image keys when targets split between generations and edits', () => {
+    const aliases = [aliasFixture({
+      kind: 'image',
+      targets: [
+        { target_model_id: 'gen', rules: {} },
+        { target_model_id: 'edit', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'gen', kind: 'image', endpoints: { imagesGenerations: {} } }),
+      realModel({ id: 'edit', kind: 'image', endpoints: { imagesEdits: {} } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
+  });
+
+  test('endpoints is absent on the entry when no target is currently available', () => {
+    const aliases = [aliasFixture({
+      name: 'ghost',
+      targets: [{ target_model_id: 'missing', rules: {} }],
+    })];
+    const [entry] = synthesizeListedAliases({ aliases, realModels: [] });
+    expect(entry.endpoints).toBeUndefined();
   });
 });

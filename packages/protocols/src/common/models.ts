@@ -1,4 +1,5 @@
 import type { AliasKind, AliasSelection, AliasTarget } from './aliases.ts';
+import type { ModelEndpoints } from './capabilities.ts';
 
 // Disjoint billing dimensions a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
@@ -153,6 +154,19 @@ export interface PublicModel {
   // Non-standard extra fields below.
   limits: PublicModelLimits;
   kind: ModelKind;
+  // Public-facing endpoint surface. Mirrors the upstream-side ModelEndpoints
+  // verbatim — by the time a model reaches this DTO, the provider layer
+  // (e.g. provider-ollama, provider-copilot) has already projected the raw
+  // upstream catalog into the public-facing shape: the three chat endpoints
+  // (chatCompletions / messages / responses) appear together because the
+  // gateway translates between them, while `completions`, `embeddings`,
+  // `imagesGenerations`, and `imagesEdits` only appear when the upstream
+  // natively serves them. Alias entries surface the UNION of every
+  // currently-available target's endpoint map — at request time the
+  // resolver narrows the pool to targets that serve the inbound endpoint,
+  // so any endpoint advertised here is reachable through at least one
+  // target.
+  endpoints?: ModelEndpoints;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
   // Present only on entries the gateway synthesized from an operator-defined
