@@ -198,8 +198,11 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
       </div>
 
       <div>
-        <div class="mb-2 flex items-center justify-between">
-          <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500">Models</h4>
+        <div class="mb-2 flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h4 class="text-sm font-semibold text-gray-300">Models</h4>
+            <p class="mt-0.5 text-xs text-gray-500">Click a model id to edit.</p>
+          </div>
           <Button variant="secondary" size="sm" @click="addTarget">Add target</Button>
         </div>
         <div class="space-y-2">
