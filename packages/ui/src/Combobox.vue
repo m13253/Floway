@@ -59,12 +59,24 @@ watch(value, v => { if (v !== query.value) query.value = v; });
 // same value.
 watch(query, q => { value.value = q; });
 
-// Filter suggestions by the typed query against either value or label.
-// When the query exactly matches an item we still show it (the user can
-// re-pick the same row), but we hide a synthesized "create" row in that
-// case — it would be a no-op.
-const filteredItems = computed(() => normalizedItems.value.filter(item =>
-  query.value === '' || contains(item.label ?? item.value, query.value) || contains(item.value, query.value)));
+// Always show every suggestion; rank items whose label or value contains the
+// typed query above the rest, preserving the original order within each
+// group. Empty query keeps the configured order untouched. The operator
+// always sees the full set of presets — typing narrows attention to the
+// top of the list without hiding the alternatives.
+const orderedItems = computed<Item[]>(() => {
+  if (query.value === '') return normalizedItems.value;
+  const matches: Item[] = [];
+  const rest: Item[] = [];
+  for (const item of normalizedItems.value) {
+    if (contains(item.label ?? item.value, query.value) || contains(item.value, query.value)) {
+      matches.push(item);
+    } else {
+      rest.push(item);
+    }
+  }
+  return [...matches, ...rest];
+});
 
 const trimmedQuery = computed(() => query.value.trim());
 const hasExactMatch = computed(() => normalizedItems.value.some(item => item.value === trimmedQuery.value));
@@ -123,7 +135,7 @@ const commitTyped = async () => {
         class="z-50 max-h-72 w-[--reka-combobox-trigger-width] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 text-white shadow-xl"
       >
         <ComboboxViewport class="p-1">
-          <ComboboxEmpty v-if="!showCreateOption" class="px-2 py-1.5 text-xs text-gray-500">
+          <ComboboxEmpty v-if="orderedItems.length === 0 && !showCreateOption" class="px-2 py-1.5 text-xs text-gray-500">
             {{ emptyText }}
           </ComboboxEmpty>
           <ComboboxGroup>
@@ -139,7 +151,7 @@ const commitTyped = async () => {
               <span class="truncate">Use "<span class="font-mono">{{ trimmedQuery }}</span>"</span>
             </ComboboxItem>
             <ComboboxItem
-              v-for="item in filteredItems"
+              v-for="item in orderedItems"
               :key="item.value"
               :value="item.value"
               class="relative flex cursor-pointer select-none items-center rounded-sm py-1.5 pl-7 pr-2 text-sm text-white outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"

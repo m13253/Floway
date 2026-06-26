@@ -103,6 +103,19 @@ const budgetMin = computed(() => targetChat.value?.reasoning?.budget_tokens?.min
 const budgetMax = computed(() => targetChat.value?.reasoning?.budget_tokens?.max);
 const adaptiveSupported = computed(() => targetChat.value?.reasoning?.adaptive === true);
 
+// Collected at the bottom of the dialog so a misalignment between the
+// rule and the target model's advertised capability stays visible without
+// crowding the per-field area. Add a new entry per condition; the labels
+// double as the field name an operator should look up to fix it.
+interface FieldWarning { field: string; message: string }
+const fieldWarnings = computed<FieldWarning[]>(() => {
+  const out: FieldWarning[] = [];
+  if (reasoningAdaptive.value && !adaptiveSupported.value) {
+    out.push({ field: 'Adaptive reasoning', message: 'Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.' });
+  }
+  return out;
+});
+
 const SUMMARY_HINTS = ['auto', 'concise', 'detailed', 'omitted'];
 const VERBOSITY_HINTS = ['low', 'medium', 'high'];
 const SERVICE_TIER_HINTS = ['auto', 'default', 'flex', 'scale', 'priority', 'fast', 'standard_only'];
@@ -327,7 +340,6 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Effort</label>
           <Combobox v-model="reasoningEffort" :items="effortSuggestions" placeholder="high" />
-          <p v-if="effortSuggestions.length > 0" class="mt-1 text-xs text-gray-600">Target supports: {{ effortSuggestions.join(', ') }}</p>
         </div>
 
         <div>
@@ -356,9 +368,6 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
             <Switch v-model="reasoningAdaptive" />
             <span class="text-sm text-gray-300">Enable</span>
           </div>
-          <p v-if="reasoningAdaptive && !adaptiveSupported" class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
-            Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
-          </p>
         </div>
 
         <div>
@@ -382,6 +391,16 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
       <div>
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Anthropic beta headers <span class="text-gray-600">(comma- or Enter-separated tokens)</span></label>
         <TagCombobox v-model="anthropicBeta" :items="[]" placeholder="extended-cache-ttl-2025-04-11" empty-text="Type a header token and press Enter" />
+      </div>
+
+      <div v-if="fieldWarnings.length > 0" class="space-y-1.5">
+        <p
+          v-for="warning in fieldWarnings"
+          :key="warning.field"
+          class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
+        >
+          <span class="font-medium">{{ warning.field }}:</span> {{ warning.message }}
+        </p>
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-5">
