@@ -42,6 +42,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
     stageInputs: false,
   }),
   headers: new Headers(),
+  action: 'generate',
 });
 
 test('rewrites developer role to system on input messages', async () => {

@@ -10,18 +10,19 @@ import type { ExecuteResult, ResponsesInvocation as ProviderResponsesInvocation,
 // the per-request stateful store. Provider interceptors only see the slim
 // fields (parameter contravariance lets app-side richer instances flow in),
 // while api-internal interceptors that need stored-item lookups read `store`.
+// The `action` field on the provider shape is mutable through the chain;
+// post-chain, `invocation.action` is the authoritative signal the gateway
+// uses to pick snapshot mode and decide whether to drain the events into a
+// single compaction envelope.
 export interface ResponsesInvocation extends ProviderResponsesInvocation {
   readonly store: StatefulResponsesStore;
 }
 
-// Compact post-processes the chain's event stream into a single
-// `response.compaction` envelope and returns it as a value; generate keeps
-// the events branch. The chain runner itself stays narrow over
-// `ExecuteResult<…ResponsesStreamEvent>` so existing interceptors retain
-// their event-stream contract — the result branch is observable only on
-// `responsesAttempt.compact`'s outer return. `modelIdentity` and `usage`
-// carry the per-turn attribution forward so the http layer's `ctx.dump`
-// records the success path identically to streaming generate.
+// The chain runner produces an event stream for both actions — the attempt
+// post-processes it into a single `response.compaction` envelope only when
+// the post-chain action is 'compact'. `modelIdentity` and `usage` carry the
+// per-turn attribution forward so the http layer's `ctx.dump` records the
+// success path identically to streaming generate.
 export type ResponsesAttemptResult =
   | ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>
   | {

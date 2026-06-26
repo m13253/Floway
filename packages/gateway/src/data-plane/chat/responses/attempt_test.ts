@@ -12,7 +12,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -57,41 +57,9 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>): ProviderCandidate => {
+const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ProviderCandidate => {
   const upstreamModel = stubUpstreamModel();
-  const provider = stubProvider({
-    callResponses: (model, body, signal, opts) => callResponses(model, body, signal, opts),
-  });
-  return {
-    provider: {
-      upstream: 'up_test',
-      providerKind: 'custom',
-      name: 'up_test',
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
-    },
-    binding: {
-      upstream: 'up_test',
-      upstreamName: 'up_test',
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'responses',
-
-    fetcher: directFetcher,
-  };
-};
-
-const makeCompactCandidate = (callResponsesCompact: (...args: unknown[]) => Promise<unknown>): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
-  const provider = stubProvider({
-    callResponsesCompact: callResponsesCompact as never,
-  });
+  const provider = stubProvider({ callResponses });
   return {
     provider: {
       upstream: 'up_test',
@@ -157,8 +125,8 @@ test('generate native success wraps the upstream event stream once', async () =>
     sequence_number: 0,
     response: makeResponsesResult(),
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent]),
     modelKey: 'test-model-key',
     headers: new Headers(),
@@ -194,9 +162,60 @@ test('generate native success wraps the upstream event stream once', async () =>
   wrapSpy.mockRestore();
 });
 
+test('generate upgrades snapshotMode to replace when input carries compaction_trigger, even under a WS-pinned append override', async () => {
+  // WS pins `snapshotMode: 'append'` so in-session snapshots survive when
+  // the caller opted out of durable storage. A turn whose input carries a
+  // `compaction_trigger` item is semantically a compaction — the upstream
+  // replaces history with a single summary — and the snapshot must follow
+  // suit. The pre-fix derivation used `override ?? trigger ? 'replace' :
+  // ...`, so the WS override short-circuited and the trigger-upgrade
+  // never ran; this test pins the post-fix behavior where the upgrade
+  // wins on shape grounds whenever the base mode is not 'none'.
+  installRepo();
+  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
+
+  const completedEvent: ResponsesStreamEvent = {
+    type: 'response.completed',
+    sequence_number: 0,
+    response: makeResponsesResult(),
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: makeProviderEvents([completedEvent]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [
+        { type: 'message', role: 'user', content: 'kept message' },
+        { type: 'compaction_trigger' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    store,
+    candidate,
+    snapshotMode: 'append',
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(wrapSpy.mock.calls.length, 1);
+  assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
+
+  wrapSpy.mockRestore();
+});
+
 test('generate returns failure when rewrite throws item-not-found', async () => {
   installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
     throw new Error('callResponses should not be called when rewrite fails');
   });
   const candidate = makeCandidate(callResponses);
@@ -246,8 +265,8 @@ test('generate passes non-events provider result through unchanged', async () =>
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
   const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: false,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: false,
     response: upstreamResponse,
     modelKey: 'test-model-key',
   }));
@@ -275,9 +294,9 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
   // Native /responses/compact returns a fully-shaped compaction envelope —
-  // `provider.callResponsesCompact` already does the Copilot
-  // compaction_trigger reshape internally — so the attempt receives a
-  // ResponsesResult, expands it into synthetic frames, and wraps the
+  // the `action: 'compact'` branch of `provider.callResponses` does the
+  // Copilot compaction_trigger reshape internally — so the attempt receives
+  // a ResponsesResult, expands it into synthetic frames, and wraps the
   // output for storage.
   const compactionItem = {
     type: 'compaction' as const,
@@ -292,19 +311,19 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
 
-  const callResponsesCompact = vi.fn(async () => ({
-    ok: true as const,
-    result: compactionResult,
-    modelKey: 'test-model-key',
-  }));
+  const callResponses = vi.fn(async (_model: UpstreamModel, _body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
 
-  const candidate = makeCompactCandidate(callResponsesCompact);
-  const result = await responsesAttempt.compact({
+  const candidate = makeCandidate(callResponses);
+  const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
         { type: 'message', role: 'user', content: 'kept message' },
       ],
     }),
+    action: 'compact',
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
@@ -449,9 +468,9 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     { type: 'response.in_progress', sequence_number: 1, response: upstreamResponse },
     { type: 'response.completed', sequence_number: 2, response: upstreamResponse },
   ];
-  const callResponses = vi.fn(async (_model, body): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
     capturedBody = body as { input?: unknown[] };
-    return { ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
   const candidate = makeCandidate(callResponses);
   // The shim early-returns inactive unless the binding has the flag. The
@@ -525,8 +544,8 @@ test('generate propagates upstream response headers onto the EventResult so resp
     'anthropic-ratelimit-unified-status': 'allowed',
     'request-id': 'req_resp_xyz',
   });
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent]),
     modelKey: 'test-model-key',
     headers: upstreamHeaders,

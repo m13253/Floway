@@ -7,7 +7,15 @@ import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+
+// Action tag threaded through the Responses pipeline. `generate` is a normal
+// streaming /responses turn; `compact` is the summarize-and-replace-history
+// turn that some upstreams expose natively (`/v1/responses/compact`,
+// chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
+// simulate. The same `callResponses` method dispatches on this tag, and
+// interceptors may flip it before the inner upstream call runs.
+export type ResponsesAction = 'generate' | 'compact';
 
 export interface ProviderModelRecord {
   upstream: string;
@@ -60,15 +68,22 @@ export type ProviderStreamResult<TEvent> =
   | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
   | { ok: false; response: Response; modelKey: string };
 
-// `/responses/compact` is non-streaming — the upstream returns a single
+// `action: 'generate'` is a normal streaming /responses turn — its frames
+// flow through the per-frame event stream like every other streaming endpoint.
+// `action: 'compact'` is non-streaming — the upstream returns a single
 // `response.compaction` envelope. Some upstreams expose a native compaction
-// endpoint and produce the envelope directly; others synthesize the
-// envelope from a regular `/responses` turn — both return the typed value
-// rather than a re-parsed synthesized SSE body. An upstream failure
-// carries the raw Response so the boundary reports it verbatim.
-export type ProviderCompactionResult =
-  | { ok: true; result: ResponsesResult; modelKey: string }
-  | { ok: false; response: Response; modelKey: string };
+// endpoint and produce the envelope directly; others synthesize the envelope
+// from a regular /responses turn — both return the typed value rather than a
+// re-parsed synthesized SSE body. The discriminated result tags which branch
+// actually ran so the gateway's shape-lowering can pick between the streaming
+// and value-envelope arms; snapshot mode itself reads `invocation.action` (the
+// post-chain caller intent), not the result tag.
+// The `ok: false` contract is identical to ProviderStreamResult above.
+export type ProviderResponsesResult =
+  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; modelKey: string; headers?: Headers }
+  | { action: 'generate'; ok: false; response: Response; modelKey: string }
+  | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
+  | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
 // Per-call observation hooks the gateway threads through to the provider.
 //
@@ -126,8 +141,7 @@ export interface ModelProvider {
   // before the wire header is filtered down to the Copilot allow-list)
   // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.

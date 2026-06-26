@@ -135,6 +135,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
   }),
   payload: { model: 'orchestrator', input, tools: [{ type: 'image_generation', action, ...extraTool }] } as never,
   headers: new Headers(),
+  action: 'generate',
 });
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: 'test-key',
