@@ -165,8 +165,9 @@ export interface PublicModel {
   // currently-available target's endpoint map — at request time the
   // resolver narrows the pool to targets that serve the inbound endpoint,
   // so any endpoint advertised here is reachable through at least one
-  // target.
-  endpoints?: ModelEndpoints;
+  // target. The map is empty (`{}`) when an alias has no currently-available
+  // target; never absent.
+  endpoints: ModelEndpoints;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
   // Present only on entries the gateway synthesized from an operator-defined

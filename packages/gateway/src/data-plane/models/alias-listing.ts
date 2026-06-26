@@ -213,6 +213,17 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly ResolvedMod
     ? mergeWithOverride(computed, alias.announcedMetadata)
     : computed;
 
+  // Endpoints follow the available-targets UNION, not an intersection —
+  // every endpoint reachable through ANY target is advertised, because
+  // the resolver's request-time pool narrows to targets that serve the
+  // inbound endpoint and the first-available / random pick happens
+  // within that narrowed pool. Operator can't override endpoints (they
+  // follow the target set, not a stored override). Empty (`{}`) when no
+  // target is currently available — the field stays present.
+  const endpoints = availableTargets.length > 0
+    ? unionEndpoints(availableTargets.map(({ real }) => real.endpoints))
+    : {};
+
   const entry: PublicModel = {
     id: alias.name,
     object: 'model',
@@ -220,21 +231,10 @@ const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly ResolvedMod
     display_name: displayName,
     limits,
     kind: alias.kind,
+    endpoints,
     aliasedFrom: buildAliasedFrom(alias),
   };
   if (chat !== undefined) entry.chat = chat;
-
-  // Endpoints follow the available-targets UNION, not an intersection —
-  // every endpoint reachable through ANY target is advertised, because
-  // the resolver's request-time pool narrows to targets that serve the
-  // inbound endpoint and the first-available / random pick happens
-  // within that narrowed pool. Operator can't override endpoints (they
-  // follow the target set, not a stored override). Absent when no
-  // target is currently available, same shape as the chat block.
-  if (availableTargets.length > 0) {
-    const endpoints = unionEndpoints(availableTargets.map(({ real }) => real.endpoints));
-    if (Object.keys(endpoints).length > 0) entry.endpoints = endpoints;
-  }
 
   // Single-target chat pricing rides along when available — the resolver
   // will hit that target, so the catalog can publish its rate verbatim.

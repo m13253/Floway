@@ -336,12 +336,12 @@ describe('synthesizeListedAliases', () => {
     expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
   });
 
-  test('endpoints is absent on the entry when no target is currently available', () => {
+  test('endpoints is an empty map on the entry when no target is currently available', () => {
     const aliases = [aliasFixture({
       name: 'ghost',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
     const [entry] = synthesizeListedAliases({ aliases, realModels: [] });
-    expect(entry.endpoints).toBeUndefined();
+    expect(entry.endpoints).toEqual({});
   });
 });
