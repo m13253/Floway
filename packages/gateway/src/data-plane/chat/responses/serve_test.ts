@@ -29,7 +29,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async (args: { model: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
-      // Mirror the real entry's alias resolution so the rule-overlay test
+      // Drain a queued resolution from `aliasResolutionQueue` so the rule-overlay test
       // sees the resolved target id reach the candidates layer and the
       // serve overlays rules from the returned `aliasResolution`. Tests
       // queue the resolution via `aliasResolutionQueue`.

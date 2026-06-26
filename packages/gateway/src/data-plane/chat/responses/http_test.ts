@@ -13,14 +13,16 @@ import { directFetcher, type ProviderResponsesResult, type ResponsesAction, type
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
-// provider candidates it wants. The mock mirrors `serve_test.ts` by
-// running the real `resolveAlias` against the in-memory repo so any
-// alias seeded by a test (e.g. `codex-auto-review`) rewrites the model
-// id and rule overlay reaches the upstream call.
+// provider candidates it wants. The mock drains a queued `AliasResolution`
+// from `aliasResolutionQueue` (set up by `installRepo` for the alias-
+// rewrite tests below) and forwards it on the candidates return, so the
+// serve's downstream alias-rewrite + rule-overlay path runs end-to-end
+// against an injected resolution without standing up the real catalog
+// stack.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 // `lastSeenModel` captures the effective model id the serve passes downstream
 // — the alias rewrite (if any) applied. Tests assert against this to confirm
-// the alias table drove the rewrite.
+// the alias mechanism drove the rewrite.
 const lastSeenModel: { value: string | null } = { value: null };
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
@@ -28,7 +30,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async (args: { model: string; scheduler: () => void }) => {
-      // Mirror the real entry's alias resolution so the rule-overlay test
+      // Drain a queued resolution from `aliasResolutionQueue` (set up by
       // sees the resolved target id reach the candidates layer and the
       // serve overlays rules from the returned `aliasResolution`. Tests
       // queue a resolution via `aliasResolutionQueue` when they want one.
