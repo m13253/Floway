@@ -157,16 +157,20 @@ export interface PublicModelAliasedFrom {
     anthropicBeta?: readonly string[];
   };
   onConflict: 'alias-only' | 'real-only' | 'both-real-first' | 'both-alias-first';
+  // Operator-set display name. Absent (undefined) when the operator left the
+  // field blank — alias-aware UIs then synthesize a label from the target's
+  // display name and the inline rules summary instead.
+  displayName?: string;
 }
 
 // One badge per rule field on an alias, in a `${label}` / `${label}: ${value}`
 // shape the dashboard renders inline next to the model row. Returned in a
 // deterministic order so the badge sequence stays stable across surfaces and
 // across JSON key arrivals. Boolean toggles render label-only (no colon);
-// every other field renders as `${label}: ${value}`. The gateway's
-// `formatAliasRulesSummary` uses its own labels for the parenthesized
-// display-name suffix — the two surfaces deliberately diverge so the suffix
-// stays compact while the badge view stays self-describing.
+// every other field renders as `${label}: ${value}`. The inline-prose form
+// (`composeAliasDisplayName`'s suffix and `formatAliasRulesInline`) uses its
+// own compact wording — the two surfaces deliberately diverge so the inline
+// summary stays compact while the badge view stays self-describing.
 export interface AliasRuleBadge {
   label: string;
   value?: string;
@@ -186,26 +190,15 @@ export const formatAliasRuleBadges = (rules: PublicModelAliasedFrom['rules']): A
   return out;
 };
 
-// Compose the alias-local display name — what the operator named the alias
-// (when set) or a synthesized target + rules summary. Independent of which
-// upstream is surfacing the alias; the prefixed listing form prepends the
-// upstream display name at the call site, mirroring the real-model path in
-// the gateway's provider registry.
-//
-// The synthesized form's parenthesized rules suffix uses the compact
-// `value label` wording so it fits alongside the target name in narrow
-// listings — the dashboard's per-badge view uses `formatAliasRuleBadges`
-// for the self-describing `label: value` form. `anthropicBeta` tokens are
-// sorted so two operators carrying the same set in different orders see
-// the same label.
-export const composeAliasDisplayName = (input: {
-  aliasDisplayName?: string;
-  targetDisplayName: string;
-  rules: PublicModelAliasedFrom['rules'];
-}): string => {
-  if (input.aliasDisplayName !== undefined) return input.aliasDisplayName;
+// Inline-prose parts for an alias's rules, in a deterministic order. Each
+// entry uses the compact `value label` wording (e.g. `low effort`,
+// `4096tk reasoning`) so it fits both alongside the target name in narrow
+// listings and on its own as a standalone summary line. The dashboard's
+// per-badge view uses `formatAliasRuleBadges` for the self-describing
+// `label: value` form. `anthropicBeta` tokens are sorted so two operators
+// carrying the same set in different orders see the same label.
+const aliasRulesInlineParts = (rules: PublicModelAliasedFrom['rules']): string[] => {
   const parts: string[] = [];
-  const { rules } = input;
   if (rules.reasoning?.effort !== undefined) parts.push(`${rules.reasoning.effort} effort`);
   if (rules.reasoning?.budgetTokens !== undefined) parts.push(`${rules.reasoning.budgetTokens}tk reasoning`);
   if (rules.reasoning?.adaptive === true) parts.push('adaptive reasoning');
@@ -215,8 +208,31 @@ export const composeAliasDisplayName = (input: {
   if (rules.anthropicBeta !== undefined && rules.anthropicBeta.length > 0) {
     parts.push([...rules.anthropicBeta].sort().join('/'));
   }
+  return parts;
+};
+
+// Compose the alias-local display name — what the operator named the alias
+// (when set) or a synthesized target + rules summary. Independent of which
+// upstream is surfacing the alias; the prefixed listing form prepends the
+// upstream display name at the call site, mirroring the real-model path in
+// the gateway's provider registry. The parenthesized rules suffix shares
+// its parts with `formatAliasRulesInline` so the two surfaces never drift.
+export const composeAliasDisplayName = (input: {
+  aliasDisplayName?: string;
+  targetDisplayName: string;
+  rules: PublicModelAliasedFrom['rules'];
+}): string => {
+  if (input.aliasDisplayName !== undefined) return input.aliasDisplayName;
+  const parts = aliasRulesInlineParts(input.rules);
   const suffix = parts.length > 0 ? ` (${parts.join(', ')})` : '';
   return `${input.targetDisplayName}${suffix}`;
+};
+
+// Joined rules summary without the parentheses — what the dashboard's alias
+// row renders on its third line. Empty string when no rule applies; callers
+// should drop the line entirely in that case rather than rendering blank.
+export const formatAliasRulesInline = (rules: PublicModelAliasedFrom['rules']): string => {
+  return aliasRulesInlineParts(rules).join(', ');
 };
 
 export interface PublicModelsResponse {

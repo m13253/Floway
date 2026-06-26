@@ -144,13 +144,14 @@ test('/api/models appends visible alias entries with aliasedFrom alongside real 
   await withMockedFetch(modelsFetchHandler, async () => {
     const response = await requestApp('/api/models', { headers: { 'x-api-key': apiKey.key } });
     assertEquals(response.status, 200);
-    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }>; aliasedFrom?: { targetModelId: string; rules: Record<string, unknown> } }> };
+    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }>; aliasedFrom?: { targetModelId: string; rules: Record<string, unknown>; displayName?: string } }> };
     const aliasEntry = body.data.find(model => model.id === 'codex-auto-review');
     if (!aliasEntry) throw new Error('expected codex-auto-review alias entry on /api/models');
     assertEquals(aliasEntry.display_name, 'Codex Auto Review');
     assertEquals(aliasEntry.upstreams, [{ kind: 'custom', id: 'up_custom_models', name: 'Custom Provider' }]);
     assertEquals(aliasEntry.aliasedFrom?.targetModelId, 'custom-model');
     assertEquals(aliasEntry.aliasedFrom?.rules, { reasoning: { effort: 'low' } });
+    assertEquals(aliasEntry.aliasedFrom?.displayName, 'Codex Auto Review');
     assertEquals(body.data.some(model => model.id === 'hidden-alias'), false);
   });
 });

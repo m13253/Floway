@@ -99,6 +99,7 @@ const aliasEmissionToListedModel = (alias: ModelAlias, emission: AliasListingEmi
       upstreamIds: alias.upstreamIds,
       rules: alias.rules,
       onConflict: alias.onConflict,
+      ...(alias.displayName !== undefined ? { displayName: alias.displayName } : {}),
     },
   };
 };

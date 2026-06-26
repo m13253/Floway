@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { composeAliasDisplayName } from './models.ts';
+import { composeAliasDisplayName, formatAliasRulesInline } from './models.ts';
 
 describe('composeAliasDisplayName', () => {
   test('uses alias displayName when set, suppressing the rules summary', () => {
@@ -67,5 +67,34 @@ describe('composeAliasDisplayName', () => {
         },
       }),
     ).toBe('GPT-5.4 (low effort, concise summary, high verbosity, flex tier)');
+  });
+});
+
+describe('formatAliasRulesInline', () => {
+  test('returns empty string when no rule applies', () => {
+    expect(formatAliasRulesInline({})).toBe('');
+  });
+
+  test('returns each rule field with the same compact wording as the parenthesized suffix, sans parens', () => {
+    expect(formatAliasRulesInline({ reasoning: { effort: 'low' } })).toBe('low effort');
+    expect(formatAliasRulesInline({ reasoning: { budgetTokens: 4096 } })).toBe('4096tk reasoning');
+    expect(formatAliasRulesInline({ reasoning: { adaptive: true } })).toBe('adaptive reasoning');
+    expect(formatAliasRulesInline({ reasoning: { summary: 'detailed' } })).toBe('detailed summary');
+  });
+
+  test('joins multiple fields with comma in the same order composeAliasDisplayName uses', () => {
+    expect(
+      formatAliasRulesInline({
+        reasoning: { effort: 'low', summary: 'detailed' },
+        verbosity: 'high',
+        serviceTier: 'fast',
+      }),
+    ).toBe('low effort, detailed summary, high verbosity, fast tier');
+  });
+
+  test('sorts anthropicBeta tokens and joins with slashes', () => {
+    expect(
+      formatAliasRulesInline({ anthropicBeta: ['fast-mode-2026-02-01', 'extended-thinking'] }),
+    ).toBe('extended-thinking/fast-mode-2026-02-01');
   });
 });

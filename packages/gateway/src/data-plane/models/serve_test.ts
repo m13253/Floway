@@ -661,6 +661,61 @@ test('/v1/models appends a visible alias with aliasedFrom after the real entries
   );
 });
 
+// `displayName` propagates verbatim when the operator set it; absence on the
+// wire (the prior test) means "synthesize from target name + rules summary".
+test('/v1/models forwards the operator-set displayName on the aliasedFrom payload', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  (repo.modelAliases as MemoryModelAliasesRepo).setAll([
+    {
+      alias: 'codex-auto-review',
+      targetModelId: 'gpt-5.4',
+      upstreamIds: [],
+      rules: { reasoning: { effort: 'low' } },
+      visibleInModelsList: true,
+      onConflict: 'real-only',
+      displayName: 'Codex Auto Review',
+      createdAt: 1_700_000_000,
+    },
+  ]);
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      const body = await response.json() as { data: Array<{ id: string; aliasedFrom?: { displayName?: string } }> };
+      const aliasEntry = body.data.find(m => m.id === 'codex-auto-review');
+      if (!aliasEntry) throw new Error('expected codex-auto-review alias entry');
+      assertEquals(aliasEntry.aliasedFrom?.displayName, 'Codex Auto Review');
+    },
+  );
+});
+
 test('/v1/models omits aliases marked visibleInModelsList=false', async () => {
   const { repo, apiKey } = await setupAppTest();
 
