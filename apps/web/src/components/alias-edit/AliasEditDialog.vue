@@ -425,12 +425,8 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
         <TagCombobox v-model="anthropicBeta" :items="[]" placeholder="extended-cache-ttl-2025-04-11" empty-text="Type a header token and press Enter" />
       </div>
 
-      <div v-if="fieldWarnings.length > 0" class="space-y-1.5">
-        <p
-          v-for="warning in fieldWarnings"
-          :key="warning.field"
-          class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
-        >
+      <div v-if="fieldWarnings.length > 0" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 space-y-1">
+        <p v-for="warning in fieldWarnings" :key="warning.field">
           <span class="font-bold">{{ warning.field }}:</span> {{ warning.message }}
         </p>
       </div>
