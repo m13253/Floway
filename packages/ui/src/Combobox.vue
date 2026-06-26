@@ -22,6 +22,13 @@ interface Item {
   label?: string;
 }
 
+// Post-normalize shape: `label` is always set (defaults to `value`), so the
+// template can read `item.label` directly instead of falling back per row.
+interface NormalizedItem {
+  value: string;
+  label: string;
+}
+
 const value = defineModel<string>({ required: true });
 
 const props = withDefaults(defineProps<{
@@ -55,7 +62,7 @@ const { contains } = useFilter({ sensitivity: 'base' });
 
 // Normalize the items list to a single shape so the template only deals
 // with `{ value, label }`. Strings collapse to `{ value: s, label: s }`.
-const normalizedItems = computed<Item[]>(() => props.items.map(it =>
+const normalizedItems = computed<NormalizedItem[]>(() => props.items.map(it =>
   typeof it === 'string' ? { value: it, label: it } : { value: it.value, label: it.label ?? it.value }));
 
 // query mirrors value so the input always shows the committed string. Reka's
@@ -77,12 +84,12 @@ watch(query, q => { value.value = q; });
 // group. Empty query keeps the configured order untouched. The operator
 // always sees the full set of presets — typing narrows attention to the
 // top of the list without hiding the alternatives.
-const orderedItems = computed<Item[]>(() => {
+const orderedItems = computed<NormalizedItem[]>(() => {
   if (query.value === '') return normalizedItems.value;
-  const matches: Item[] = [];
-  const rest: Item[] = [];
+  const matches: NormalizedItem[] = [];
+  const rest: NormalizedItem[] = [];
   for (const item of normalizedItems.value) {
-    if (contains(item.label ?? item.value, query.value) || contains(item.value, query.value)) {
+    if (contains(item.label, query.value) || contains(item.value, query.value)) {
       matches.push(item);
     } else {
       rest.push(item);
