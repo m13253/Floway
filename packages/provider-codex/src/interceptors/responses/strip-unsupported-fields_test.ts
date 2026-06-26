@@ -15,6 +15,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 test('drops every field Codex rejects with Unsupported parameter', async () => {
