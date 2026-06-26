@@ -45,6 +45,7 @@ export type {
   ModelProvider,
   ModelProviderInstance,
   ProviderCallResult,
+  ProviderCompactionResult,
   ProviderModelRecord,
   ProviderResponsesResult,
   ProviderStreamResult,
@@ -77,8 +78,11 @@ export type {
   UpstreamModelConfig,
   UpstreamModelFlagOverrides,
   UpstreamModelLimits,
+  Modality,
+  UpstreamChatModelConfig,
 } from './model-config.ts';
 export {
+  chatField,
   endpointsField,
   flagOverridesField,
   isRecord,

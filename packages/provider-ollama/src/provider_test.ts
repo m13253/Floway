@@ -59,7 +59,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     const models = await instance.provider.getProvidedModels(directFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
-    assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'messages', 'responses']);
+    assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so cost flows through into
@@ -169,4 +169,18 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   const body = chatBody as { model: string; stream: boolean };
   assertEquals(body.model, 'gpt-oss:120b');
   assertEquals(body.stream, true);
+});
+
+test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
+  const instance = createOllamaProvider(buildRecord());
+  await withMockedFetch(tagsAndShow, async () => {
+    const models = await instance.provider.getProvidedModels(directFetcher);
+    const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
+    assertEquals(gptoss.chat, {
+      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
+    });
+    // Embedding model has no thinking/vision → no chat field.
+    const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
+    assertEquals(embed.chat, undefined);
+  });
 });

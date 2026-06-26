@@ -73,6 +73,55 @@ const pricingDimensionShape = {
   output_image: z.number().nonnegative().optional(),
 };
 
+// Modality arrays: both input and output require at least one entry and
+// deduplicate via transform. Input additionally requires 'text' to be present
+// (a multimodal model must accept text); output has no such constraint (an
+// image-generation model may emit only images).
+const modalityArraySchema = z.array(z.enum(['text', 'image']))
+  .min(1)
+  .transform(arr => Array.from(new Set(arr)));
+
+const inputModalityArraySchema = modalityArraySchema
+  .refine(arr => arr.includes('text'), { message: "must include 'text'" });
+
+const modalitiesSchema = z.object({
+  input: inputModalityArraySchema,
+  output: modalityArraySchema,
+});
+
+const effortSchema = z.object({
+  supported: z.array(z.string().min(1))
+    .min(1)
+    .transform(arr => Array.from(new Set(arr))),
+  default: z.string().min(1),
+}).refine(
+  r => r.supported.includes(r.default),
+  { message: 'effort.default must appear in effort.supported' },
+);
+
+const budgetTokensSchema = z.object({
+  min: z.number().int().nonnegative().optional(),
+  max: z.number().int().nonnegative().optional(),
+}).refine(
+  r => r.min === undefined || r.max === undefined || r.max >= r.min,
+  { message: 'budget_tokens.max must be >= budget_tokens.min' },
+);
+
+const reasoningSchema = z.object({
+  effort: effortSchema.optional(),
+  budget_tokens: budgetTokensSchema.optional(),
+  adaptive: z.literal(true).optional(),
+  mandatory: z.literal(true).optional(),
+}).refine(
+  r => r.effort !== undefined || r.budget_tokens !== undefined || r.adaptive !== undefined || r.mandatory !== undefined,
+  { message: 'reasoning must have at least one of effort, budget_tokens, adaptive, mandatory' },
+);
+
+const chatSchema = z.object({
+  modalities: modalitiesSchema.optional(),
+  reasoning: reasoningSchema.optional(),
+});
+
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure and custom upstreams share this per-model entry; the canonical
 // per-model endpoint validation lives in the runtime validator.
@@ -102,7 +151,11 @@ const upstreamModelSchema = z.object({
     max_prompt_tokens: z.number().optional(),
     max_output_tokens: z.number().optional(),
   }).optional(),
-});
+  chat: chatSchema.optional(),
+}).refine(
+  m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
+  { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
+);
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),

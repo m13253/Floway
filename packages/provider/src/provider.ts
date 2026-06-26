@@ -87,6 +87,16 @@ export type ProviderResponsesResult =
   | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
+// Compact-only view of `ProviderResponsesResult`. Internal to the provider
+// adapters whose upstream exposes a native `/responses/compact` endpoint
+// (Codex, Azure, custom): the fetch-layer helper returns this raw shape and
+// the adapter re-tags it with `action: 'compact'` when emitting the unified
+// `ProviderResponsesResult`. Not part of the `ModelProvider` interface — the
+// unified surface is the only entry point gateway dispatch sees.
+export type ProviderCompactionResult =
+  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
+
 // Per-call observation hooks the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.

@@ -258,9 +258,13 @@ const dispatchResponses = async (
 
 // Lowers a `ProviderResponsesResult` into the chain's
 // ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> currency. The compact
-// branch synthesizes SSE frames from the envelope so every downstream
-// interceptor sees the same event-stream contract regardless of which action
-// the provider executed.
+// branch is non-streaming: the provider returns the compaction envelope as
+// a value (Azure, Codex, and custom upstreams call native
+// `/responses/compact`; Copilot rebuilds it from a `compaction_trigger`
+// turn), so we synthesize the canonical event frames here instead of
+// pretending the result came from an SSE body. Every downstream interceptor
+// then sees the same event-stream contract regardless of which action the
+// provider executed.
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
   candidate: ProviderCandidate,

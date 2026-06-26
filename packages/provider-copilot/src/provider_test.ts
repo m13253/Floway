@@ -1040,3 +1040,134 @@ test('Copilot provider passes unknown speed values to the upstream verbatim so t
 
   assertEquals(upstreamBody?.speed, 'priority');
 });
+
+// ---------------------------------------------------------------------------
+// chat? auto-population from upstream /models capabilities
+// ---------------------------------------------------------------------------
+
+interface CopilotModelCapabilityFixture {
+  id: string;
+  supported_endpoints?: string[];
+  supports?: {
+    vision?: boolean;
+    reasoning_effort?: string[];
+    min_thinking_budget?: number;
+    max_thinking_budget?: number;
+    adaptive_thinking?: boolean;
+  };
+}
+
+const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) => ({
+  object: 'list',
+  data: models.map(model => ({
+    id: model.id,
+    name: model.id,
+    version: '1',
+    supported_endpoints: model.supported_endpoints ?? ['/chat/completions'],
+    capabilities: {
+      type: 'chat',
+      limits: {},
+      ...(model.supports !== undefined ? { supports: model.supports } : {}),
+    },
+  })),
+});
+
+const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture[]) => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  let models: Awaited<ReturnType<typeof instance.provider.getProvidedModels>> = [];
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModelsWithCapabilities(fixtures));
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => { models = await instance.provider.getProvidedModels(directFetcher); },
+  );
+
+  return models;
+};
+
+test('Copilot chat field: vision-only → modalities with image input', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-vision', supports: { vision: true } },
+  ]);
+  assertEquals(model.chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
+});
+
+test('Copilot chat field: reasoning_effort with medium → effort with default medium', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'o3-mini', supports: { reasoning_effort: ['low', 'medium', 'high'] } },
+  ]);
+  assertEquals(model.chat, {
+    reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
+  });
+});
+
+test('Copilot chat field: reasoning_effort full GPT-5 set → default is medium', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-5', supports: { reasoning_effort: ['minimal', 'low', 'medium', 'high', 'xhigh'] } },
+  ]);
+  assertEquals(model.chat, {
+    reasoning: { effort: { supported: ['minimal', 'low', 'medium', 'high', 'xhigh'], default: 'medium' } },
+  });
+});
+
+test('Copilot chat field: reasoning_effort without medium → default is first', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'o-nomedium', supports: { reasoning_effort: ['minimal', 'xhigh'] } },
+  ]);
+  assertEquals(model.chat, {
+    reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
+  });
+});
+
+test('Copilot chat field: min+max_thinking_budget → budget_tokens', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'claude-think', supported_endpoints: ['/v1/messages'], supports: { min_thinking_budget: 1024, max_thinking_budget: 16384 } },
+  ]);
+  assertEquals(model.chat, { reasoning: { budget_tokens: { min: 1024, max: 16384 } } });
+});
+
+test('Copilot chat field: adaptive_thinking: true → reasoning.adaptive', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'claude-adaptive', supported_endpoints: ['/v1/messages'], supports: { adaptive_thinking: true } },
+  ]);
+  assertEquals(model.chat, { reasoning: { adaptive: true } });
+});
+
+test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
+  const [model] = await getModelsWithCapabilities([
+    {
+      id: 'claude-opus-4.7',
+      supported_endpoints: ['/v1/messages'],
+      supports: {
+        vision: true,
+        reasoning_effort: ['low', 'medium', 'high', 'xhigh'],
+        min_thinking_budget: 1024,
+        max_thinking_budget: 32768,
+        adaptive_thinking: true,
+      },
+    },
+  ]);
+  assertEquals(model.chat, {
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    reasoning: {
+      effort: { supported: ['low', 'medium', 'high', 'xhigh'], default: 'medium' },
+      budget_tokens: { min: 1024, max: 32768 },
+      adaptive: true,
+    },
+  });
+});
+
+test('Copilot chat field: no capabilities → no chat field', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'basic-model' },
+  ]);
+  assertEquals(model.chat, undefined);
+});

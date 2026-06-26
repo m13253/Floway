@@ -32,6 +32,16 @@ export const CODEX_OAUTH_USER_AGENT = 'codex-cli/0.91.0';
 
 export const CODEX_BACKEND_BASE = 'https://chatgpt.com/backend-api';
 export const CODEX_RESPONSES_PATH = '/codex/responses';
+// Native unary compaction endpoint. The Codex CLI defaults to a client-side
+// `RemoteCompactionV2` path that re-uses `/codex/responses` with an appended
+// `compaction_trigger` item, but the server still serves this canonical
+// `/responses/compact` URL — the same one Azure OpenAI and the public
+// `api.openai.com` Responses surface expose — and the Codex CLI's
+// `ApiCompactClient` keeps it as the fallback transport. We prefer the unary
+// endpoint so the provider behaves identically to every other
+// `/responses/compact` upstream and skips the SSE drain entirely.
+// Reference: https://github.com/openai/codex/blob/f5f812389ee49ab4c9ef1237781ea1013e733fdc/codex-rs/core/src/client.rs#L155
+export const CODEX_RESPONSES_COMPACT_PATH = '/codex/responses/compact';
 export const CODEX_MODELS_PATH = '/codex/models';
 
 // codex_cli_rs version we impersonate on the data plane. Bumped against the
@@ -47,9 +57,3 @@ export const CODEX_CLI_VERSION = '0.137.0';
 // constraint at the top of this file.
 export const CODEX_ORIGINATOR = 'codex_cli_rs';
 export const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
-
-// Beta-feature flag the Codex CLI sets on every request once
-// `[features].remote_compaction_v2 = true` (the default in 0.137+). Floway only
-// ever uses the v2 compaction path, so we set it on the compaction call only;
-// see compaction.ts for wire details + upstream source permalinks.
-export const CODEX_REMOTE_COMPACTION_BETA = 'remote_compaction_v2';

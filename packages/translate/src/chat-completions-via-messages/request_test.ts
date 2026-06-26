@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateChatCompletionsToMessages } from './request.ts';
 import type { RemoteImageLoader } from '../shared/via-messages/remote-images.ts';
-import { assertEquals, assertExists, assertRejects } from '../test-assert.ts';
+import { assertEquals, assertExists, assertFalse, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsMessage, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
@@ -43,7 +43,55 @@ function stubRemoteImageLoader(result: Awaited<ReturnType<RemoteImageLoader>>): 
   return () => Promise.resolve(result);
 }
 
-// ── System / Developer messages ──
+// ── service_tier → speed mapping ──
+
+test('translateChatCompletionsToMessages maps service_tier:fast to speed:fast (no service_tier on target)', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      service_tier: 'fast',
+    }),
+  );
+
+  assertEquals(result.speed, 'fast');
+  assertFalse('service_tier' in result);
+});
+
+test('translateChatCompletionsToMessages passes service_tier:priority through as service_tier (no speed override)', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      service_tier: 'priority',
+    }),
+  );
+
+  assertEquals(result.service_tier, 'priority');
+  assertFalse('speed' in result);
+});
+
+test('translateChatCompletionsToMessages passes service_tier:auto through as service_tier', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      service_tier: 'auto',
+    }),
+  );
+
+  assertEquals(result.service_tier, 'auto');
+  assertFalse('speed' in result);
+});
+
+test('translateChatCompletionsToMessages omits both speed and service_tier when service_tier is absent', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+  );
+
+  assertFalse('speed' in result);
+  assertFalse('service_tier' in result);
+});
+
 //
 // Chat Completions system/developer messages translate INLINE as Messages
 // role: 'system' items, preserving chronology. The Messages role enum admits

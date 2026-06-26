@@ -331,6 +331,17 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
+  // `service_tier: 'fast'` from the Responses caller maps to Anthropic's
+  // `speed: 'fast'`; all other defined service_tier values pass through as
+  // `service_tier` on the Messages wire (Anthropic accepts 'auto',
+  // 'standard_only', and future literals).
+  const serviceTierFields: Partial<MessagesPayload> =
+    payload.service_tier === 'fast'
+      ? { speed: 'fast' }
+      : payload.service_tier != null
+        ? { service_tier: payload.service_tier }
+        : {};
+
   // Responses `metadata` is intentionally omitted on the Messages path;
   // not coerced into Anthropic metadata.user_id, prompt-cache, or safety
   // semantics.
@@ -346,6 +357,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     tool_choice: translateToolChoice(payload.tool_choice),
     ...(effort === 'none' ? { thinking: { type: 'disabled' as const } } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
+    ...serviceTierFields,
   };
 
   return { target, customToolNames };

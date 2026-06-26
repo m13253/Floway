@@ -37,6 +37,7 @@ export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => 
     ...(auto.display_name ? { display_name: auto.display_name } : {}),
     ...(auto.limits ? { limits: { ...auto.limits } } : {}),
     ...(auto.cost ? { cost: { ...auto.cost } } : {}),
+    ...(auto.chat ? { chat: auto.chat } : {}),
   };
 };
 
