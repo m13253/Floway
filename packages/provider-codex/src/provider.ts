@@ -111,37 +111,12 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
         ctx, {}, codexResponsesChain<ProviderResponsesResult>(), async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
+          const backendCall = { upstreamId: record.id, account, model, body: wireBody, headers: ctx.headers, signal, effects, call: opts };
           switch (ctx.action) {
-          case 'compact': {
-            const compactResult = await callCodexResponsesCompact({
-              upstreamId: record.id,
-              account,
-              model,
-              body: wireBody,
-              headers: ctx.headers,
-              signal,
-              effects,
-              call: opts,
-            });
-            return compactResult.ok
-              ? { action: 'compact', ok: true, result: compactResult.result, modelKey: compactResult.modelKey }
-              : { action: 'compact', ok: false, response: compactResult.response, modelKey: compactResult.modelKey };
-          }
-          case 'generate': {
-            const streamResult = await callCodexResponses({
-              upstreamId: record.id,
-              account,
-              model,
-              body: wireBody,
-              headers: ctx.headers,
-              signal,
-              effects,
-              call: opts,
-            });
-            return streamResult.ok
-              ? { action: 'generate', ok: true, events: streamResult.events, modelKey: streamResult.modelKey, ...(streamResult.headers ? { headers: streamResult.headers } : {}) }
-              : { action: 'generate', ok: false, response: streamResult.response, modelKey: streamResult.modelKey };
-          }
+          case 'compact':
+            return { action: 'compact', ...(await callCodexResponsesCompact(backendCall)) };
+          case 'generate':
+            return { action: 'generate', ...(await callCodexResponses(backendCall)) };
           default:
             ctx.action satisfies never;
             throw new Error(`Unhandled ResponsesAction: ${ctx.action as string}`);
