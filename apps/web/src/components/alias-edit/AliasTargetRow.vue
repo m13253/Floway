@@ -1,0 +1,253 @@
+<script setup lang="ts">
+// One target row inside the alias edit dialog. Header: chevron + borderless
+// target-id combobox (the row's title) + action cluster (warning icon ·
+// up · down · remove). Body (chat kind only): flat rules form with one
+// rule-level warning rendered as inline yellow text under each annotated
+// field.
+
+import { computed, ref } from 'vue';
+
+import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
+import type { AliasKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ReasoningEffort, ReasoningSummary, ServiceTier, Verbosity } from '@floway-dev/protocols/common';
+import { Combobox, Switch, Tooltip } from '@floway-dev/ui';
+
+const target = defineModel<AliasTarget>({ required: true });
+
+const props = defineProps<{
+  kind: AliasKind;
+  targetIdItems: readonly string[];
+  models: readonly ControlPlaneModel[] | null;
+  isFirst: boolean;
+  isLast: boolean;
+  isSole: boolean;
+}>();
+
+const emit = defineEmits<{
+  moveUp: [];
+  moveDown: [];
+  remove: [];
+}>();
+
+const expanded = ref(false);
+const toggleExpanded = () => { expanded.value = !expanded.value; };
+
+const targetId = computed({
+  get: () => target.value.target_model_id,
+  set: v => { target.value = { ...target.value, target_model_id: v }; },
+});
+
+// Mutable mirror of the chat rules. Every field setter clones the rules so
+// the v-model emit fires and the parent's targets array stays referentially
+// up to date.
+const chatRules = computed<ChatAliasRules>(() => target.value.rules as ChatAliasRules);
+
+const setRules = (next: ChatAliasRules) => { target.value = { ...target.value, rules: next }; };
+
+const patchReasoning = (patch: Partial<NonNullable<ChatAliasRules['reasoning']>>) => {
+  const current = chatRules.value.reasoning ?? {};
+  const next = { ...current, ...patch };
+  for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
+    if (patch[k] === undefined) delete (next as Record<string, unknown>)[k];
+  }
+  if (Object.keys(next).length === 0) {
+    const { reasoning: _, ...rest } = chatRules.value;
+    setRules(rest);
+  } else {
+    setRules({ ...chatRules.value, reasoning: next });
+  }
+};
+
+const setEffort = (raw: string) => patchReasoning({ effort: raw === '' ? undefined : (raw as ReasoningEffort) });
+const setSummary = (raw: string) => patchReasoning({ summary: raw === '' ? undefined : (raw as ReasoningSummary) });
+const setAdaptive = (on: boolean | undefined) => patchReasoning({ adaptive: on === true ? true : undefined });
+const setVerbosity = (raw: string) => {
+  const next = { ...chatRules.value };
+  if (raw === '') delete next.verbosity;
+  else next.verbosity = raw as Verbosity;
+  setRules(next);
+};
+const setServiceTier = (raw: string) => {
+  const next = { ...chatRules.value };
+  if (raw === '') delete next.serviceTier;
+  else next.serviceTier = raw as ServiceTier;
+  setRules(next);
+};
+
+// String-bound view of the integer budget. The form keeps the typed string
+// for round-trip stability (so an in-progress "" or "1024foo" doesn't
+// clobber the underlying numeric value mid-keystroke) and writes back to
+// the rules object only when the parsed number is a finite integer.
+const budgetText = ref(chatRules.value.reasoning?.budget_tokens === undefined ? '' : String(chatRules.value.reasoning.budget_tokens));
+const onBudgetChange = (raw: string) => {
+  budgetText.value = raw;
+  const trimmed = raw.trim();
+  if (trimmed === '') {
+    patchReasoning({ budget_tokens: undefined });
+    return;
+  }
+  if (!/^\d+$/.test(trimmed)) return;
+  patchReasoning({ budget_tokens: Number(trimmed) });
+};
+
+// Suggestion lists for chat-rule comboboxes. The operator can still type
+// any value verbatim; the gateway forwards rule values without enum-gating
+// them so a brand-new upstream tier flows through without a frontend
+// release.
+const EFFORT_ITEMS = ['none', 'low', 'medium', 'high', 'xhigh'];
+const SUMMARY_ITEMS = ['auto', 'concise', 'detailed', 'none'];
+const VERBOSITY_ITEMS = ['low', 'medium', 'high'];
+const SERVICE_TIER_ITEMS = ['default', 'flex', 'priority', 'scale', 'fast'];
+
+const catalog = computed(() => findCatalogModel(props.models, target.value.target_model_id));
+const modelWarnings = computed(() => computeModelWarnings(target.value.target_model_id, catalog.value));
+const ruleWarnings = computed(() => computeRuleWarnings(chatRules.value, catalog.value));
+const warningFor = (field: string) => ruleWarnings.value.find(w => w.field === field)?.message;
+const modelWarningTooltip = computed(() => modelWarnings.value.map(w => w.message).join('\n'));
+</script>
+
+<template>
+  <div class="overflow-hidden rounded-lg border border-white/[0.06] bg-surface-800/40">
+    <header class="flex items-center gap-2 px-3 py-2">
+      <button
+        type="button"
+        class="grid size-6 shrink-0 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200"
+        :aria-expanded="expanded"
+        aria-label="Toggle target row"
+        @click="toggleExpanded"
+      >
+        <svg
+          class="size-4 transition-transform"
+          :class="expanded && 'rotate-180'"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+
+      <div class="min-w-0 flex-1">
+        <Combobox
+          v-model="targetId"
+          :items="targetIdItems"
+          placeholder="target model id"
+          input-class="font-mono"
+          borderless
+          hide-dropdown-trigger
+        />
+      </div>
+
+      <div class="flex shrink-0 items-center gap-1">
+        <Tooltip v-if="modelWarnings.length > 0" :content="modelWarningTooltip">
+          <span class="inline-flex h-7 w-7 items-center justify-center rounded-md text-amber-400" aria-label="Model warning">
+            <i class="i-lucide-alert-triangle size-4" />
+          </span>
+        </Tooltip>
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+          :disabled="isFirst"
+          aria-label="Move target up"
+          @click="emit('moveUp')"
+        >
+          <i class="i-lucide-arrow-up size-4" />
+        </button>
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+          :disabled="isLast"
+          aria-label="Move target down"
+          @click="emit('moveDown')"
+        >
+          <i class="i-lucide-arrow-down size-4" />
+        </button>
+        <button
+          type="button"
+          class="grid size-7 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-accent-rose disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500"
+          :disabled="isSole"
+          aria-label="Remove target"
+          @click="emit('remove')"
+        >
+          <i class="i-lucide-x size-4" />
+        </button>
+      </div>
+    </header>
+
+    <div v-if="expanded" class="space-y-3 border-t border-white/[0.06] p-3">
+      <template v-if="kind === 'chat'">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning effort</label>
+          <Combobox
+            :model-value="chatRules.reasoning?.effort ?? ''"
+            :items="EFFORT_ITEMS"
+            placeholder="none / low / medium / high / xhigh"
+            @update:model-value="setEffort"
+          />
+          <p v-if="warningFor('reasoning.effort')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.effort') }}</p>
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning budget tokens</label>
+          <input
+            type="text"
+            inputmode="numeric"
+            placeholder="4096"
+            class="h-9 w-full rounded-[10px] border border-white/[0.14] bg-surface-700 px-3 text-sm text-white placeholder:text-gray-600 focus:border-accent-cyan/50 focus:outline-none focus:ring-1 focus:ring-accent-cyan/30 font-mono"
+            :value="budgetText"
+            @input="(e: Event) => onBudgetChange((e.target as HTMLInputElement).value)"
+          >
+          <p v-if="warningFor('reasoning.budget_tokens')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.budget_tokens') }}</p>
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Adaptive reasoning</label>
+          <div class="flex h-9 items-center gap-2">
+            <Switch
+              :model-value="chatRules.reasoning?.adaptive === true"
+              @update:model-value="setAdaptive"
+            />
+            <span class="text-sm text-gray-300">Enable</span>
+          </div>
+          <p v-if="warningFor('reasoning.adaptive')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.adaptive') }}</p>
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning summary</label>
+          <Combobox
+            :model-value="chatRules.reasoning?.summary ?? ''"
+            :items="SUMMARY_ITEMS"
+            placeholder="auto"
+            @update:model-value="setSummary"
+          />
+          <p v-if="warningFor('reasoning.summary')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.summary') }}</p>
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Verbosity</label>
+          <Combobox
+            :model-value="chatRules.verbosity ?? ''"
+            :items="VERBOSITY_ITEMS"
+            placeholder="medium"
+            @update:model-value="setVerbosity"
+          />
+          <p v-if="warningFor('verbosity')" class="mt-1 text-xs text-amber-300">{{ warningFor('verbosity') }}</p>
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Service tier</label>
+          <Combobox
+            :model-value="chatRules.serviceTier ?? ''"
+            :items="SERVICE_TIER_ITEMS"
+            placeholder="default"
+            @update:model-value="setServiceTier"
+          />
+          <p v-if="warningFor('serviceTier')" class="mt-1 text-xs text-amber-300">{{ warningFor('serviceTier') }}</p>
+        </div>
+      </template>
+
+      <p v-else class="text-xs text-gray-500">No per-target rules for this kind.</p>
+    </div>
+  </div>
+</template>

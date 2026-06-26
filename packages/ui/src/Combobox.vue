@@ -34,6 +34,19 @@ const props = withDefaults(defineProps<{
   inputClass?: string;
   /** Override the default "no matches" copy shown when the typed value already matches nothing. */
   emptyText?: string;
+  /**
+   * Drop the bordered surface-700 shell so the input blends into its parent
+   * row — used by the alias-target row, where the combobox is the row title
+   * inside an already-bordered Card and a second border would double up.
+   */
+  borderless?: boolean;
+  /**
+   * Hide the right-edge chevron that toggles the dropdown. The popover still
+   * opens on focus / click because the input itself owns `open-on-focus`;
+   * removing the chevron just keeps the title visually clean when the row
+   * already carries its own action cluster on the right.
+   */
+  hideDropdownTrigger?: boolean;
 }>(), {
   emptyText: 'No matches',
 });
@@ -111,15 +124,22 @@ const commitTyped = async () => {
           :disabled="disabled"
           :inputmode="inputmode"
           :class="[
-            'h-9 w-full rounded-[10px] border border-white/[0.14] bg-surface-700 pl-3 pr-9 text-sm text-white',
-            'transition-colors hover:border-white/25',
-            'focus:outline-none focus:border-accent-cyan/50 focus:ring-1 focus:ring-accent-cyan/30',
-            'placeholder:text-gray-600',
+            borderless
+              ? 'h-9 w-full bg-transparent text-sm text-white border-0 focus:outline-none focus:ring-0 placeholder:text-gray-600'
+              : [
+                'h-9 w-full rounded-[10px] border border-white/[0.14] bg-surface-700 pl-3 text-sm text-white',
+                'transition-colors hover:border-white/25',
+                'focus:outline-none focus:border-accent-cyan/50 focus:ring-1 focus:ring-accent-cyan/30',
+                'placeholder:text-gray-600',
+              ],
+            !borderless && (hideDropdownTrigger ? 'pr-3' : 'pr-9'),
+            borderless && 'px-0',
             'disabled:opacity-50 disabled:cursor-not-allowed',
             inputClass,
           ]"
         />
         <ComboboxTrigger
+          v-if="!hideDropdownTrigger"
           class="absolute inset-y-0 right-0 grid w-9 place-items-center text-gray-400 hover:text-gray-200"
           tabindex="-1"
         >

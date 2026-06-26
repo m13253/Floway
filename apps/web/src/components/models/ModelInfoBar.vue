@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import { formatAliasRuleBadges } from '@floway-dev/protocols/common';
 
-defineProps<{
+const props = defineProps<{
   model: ControlPlaneModel;
 }>();
 
@@ -13,6 +16,42 @@ const formatTokenLimit = (n: number) => {
   if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}k`;
   return n.toString();
 };
+
+// Alias-of badge: truncate the target list to the first three with a
+// "+N more" tail when needed. Keeps the badge readable for aliases that
+// fan out to a long fallback chain.
+const aliasOfLabel = computed<string | null>(() => {
+  const a = props.model.aliasedFrom;
+  if (!a) return null;
+  const ids = a.targets.map(t => t.target_model_id);
+  if (ids.length <= 3) return `alias of: ${ids.join(', ')}`;
+  return `alias of: ${ids.slice(0, 3).join(', ')} +${ids.length - 3} more`;
+});
+
+// Rule badge sequence. Single-target aliases keep the existing
+// per-rule badges; multi-target aliases collapse the rule set into one
+// "<field>: varies" pill per field configured on any target.
+const ruleBadges = computed<{ label: string }[]>(() => {
+  const a = props.model.aliasedFrom;
+  if (!a) return [];
+  if (a.targets.length === 1) return formatAliasRuleBadges(a.targets[0].rules);
+  // Walk each target and bucket their badge labels by the field they
+  // describe (the leading word of every badge — "low effort", "summary:
+  // auto"). Any field that shows up in two distinct shapes collapses to
+  // "<field>: varies".
+  const byField = new Map<string, Set<string>>();
+  for (const t of a.targets) {
+    for (const badge of formatAliasRuleBadges(t.rules)) {
+      const field = badge.label.includes(':') ? badge.label.split(':')[0].trim() : badge.label.split(' ').slice(1).join(' ').trim() || badge.label;
+      const set = byField.get(field) ?? new Set<string>();
+      set.add(badge.label);
+      byField.set(field, set);
+    }
+  }
+  return Array.from(byField.entries()).map(([field, set]) => ({
+    label: set.size === 1 ? [...set][0] : `${field}: varies`,
+  }));
+});
 </script>
 
 <template>
@@ -43,6 +82,13 @@ const formatTokenLimit = (n: number) => {
           <span v-if="model.limits?.max_output_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
             output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
           </span>
+          <span v-if="aliasOfLabel" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ aliasOfLabel }}</span>
+          <span v-if="model.aliasedFrom" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">selection: {{ model.aliasedFrom.selection }}</span>
+          <span
+            v-for="badge in ruleBadges"
+            :key="badge.label"
+            class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400"
+          >{{ badge.label }}</span>
         </div>
       </div>
       <button class="btn-ghost text-[11px] flex shrink-0 items-center gap-1" @click="$emit('clear')">

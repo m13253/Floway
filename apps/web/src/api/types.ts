@@ -1,7 +1,13 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
 import type {
+  AliasKind,
+  AliasRules,
+  AliasSelection,
+  AliasTarget,
   BillingDimension,
+  ChatAliasRules,
+  ModelAlias,
   ModelEndpointKey,
   ModelEndpoints,
   ModelKind,
@@ -11,6 +17,7 @@ import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/mo
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
+export type { AliasKind, AliasRules, AliasSelection, AliasTarget, ChatAliasRules, ModelAlias };
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
@@ -340,6 +347,29 @@ export interface PublicModel {
   endpoints?: Record<string, ModelEndpointInfo>;
   cost?: ModelPricing;
   kind?: ModelKind;
+  // Chat-only capability metadata sourced from the upstream model config.
+  // Mirrored from `@floway-dev/protocols/common`'s ChatModelInfo so the
+  // dashboard can render rule warnings against the live catalog without
+  // pulling the full protocol shape.
+  chat?: {
+    modalities?: { input: readonly ('text' | 'image')[]; output: readonly ('text' | 'image')[] };
+    reasoning?: {
+      effort?: { supported: readonly string[]; default: string };
+      budget_tokens?: { min?: number; max?: number };
+      adaptive?: boolean;
+      mandatory?: boolean;
+    };
+  };
+  // Alias provenance — present only on `/api/models` entries the gateway
+  // synthesized from an operator-defined alias. The dashboard uses this
+  // both to render alias-of badges on the Models page and to identify
+  // alias rows when computing the target-id suggestion list.
+  aliasedFrom?: {
+    name: string;
+    kind: AliasKind;
+    selection: AliasSelection;
+    targets: AliasTarget[];
+  };
 }
 
 export interface ControlPlaneModel extends PublicModel {

@@ -4,14 +4,17 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { ProxyRecord, SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { ModelAlias, ProxyRecord, SearchConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import AliasEditDialog from '../../components/alias-edit/AliasEditDialog.vue';
 import ProxyEditDialog from '../../components/proxy-edit/ProxyEditDialog.vue';
+import AliasesSettingsCard from '../../components/settings/AliasesSettingsCard.vue';
 import ApiEndpointsSection from '../../components/settings/ApiEndpointsSection.vue';
 import ExportSection from '../../components/settings/ExportSection.vue';
 import ImportSection from '../../components/settings/ImportSection.vue';
 import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.vue';
 import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
 import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
+import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
@@ -31,6 +34,7 @@ export const useSettingsPageData = defineBasicLoader(async () => {
     useUpstreamsStore().load(),
     useModelsStore().load(),
     useProxiesStore().load(),
+    useModelAliases().load(),
     useRuntimeInfo().load(),
   ]);
   return {
@@ -48,7 +52,9 @@ const router = useRouter();
 const { upstreams, loading: storeLoading, load } = useUpstreamsStore();
 const modelsStore = useModelsStore();
 const proxiesStore = useProxiesStore();
+const aliasesStore = useModelAliases();
 const { load: loadProxies } = proxiesStore;
+const { load: loadAliases } = aliasesStore;
 const settingsData = useSettingsPageData();
 
 // Local working copy the child reorders via v-model:ordered; reloadAll
@@ -59,7 +65,7 @@ watch(upstreams, list => {
 }, { immediate: true });
 
 const reloadAll = async () => {
-  await Promise.all([load(), modelsStore.load(), loadProxies()]);
+  await Promise.all([load(), modelsStore.load(), loadProxies(), loadAliases()]);
 };
 
 // Proxy editor is hosted as a modal — v-if drives the unmount on close so the
@@ -69,6 +75,13 @@ const proxyDialogRecord = ref<ProxyRecord | null>(null);
 const openProxyDialog = (record: ProxyRecord | null): void => {
   proxyDialogRecord.value = record;
   proxyDialogOpen.value = true;
+};
+
+const aliasDialogOpen = ref(false);
+const aliasDialogRecord = ref<ModelAlias | null>(null);
+const openAliasDialog = (record: ModelAlias | null): void => {
+  aliasDialogRecord.value = record;
+  aliasDialogOpen.value = true;
 };
 </script>
 
@@ -87,6 +100,11 @@ const openProxyDialog = (record: ProxyRecord | null): void => {
         <ProxiesSettingsCard
           @add="() => openProxyDialog(null)"
           @edit="(record: ProxyRecord) => openProxyDialog(record)"
+          @changed="reloadAll"
+        />
+        <AliasesSettingsCard
+          @add="() => openAliasDialog(null)"
+          @edit="(record: ModelAlias) => openAliasDialog(record)"
           @changed="reloadAll"
         />
         <SearchConfigSection
@@ -109,6 +127,13 @@ const openProxyDialog = (record: ProxyRecord | null): void => {
       v-if="proxyDialogOpen"
       v-model:open="proxyDialogOpen"
       :record="proxyDialogRecord"
+      @saved="reloadAll"
+    />
+
+    <AliasEditDialog
+      v-if="aliasDialogOpen"
+      v-model:open="aliasDialogOpen"
+      :record="aliasDialogRecord"
       @saved="reloadAll"
     />
   </div>

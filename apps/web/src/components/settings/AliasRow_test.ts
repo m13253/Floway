@@ -1,0 +1,120 @@
+import { mount } from '@vue/test-utils';
+import { describe, expect, it } from 'vitest';
+
+import AliasRow from './AliasRow.vue';
+import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+
+const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
+  kind: 'chat',
+  selection: 'first-available',
+  display_name: null,
+  visible_in_models_list: true,
+  targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }],
+  sort_order: 0,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  ...over,
+});
+
+const realModel = (id: string, display?: string): ControlPlaneModel => ({
+  id,
+  display_name: display,
+  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+});
+
+const aliasModel = (id: string): ControlPlaneModel => ({
+  id,
+  upstreams: [],
+  aliasedFrom: { name: id, kind: 'chat', selection: 'first-available', targets: [] },
+});
+
+describe('AliasRow', () => {
+  it('renders display_name when set; falls back to compose helper for single-target; alias name for multi-target', () => {
+    const withDisplay = mount(AliasRow, { props: { alias: alias({ name: 'a', display_name: 'My Friendly Name' }), models: [] } });
+    expect(withDisplay.find('h4').text()).toBe('My Friendly Name');
+
+    const single = mount(AliasRow, {
+      props: {
+        alias: alias({ name: 'a', display_name: null, targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } as ChatAliasRules }] }),
+        models: [],
+      },
+    });
+    expect(single.find('h4').text()).toBe('gpt-5 (low effort)');
+
+    const multi = mount(AliasRow, {
+      props: {
+        alias: alias({
+          name: 'gizmo',
+          display_name: null,
+          targets: [
+            { target_model_id: 'gpt-5', rules: {} as ChatAliasRules },
+            { target_model_id: 'claude', rules: {} as ChatAliasRules },
+          ],
+        }),
+        models: [],
+      },
+    });
+    expect(multi.find('h4').text()).toBe('gizmo');
+  });
+
+  it('formats the caption: name · N targets · selection (and optional hidden suffix)', () => {
+    const w = mount(AliasRow, {
+      props: {
+        alias: alias({
+          name: 'auto-review',
+          selection: 'random',
+          visible_in_models_list: false,
+          targets: [
+            { target_model_id: 'a', rules: {} as ChatAliasRules },
+            { target_model_id: 'b', rules: {} as ChatAliasRules },
+          ],
+        }),
+        models: [],
+      },
+    });
+    expect(w.find('p').text()).toBe('auto-review · 2 targets · random · hidden from /v1/models');
+
+    const sole = mount(AliasRow, {
+      props: { alias: alias({ name: 'one' }), models: [] },
+    });
+    expect(sole.find('p').text()).toBe('one · 1 target · first-available');
+  });
+
+  it('emits edit on the pencil button and delete on the trash button', async () => {
+    const w = mount(AliasRow, { props: { alias: alias({ name: 'a' }), models: [] } });
+    const edit = w.find('button[aria-label="Edit alias"]');
+    const del = w.find('button[aria-label="Delete alias"]');
+    await edit.trigger('click');
+    await del.trigger('click');
+    expect(w.emitted('edit')).toHaveLength(1);
+    expect(w.emitted('delete')).toHaveLength(1);
+  });
+
+  it('renders the alias-level warning icon only when the shadow warning fires', () => {
+    const catalog = [realModel('gpt-5'), realModel('plain')];
+
+    const noShadow = mount(AliasRow, { props: { alias: alias({ name: 'unique', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }), models: catalog } });
+    expect(noShadow.find('span[aria-label="Alias warning"]').exists()).toBe(false);
+
+    const shadow = mount(AliasRow, { props: { alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'plain', rules: {} as ChatAliasRules }] }), models: catalog } });
+    expect(shadow.find('span[aria-label="Alias warning"]').exists()).toBe(true);
+
+    // Seed pattern (target references shadowed id) suppresses the warning.
+    const seeded = mount(AliasRow, {
+      props: {
+        alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }, { target_model_id: 'plain', rules: {} as ChatAliasRules }] }),
+        models: catalog,
+      },
+    });
+    expect(seeded.find('span[aria-label="Alias warning"]').exists()).toBe(false);
+
+    // An alias-name collision against another alias doesn't shadow (only real-model collisions do).
+    const aliasCollision = mount(AliasRow, {
+      props: {
+        alias: alias({ name: 'auto-review', targets: [{ target_model_id: 'plain', rules: {} as ChatAliasRules }] }),
+        models: [aliasModel('auto-review'), realModel('plain')],
+      },
+    });
+    expect(aliasCollision.find('span[aria-label="Alias warning"]').exists()).toBe(false);
+  });
+});
