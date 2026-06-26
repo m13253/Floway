@@ -5,7 +5,7 @@ import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupport
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import type { StatefulResponsesStore } from '../responses/items/store.ts';
+import { createNoOpResponsesStore, type StatefulResponsesStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -58,7 +58,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, snapshotMode: 'none', headers: invocation.headers,
+            payload: translated, ctx, store: createNoOpResponsesStore(store.apiKeyId), candidate, snapshotMode: 'none', headers: invocation.headers,
           }),
         );
       }

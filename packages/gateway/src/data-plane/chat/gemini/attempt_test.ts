@@ -3,6 +3,7 @@ import { test, vi } from 'vitest';
 import { geminiAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { hashResponsesItemContent } from '../responses/items/format.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -159,8 +160,8 @@ test('generate translates through Messages when targetApi is messages', async ()
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
-test('generate translates through Responses when targetApi is responses', async () => {
-  installRepo();
+test('generate translates through Responses when targetApi is responses against a no-op inner store (no Responses-shape orphans in the Gemini-side store)', async () => {
+  const repo = installRepo();
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
@@ -176,6 +177,17 @@ test('generate translates through Responses when targetApi is responses', async 
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
+
+  // The inner Responses call runs against createNoOpResponsesStore, so the
+  // upstream's assistant message does NOT land in the Gemini-side repo as
+  // a Responses-shape orphan row. Probe by content hash.
+  const contentHash = await hashResponsesItemContent({
+    type: 'message',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'hi from responses' }],
+  } as unknown as Parameters<typeof hashResponsesItemContent>[0]);
+  const rows = await repo.responsesItems.lookupManyByContentHash(API_KEY_ID, [contentHash]);
+  assertEquals(rows.length, 0);
 });
 
 test('countTokens translates Gemini to Messages count_tokens and reshapes to totalTokens envelope', async () => {

@@ -3,6 +3,7 @@ import { test, vi } from 'vitest';
 import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { hashResponsesItemContent } from '../responses/items/format.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -150,15 +151,15 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
-test('generate translate-to-responses branch routes through responsesAttempt', async () => {
-  installRepo();
+test('generate translate-to-responses branch routes through responsesAttempt against a no-op inner store (no Responses-shape orphans in the ChatCompletions-side store)', async () => {
+  const repo = installRepo();
   const respResp: ResponsesResult = {
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
     output: [{
-      type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'hi' }],
+      type: 'message', id: 'msg_resp_orphan_probe', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: 'unique-orphan-probe-text-cc' }],
     }],
-    output_text: 'hi', error: null, incomplete_details: null,
+    output_text: 'unique-orphan-probe-text-cc', error: null, incomplete_details: null,
   };
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true,
@@ -178,6 +179,17 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
+
+  // The inner Responses call runs against createNoOpResponsesStore, so the
+  // upstream's assistant message does NOT land in the ChatCompletions-side
+  // repo as a Responses-shape orphan row. Probe by content hash.
+  const contentHash = await hashResponsesItemContent({
+    type: 'message',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'unique-orphan-probe-text-cc' }],
+  } as unknown as Parameters<typeof hashResponsesItemContent>[0]);
+  const rows = await repo.responsesItems.lookupManyByContentHash(API_KEY_ID, [contentHash]);
+  assertEquals(rows.length, 0);
 });
 
 test('generate inherits invocation headers across translation to Messages', async () => {
