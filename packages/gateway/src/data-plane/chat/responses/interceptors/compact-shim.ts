@@ -131,11 +131,15 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
 const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
 
-  // Strip compaction_trigger items — the upstream is about to see a plain
-  // generate turn against SUMMARIZATION_PROMPT.
-  const historyItems = Array.isArray(originalPayload.input)
-    ? originalPayload.input.filter(item => item.type !== 'compaction_trigger')
-    : [];
+  // Materialize the user-supplied input (string or array) into Responses items,
+  // then strip compaction_trigger so the upstream sees a plain generate turn
+  // against SUMMARIZATION_PROMPT. The string branch matches the serve-prep
+  // precedent (responses/serve-prep.ts): a string `input` becomes one
+  // user-role message whose content is the original text.
+  const originalInputItems: ResponsesInputItem[] = typeof originalPayload.input === 'string'
+    ? [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: originalPayload.input }] }]
+    : originalPayload.input;
+  const historyItems = originalInputItems.filter(item => item.type !== 'compaction_trigger');
 
   ctx.payload = {
     ...originalPayload,

@@ -229,6 +229,30 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
   assertEquals(collected.output_text, undefined);
 });
 
+test('compact + flag on: string input is materialized into one user-message item before the upstream call', async () => {
+  const inv = makeInvocation(
+    { input: 'a single string turn' as unknown as never },
+    { action: 'compact' },
+  );
+
+  let seenPayload: ResponsesPayload | undefined;
+  await withResponsesCompactShim(inv, stubCtx, () => {
+    seenPayload = inv.payload;
+    return fakeUpstreamRun('s')();
+  });
+  if (!seenPayload) throw new Error('expected the upstream call to fire');
+  // Without materialization the original string would have been dropped on
+  // the floor — the summarization turn would see an empty history and the
+  // synthesized envelope would condense nothing.
+  const items = seenPayload.input as Array<{ type: string; role?: string; content?: unknown }>;
+  assertEquals(items.length, 1);
+  assertEquals(items[0].type, 'message');
+  assertEquals(items[0].role, 'user');
+  const content = items[0].content as Array<{ type: string; text: string }>;
+  assertEquals(content[0].type, 'input_text');
+  assertEquals(content[0].text, 'a single string turn');
+});
+
 test('compact + flag on: compaction_trigger items are stripped before the upstream call', async () => {
   const inv = makeInvocation(
     {
