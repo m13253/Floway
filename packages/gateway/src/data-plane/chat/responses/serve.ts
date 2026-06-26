@@ -11,11 +11,13 @@ export interface ResponsesServeGenerateArgs {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  // HTTP defaults to 'append'; WS overrides per-message based on `payload.store`.
-  // The cross-protocol translation-in path never reaches this entry — it goes
-  // straight into `responsesAttempt.generate`.
-  readonly snapshotMode?: ResponsesSnapshotMode;
   readonly headers: Headers;
+  // WS overrides this to 'append' regardless of payload.store; the
+  // session-cache layer (StatefulResponsesStore) already filters durable
+  // writes — the WS path wants in-session snapshots even when the caller
+  // opted out of durable storage. HTTP omits the override so the attempt's
+  // post-chain derivation runs.
+  readonly snapshotMode?: ResponsesSnapshotMode;
 }
 
 export interface ResponsesServeCompactArgs {
@@ -25,18 +27,9 @@ export interface ResponsesServeCompactArgs {
   readonly headers: Headers;
 }
 
-// Codex's RemoteCompactionV2 performs compaction through the generate path
-// by appending a `compaction_trigger` control item to the input. Semantically
-// this is the same operation as `/responses/compact`: the upstream replaces
-// the prior history with a single `compaction` output, and any later
-// `previous_response_id` should resolve to that blob alone — not the dropped
-// history. Treat such a request like compact at the snapshot seam.
-const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
-
 export const responsesServe = {
   generate: async (args: ResponsesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, snapshotMode = 'append', headers } = args;
+    const { payload, ctx, store, headers, snapshotMode } = args;
     const plan = await prepareResponsesServePlan({
       payload, ctx, store,
       pickTarget: endpoints =>
@@ -46,10 +39,7 @@ export const responsesServe = {
               : null,
     });
     if (plan.kind === 'failure') return plan.result;
-    const effectiveSnapshotMode: ResponsesSnapshotMode = snapshotMode !== 'none' && containsCompactionTrigger(plan.prepared.input)
-      ? 'replace'
-      : snapshotMode;
-    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, snapshotMode: effectiveSnapshotMode, headers });
+    return await responsesAttempt.generate({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers, ...(snapshotMode !== undefined ? { snapshotMode } : {}) });
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -62,6 +52,6 @@ export const responsesServe = {
       pickTarget: endpoints => endpoints.responses ? 'responses' : null,
     });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.compact({ payload: plan.prepared, ctx, store, candidate: plan.candidate, headers });
+    return await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, store, candidate: plan.candidate, headers });
   },
 };

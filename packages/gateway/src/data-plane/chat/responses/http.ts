@@ -72,7 +72,7 @@ export const responsesHttp = {
       const wantsStream = payload.stream === true;
       ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
       const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
+      const result = await responsesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
