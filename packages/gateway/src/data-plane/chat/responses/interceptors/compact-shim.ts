@@ -24,6 +24,7 @@
 // copilot / azure / custom upstreams that natively support compaction.
 
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -41,41 +42,7 @@ const SUMMARIZATION_PROMPT
   + '- Any critical data, examples, or references needed to continue\n\n'
   + 'Be concise, structured, and focused on helping the next LLM seamlessly continue the work.';
 
-// ── Encoding helpers ──────────────────────────────────────────────────────────
-//
-// Mirrors the bytesToBase64Url / base64UrlToBytes pair in messages/interceptors/
-// web-search-shim.ts. Plain base64url(JSON) with no envelope or prefix marker;
-// foreign payloads are detected purely by decode failure or schema mismatch.
-
-const bytesToBase64Url = (bytes: Uint8Array): string => {
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-};
-
-const base64UrlToBytes = (value: string): Uint8Array | null => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-  try {
-    const binary = atob(padded);
-    return Uint8Array.from(binary, char => char.charCodeAt(0));
-  } catch {
-    return null;
-  }
-};
-
-export const encodePayload = (payload: unknown): string =>
-  bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-
-const decodePayload = (value: string): unknown | null => {
-  const bytes = base64UrlToBytes(value);
-  if (!bytes) return null;
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
-};
+// ── Inbound expansion ─────────────────────────────────────────────────────────
 
 // Structural validator: a shim payload is an array of input-item objects each
 // carrying a `type` field. Strict enough that a foreign opaque blob can't
@@ -83,8 +50,6 @@ const decodePayload = (value: string): unknown | null => {
 const isShimCompactionPayload = (value: unknown): value is ResponsesInputItem[] =>
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
-
-// ── Inbound expansion ─────────────────────────────────────────────────────────
 
 export const expandShimCompactionItems = (payload: ResponsesPayload): ResponsesPayload => {
   if (typeof payload.input === 'string') return payload;
@@ -101,7 +66,7 @@ export const expandShimCompactionItems = (payload: ResponsesPayload): ResponsesP
       rewritten.push(item);
       continue;
     }
-    const decoded = decodePayload(encryptedContent);
+    const decoded = decodeBase64UrlJson(encryptedContent);
     if (!isShimCompactionPayload(decoded)) {
       // Foreign blob — leave untouched so a native-compaction upstream still
       // sees its own encrypted_content verbatim.
@@ -137,7 +102,7 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
     role: 'user',
     content: [{ type: 'input_text', text: summaryText }],
   };
-  const encryptedContent = encodePayload([summaryItem]);
+  const encryptedContent = encodeBase64UrlJson([summaryItem]);
 
   // Drop the SDK-only `output_text` alias that some upstreams emit — its
   // value is the upstream's summary plaintext, which has no place on a

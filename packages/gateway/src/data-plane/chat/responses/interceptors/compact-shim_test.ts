@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
-import { encodePayload, expandShimCompactionItems, withResponsesCompactShim } from './compact-shim.ts';
+import { expandShimCompactionItems, withResponsesCompactShim } from './compact-shim.ts';
 import type { ResponsesInvocation } from './types.ts';
+import { encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { LayeredStatefulResponsesStore, MemoryStatefulResponsesBacking } from '../items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -73,7 +74,7 @@ const fakeUpstreamRun = (summaryText: string): () => Promise<ExecuteResult<Proto
 
 test('inbound: compaction item with a shim-encoded payload expands inline', () => {
   const userItem = { type: 'message' as const, role: 'user' as const, content: 'history one' };
-  const encoded = encodePayload([userItem]);
+  const encoded = encodeBase64UrlJson([userItem]);
 
   const expanded = expandShimCompactionItems({
     model: 'm',
@@ -105,7 +106,7 @@ test('inbound: foreign compaction blob (non-base64url-JSON) round-trips untouche
 test('inbound: foreign compaction blob (valid base64url but wrong shape) round-trips untouched', () => {
   // base64url-encoded JSON of an object (not an array) — decode succeeds,
   // but the schema check rejects it.
-  const wrongShape = encodePayload({ not: 'an array' });
+  const wrongShape = encodeBase64UrlJson({ not: 'an array' });
   const original = {
     model: 'm',
     input: [
@@ -268,7 +269,7 @@ test('compact + flag off: passes through to run() unchanged', async () => {
 
 test('generate + flag on: runs inbound expansion but does not pivot', async () => {
   const userItem = { type: 'message' as const, role: 'user' as const, content: 'expanded' };
-  const encoded = encodePayload([userItem]);
+  const encoded = encodeBase64UrlJson([userItem]);
   const inv = makeInvocation(
     {
       input: [
