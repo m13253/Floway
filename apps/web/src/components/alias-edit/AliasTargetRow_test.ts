@@ -14,6 +14,7 @@ const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({
 const realModel = (id: string, chat?: ControlPlaneModel['chat']): ControlPlaneModel => ({
   id,
   upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+  kind: 'chat',
   ...(chat ? { chat } : {}),
 });
 
@@ -54,16 +55,18 @@ describe('AliasTargetRow', () => {
     expect(w.emitted('remove')).toHaveLength(1);
   });
 
-  it('renders the expanded chat body only when expanded AND kind is chat; renders the empty-state caption for other kinds', async () => {
+  it('expands to the chat rule body when the kind is chat; the toggle is disabled for non-chat kinds', async () => {
     const chatRow = mountRow({});
     expect(chatRow.text()).not.toContain('Reasoning effort');
     await chatRow.find('button[aria-label="Toggle target row"]').trigger('click');
     expect(chatRow.text()).toContain('Reasoning effort');
     expect(chatRow.text()).toContain('Verbosity');
 
+    // Non-chat aliases carry an empty rules record, so the row has nothing
+    // to expand — the toggle is disabled and the body never renders.
     const embedRow = mountRow({ kind: 'embedding', modelValue: { target_model_id: 'e1', rules: {} } });
-    await embedRow.find('button[aria-label="Toggle target row"]').trigger('click');
-    expect(embedRow.text()).toContain('No per-target rules for this kind.');
+    const toggle = embedRow.find('button[aria-label="Toggle target row"]').element as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
     expect(embedRow.text()).not.toContain('Reasoning effort');
   });
 

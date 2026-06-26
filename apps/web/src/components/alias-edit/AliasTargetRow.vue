@@ -25,7 +25,13 @@ const emit = defineEmits<{
 }>();
 
 const expanded = ref(false);
-const toggleExpanded = () => { expanded.value = !expanded.value; };
+const canExpand = computed(() => props.kind === 'chat');
+const toggleExpanded = () => { if (canExpand.value) expanded.value = !expanded.value; };
+
+// Switching the alias kind on the parent collapses every non-chat row's
+// body — there's no rule form to show, so an open chevron would be a
+// dead state.
+watch(() => props.kind, k => { if (k !== 'chat') expanded.value = false; });
 
 const targetId = computed({
   get: () => target.value.target_model_id,
@@ -100,7 +106,7 @@ const VERBOSITY_ITEMS = ['low', 'medium', 'high'];
 const SERVICE_TIER_ITEMS = ['default', 'flex', 'priority', 'scale', 'fast'];
 
 const catalog = computed(() => findCatalogModel(props.models, target.value.target_model_id));
-const modelWarnings = computed(() => computeModelWarnings(target.value.target_model_id, catalog.value));
+const modelWarnings = computed(() => computeModelWarnings(target.value.target_model_id, catalog.value, props.kind));
 const ruleWarnings = computed(() => computeRuleWarnings(chatRules.value, catalog.value));
 const warningFor = (field: string) => ruleWarnings.value.find(w => w.field === field)?.message;
 const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
@@ -111,8 +117,9 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
     <header class="flex items-center gap-2 px-3 py-2">
       <button
         type="button"
-        class="grid size-6 shrink-0 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200"
+        class="grid size-6 shrink-0 place-items-center rounded text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500"
         :aria-expanded="expanded"
+        :disabled="!canExpand"
         aria-label="Toggle target row"
         @click="toggleExpanded"
       >
@@ -182,7 +189,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <Combobox
             :model-value="chatRules.reasoning?.effort ?? ''"
             :items="EFFORT_ITEMS"
-            placeholder="none / low / medium / high / xhigh"
+            placeholder="e.g. low"
             @update:model-value="setEffort"
           />
           <p v-if="warningFor('reasoning.effort')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.effort') }}</p>
@@ -193,7 +200,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <input
             type="text"
             inputmode="numeric"
-            placeholder="4096"
+            placeholder="e.g. 4096"
             class="h-9 w-full rounded-[10px] border border-white/[0.14] bg-surface-700 px-3 text-sm text-white placeholder:text-gray-600 focus:border-accent-cyan/50 focus:outline-none focus:ring-1 focus:ring-accent-cyan/30 font-mono"
             :value="budgetText"
             @input="(e: Event) => onBudgetChange((e.target as HTMLInputElement).value)"
@@ -218,7 +225,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <Combobox
             :model-value="chatRules.reasoning?.summary ?? ''"
             :items="SUMMARY_ITEMS"
-            placeholder="auto"
+            placeholder="e.g. auto"
             @update:model-value="setSummary"
           />
           <p v-if="warningFor('reasoning.summary')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.summary') }}</p>
@@ -229,7 +236,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <Combobox
             :model-value="chatRules.verbosity ?? ''"
             :items="VERBOSITY_ITEMS"
-            placeholder="medium"
+            placeholder="e.g. medium"
             @update:model-value="setVerbosity"
           />
           <p v-if="warningFor('verbosity')" class="mt-1 text-xs text-amber-300">{{ warningFor('verbosity') }}</p>
@@ -240,7 +247,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <Combobox
             :model-value="chatRules.serviceTier ?? ''"
             :items="SERVICE_TIER_ITEMS"
-            placeholder="default"
+            placeholder="e.g. default"
             @update:model-value="setServiceTier"
           />
           <p v-if="warningFor('serviceTier')" class="mt-1 text-xs text-amber-300">{{ warningFor('serviceTier') }}</p>

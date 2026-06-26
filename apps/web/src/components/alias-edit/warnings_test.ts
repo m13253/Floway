@@ -5,11 +5,13 @@ import type { ControlPlaneModel } from '../../api/types.ts';
 
 const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+  kind: 'chat',
   ...over,
 });
 
 const aliasModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   upstreams: [],
+  kind: 'chat',
   aliasedFrom: { name: over.id, kind: 'chat', selection: 'first-available', targets: [] },
   ...over,
 });
@@ -49,20 +51,28 @@ describe('findCatalogModel', () => {
 });
 
 describe('computeModelWarnings', () => {
-  it('returns no warning when the target resolves to a catalog entry', () => {
-    const catalog = realModel({ id: 'gpt-5' });
-    expect(computeModelWarnings('gpt-5', catalog)).toEqual([]);
+  it('returns no warning when the target resolves to a same-kind catalog entry', () => {
+    const catalog = realModel({ id: 'gpt-5', kind: 'chat' });
+    expect(computeModelWarnings('gpt-5', catalog, 'chat')).toEqual([]);
   });
 
   it('returns a "does not resolve" warning when the target is unknown', () => {
-    const w = computeModelWarnings('mystery-model', undefined);
+    const w = computeModelWarnings('mystery-model', undefined, 'chat');
     expect(w).toHaveLength(1);
     expect(w[0]).toContain('mystery-model');
     expect(w[0]).toContain('does not currently resolve');
   });
 
+  it('returns a kind-mismatch warning when the catalog row is the wrong kind', () => {
+    const w = computeModelWarnings('text-emb-3', realModel({ id: 'text-emb-3', kind: 'embedding' }), 'chat');
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('text-emb-3');
+    expect(w[0]).toContain('embedding');
+    expect(w[0]).toContain('chat');
+  });
+
   it('emits no warning for an empty id (the row is mid-edit)', () => {
-    expect(computeModelWarnings('', undefined)).toEqual([]);
+    expect(computeModelWarnings('', undefined, 'chat')).toEqual([]);
   });
 });
 

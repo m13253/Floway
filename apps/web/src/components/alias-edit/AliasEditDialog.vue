@@ -7,7 +7,7 @@
 import { computed, ref } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
-import { computeShadowWarning, realModelIds } from './warnings.ts';
+import { computeShadowWarning, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { AliasKind, AliasSelection, AliasTarget, ChatAliasRules, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
@@ -77,9 +77,12 @@ const removeTarget = (idx: number) => {
   targets.value = targets.value.filter((_, i) => i !== idx);
 };
 
-// Suggestion list for every target-id combobox. Aliases are excluded so an
-// operator can't accidentally hop into the alias layer twice.
-const targetIdItems = computed(() => realModelIds(modelsStore.models.value));
+// Suggestion list for every target-id combobox. Filtered to non-alias
+// catalog rows of the alias's current kind so an embedding alias only
+// hints at embedding models. Aliases never re-enter the alias layer at
+// runtime, so they're excluded too. Operators can still type any
+// opaque string — the list is a hint, not a constraint.
+const targetIdItems = computed(() => realModelIdsOfKind(modelsStore.models.value, kind.value));
 
 const shadowWarning = computed(() => computeShadowWarning(aliasName.value.trim(), targets.value, modelsStore.models.value));
 
@@ -91,9 +94,9 @@ const saveError = ref<string | null>(null);
 // current record so an in-place edit of an unchanged name is allowed.
 const validationError = computed<string | null>(() => {
   const trimmed = aliasName.value.trim();
-  if (trimmed === '') return 'Alias name is required';
+  if (trimmed === '') return 'Alias id is required';
   const collisions = (aliasesStore.aliases.value ?? []).filter(a => a.name === trimmed && a.name !== props.record?.name);
-  if (collisions.length > 0) return `An alias named "${trimmed}" already exists`;
+  if (collisions.length > 0) return `An alias with id "${trimmed}" already exists`;
   if (targets.value.length === 0) return 'At least one target is required';
   if (targets.value.some(t => t.target_model_id.trim() === '')) return 'Every target needs a model id';
   return null;
@@ -161,12 +164,12 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label class="mb-1.5 block text-xs font-medium text-gray-500">Alias name</label>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Alias id</label>
           <Input v-model="aliasName" placeholder="my-alias-id" class="font-mono" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Display name</label>
-          <Input v-model="displayName" placeholder="auto" />
+          <Input v-model="displayName" :placeholder="aliasName.trim() === '' ? 'my-alias-id' : aliasName.trim()" />
         </div>
       </div>
 

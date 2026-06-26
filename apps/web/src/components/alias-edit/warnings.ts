@@ -3,7 +3,7 @@
 // helpers keeps the Settings card and the dialog reading the same view of
 // the live /api/models catalog.
 
-import type { ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { AliasKind, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 // Excludes alias rows — target ids never re-enter the alias layer, so the
 // rule-warning lookup must compare against the same real-model surface that
@@ -15,9 +15,19 @@ export const findCatalogModel = (
   (models ?? []).find(m => m.id === targetModelId && m.aliasedFrom === undefined);
 
 // Real (non-alias) model ids the operator can route to. Used by the
-// target-id combobox suggestion list and by the shadow-warning check.
+// shadow-warning check (no kind filter — shadowing is a name collision).
 export const realModelIds = (models: readonly ControlPlaneModel[] | null | undefined): string[] =>
   (models ?? []).filter(m => m.aliasedFrom === undefined).map(m => m.id);
+
+// Real (non-alias) model ids whose kind matches the alias's kind. Used by
+// the target-id combobox suggestion list so an embedding alias only
+// suggests embedding models, etc. Operators can still type any string —
+// the suggestion list is a hint, not a constraint.
+export const realModelIdsOfKind = (
+  models: readonly ControlPlaneModel[] | null | undefined,
+  kind: AliasKind,
+): string[] =>
+  (models ?? []).filter(m => m.aliasedFrom === undefined && m.kind === kind).map(m => m.id);
 
 // One warning attached to a specific chat rule field. The field key matches
 // the form's `data-field` attribute so the dialog can render the warning
@@ -69,16 +79,25 @@ export const computeRuleWarnings = (
   return out;
 };
 
-// Model-level warnings for one target row. Today the only trigger is the
-// target id failing to resolve to any catalog model. Returned as plain
-// strings — the dialog already joins them with newlines for the tooltip.
+// Model-level warnings for one target row. Returned as plain strings —
+// the dialog already joins them with newlines for the tooltip.
+//
+// Two triggers:
+// - Unknown target id: nothing in the catalog matches.
+// - Wrong-kind target: the catalog row exists but its `kind` doesn't
+//   match the alias's kind, so a /<aliasKind> request that resolves to
+//   this target would fall through prefix routing's endpoint check.
 export const computeModelWarnings = (
   targetModelId: string,
   catalog: ControlPlaneModel | undefined,
+  aliasKind: AliasKind,
 ): string[] => {
   if (targetModelId === '') return [];
   if (catalog === undefined) {
     return [`"${targetModelId}" does not currently resolve to any enabled upstream binding.`];
+  }
+  if (catalog.kind !== aliasKind) {
+    return [`"${targetModelId}" is a ${catalog.kind} model; this alias is configured for ${aliasKind}.`];
   }
   return [];
 };

@@ -97,7 +97,7 @@ describe('AliasEditDialog', () => {
     w.unmount();
   });
 
-  it('renders the chat rule body when the kind is chat, and the empty-state caption when the kind is embedding', async () => {
+  it('expands the chat rule body for chat aliases; the row toggle is disabled for non-chat aliases', async () => {
     const chat = mount(AliasEditDialog, {
       props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } as ChatAliasRules }] }) },
       attachTo: document.body,
@@ -114,9 +114,8 @@ describe('AliasEditDialog', () => {
       attachTo: document.body,
     });
     await nextTick();
-    portalQuery<HTMLButtonElement>('button[aria-label="Toggle target row"]')!.click();
-    await nextTick();
-    expect(portalText()).toContain('No per-target rules for this kind.');
+    const toggle = portalQuery<HTMLButtonElement>('button[aria-label="Toggle target row"]')!;
+    expect(toggle.disabled).toBe(true);
     expect(portalText()).not.toContain('Reasoning effort');
     embed.unmount();
   });
