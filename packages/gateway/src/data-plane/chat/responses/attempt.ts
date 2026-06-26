@@ -49,6 +49,10 @@ export interface ResponsesAttemptInvokeArgs {
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers, snapshotMode: snapshotModeOverride } = args;
+    // Read the caller's intent `action` (NOT `invocation.action`) — the guard
+    // runs pre-chain, before any interceptor can flip the value. The two
+    // dispatch sites below at lines 99/127/237/258/272 read `invocation.action`
+    // (post-chain) on purpose; this site is the lone pre-chain reader.
     if (action === 'compact' && candidate.targetApi !== 'responses') {
       throw new Error(`responsesAttempt.invoke(action='compact') requires targetApi='responses', got '${candidate.targetApi}'`);
     }

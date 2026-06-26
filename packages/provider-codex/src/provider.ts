@@ -8,6 +8,7 @@ import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
+import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
@@ -111,12 +112,16 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
         ctx, {}, CODEX_RESPONSES_BOUNDARY, async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const backendCall = { upstreamId: record.id, account, model, body: wireBody, headers: ctx.headers, signal, effects, call: opts };
+          const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };
           switch (ctx.action) {
           case 'compact':
-            return { action: 'compact', ...(await callCodexResponsesCompact(backendCall)) };
+            // Narrow to the compact wire shape — defends against a future
+            // interceptor that flips `ctx.action` from 'generate' to 'compact'
+            // mid-chain and leaves the generate-shaped body (tools, reasoning,
+            // etc.) in place.
+            return { action: 'compact', ...(await callCodexResponsesCompact({ ...backendCallBase, body: toCompactPayloadShape(wireBody) })) };
           case 'generate':
-            return { action: 'generate', ...(await callCodexResponses(backendCall)) };
+            return { action: 'generate', ...(await callCodexResponses({ ...backendCallBase, body: wireBody })) };
           default:
             ctx.action satisfies never;
             throw new Error(`Unhandled ResponsesAction: ${ctx.action as string}`);
