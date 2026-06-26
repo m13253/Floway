@@ -11,9 +11,7 @@
 // hand. The backend stays authoritative — what `/v1/models` reports
 // is what the gateway computes there, not what this helper emits.
 
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ControlPlaneModel, ModelLimits } from '../../api/types.ts';
-
-type ChatModelInfo = NonNullable<ControlPlaneModel['chat']>;
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, ModelLimits } from '../../api/types.ts';
 
 const chatRules = (target: AliasTarget): ChatAliasRules => target.rules as ChatAliasRules;
 
