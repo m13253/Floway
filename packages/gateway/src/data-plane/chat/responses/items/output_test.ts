@@ -455,9 +455,10 @@ test('derives snapshotMode=replace from a streamed compaction_summary alias item
 test('derives snapshotMode=replace when the compaction item only appears in the terminal envelope', async () => {
   // The non-streaming compact path runs through `syntheticEventsFromResult`,
   // which emits the compaction item via generic `output_item.added`/`done`
-  // pairs — but the upstream-rejecting compact branch and any future shape
-  // that surfaces the item only in `response.completed.output[]` must still
-  // trigger `'replace'`. This covers the terminal-envelope-only case.
+  // pairs. A fully non-streaming upstream that surfaces the item only in
+  // `response.completed.output[]` — without any preceding `output_item.done`
+  // — must still trigger `'replace'`. This covers that terminal-envelope-only
+  // case.
   const repo = new InMemoryRepo();
   initRepo(repo);
   const compactionItem = {
