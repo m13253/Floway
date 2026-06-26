@@ -85,11 +85,11 @@ test('AliasEditDialog (create mode) posts a payload matching the form state', as
 
   // Fill the form: alias name + target id are the only required fields for
   // the create-mode happy path. Everything else uses its default.
-  const aliasInput = wrapper.find('input[placeholder="codex-auto-review"]');
+  const aliasInput = wrapper.find('input[placeholder="gpt-5.5-xhigh-fast"]');
   expect(aliasInput.exists()).toBe(true);
   await aliasInput.setValue('opus-fast');
 
-  const targetInput = wrapper.find('input[placeholder="gpt-5.4"]');
+  const targetInput = wrapper.find('input[placeholder="gpt-5.5"]');
   expect(targetInput.exists()).toBe(true);
   await targetInput.setValue('claude-opus-4-6');
 
@@ -133,17 +133,19 @@ test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the merged shap
   }));
 
   // Alias name input is editable in edit mode — the PK can now be renamed.
-  const aliasInput = wrapper.find('input[placeholder="codex-auto-review"]');
+  const aliasInput = wrapper.find('input[placeholder="gpt-5.5-xhigh-fast"]');
   expect(aliasInput.exists()).toBe(true);
   expect((aliasInput.element as HTMLInputElement).disabled).toBe(false);
   expect((aliasInput.element as HTMLInputElement).value).toBe('opus-xhigh');
 
-  // Display name pre-filled.
-  const displayInput = wrapper.find('input[placeholder="Codex Auto Review"]');
-  expect((displayInput.element as HTMLInputElement).value).toBe('Opus XHigh');
+  // Display name pre-filled — its placeholder is dynamic now (mirrors the
+  // synthesized fallback) so we locate it by its current value instead.
+  const allInputs = wrapper.findAll('input');
+  const displayInput = allInputs.find(i => (i.element as HTMLInputElement).value === 'Opus XHigh');
+  expect(displayInput).toBeDefined();
 
   // Target id pre-filled.
-  const targetInput = wrapper.find('input[placeholder="gpt-5.4"]');
+  const targetInput = wrapper.find('input[placeholder="gpt-5.5"]');
   expect((targetInput.element as HTMLInputElement).value).toBe('claude-opus-4-6');
 
   // Change one field and submit; PATCH carries the merged shape (every editable
@@ -187,7 +189,7 @@ test('AliasEditDialog (edit mode) PATCHes the original alias when the operator r
     template: '<AliasEditDialog v-model:open="open" :record="record" />',
   }));
 
-  const aliasInput = wrapper.find('input[placeholder="codex-auto-review"]');
+  const aliasInput = wrapper.find('input[placeholder="gpt-5.5-xhigh-fast"]');
   await aliasInput.setValue('opus-renamed');
 
   const saveBtn = wrapper.findAll('button').find(b => b.text() === 'Save');

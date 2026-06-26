@@ -12,7 +12,8 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { ModelAlias, ModelAliasOnConflict } from '../../api/types.ts';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import { Button, Checkbox, Combobox, Dialog, Input, Select, TagCombobox } from '@floway-dev/ui';
+import { composeAliasDisplayName } from '@floway-dev/protocols/common';
+import { Button, Combobox, Dialog, Input, Select, Switch, TagCombobox } from '@floway-dev/ui';
 
 // Mutable mirror of @floway-dev/protocols ModelAliasRules — the wire shape
 // is `readonly` at the contract boundary, but the form mutates it in place
@@ -90,8 +91,10 @@ const upstreamItems = computed(() => (upstreamsStore.upstreams.value ?? []).map(
   detail: u.id,
 })));
 
+const targetMatch = computed(() => modelsStore.models.value?.find(m => m.id === targetModelId.value));
+
 const targetChat = computed(() => {
-  const match = modelsStore.models.value?.find(m => m.id === targetModelId.value);
+  const match = targetMatch.value;
   return match && 'chat' in match ? (match as { chat?: { reasoning?: { effort?: { supported: string[] }; budget_tokens?: { min?: number; max?: number }; adaptive?: boolean } } }).chat : undefined;
 });
 
@@ -104,10 +107,10 @@ const SUMMARY_HINTS = ['auto', 'concise', 'detailed', 'omitted'];
 const VERBOSITY_HINTS = ['low', 'medium', 'high'];
 const SERVICE_TIER_HINTS = ['auto', 'default', 'flex', 'scale', 'priority', 'standard_only'];
 
-// Each on-conflict option carries a one-line explanation surfaced in the
-// Select popover so an operator picks by what happens at request time, not
-// by guessing what `real-only` / `alias-only` mean. Mirrors the Auth Style
-// pattern in CustomConfigPanel.
+// Each on-conflict option carries a one-line explanation surfaced both in
+// the Select popover and in a helper line below the trigger so an operator
+// picks by what happens at request time, not by guessing what `real-only`
+// / `alias-only` mean. Mirrors the Auth Style pattern in CustomConfigPanel.
 interface OnConflictOption {
   value: ModelAliasOnConflict;
   label: string;
@@ -136,6 +139,52 @@ const onConflictOptions: OnConflictOption[] = [
     explanation: 'Both entries appear; routing prefers the alias when present, falling back to the real model.',
   },
 ];
+
+const selectedOnConflict = computed(() => onConflictOptions.find(o => o.value === onConflict.value));
+
+// --- display name placeholder ---
+//
+// Shows the operator what the synthesized fallback would look like when
+// the Display name field is left blank. Before a target is picked we hold
+// a teaching example so the three placeholders (alias / target / display
+// name) read as a coherent trio; once a target is set we compute the real
+// synthesized label off the current form state so the placeholder tracks
+// every rule edit live.
+const FALLBACK_PLACEHOLDER_EXAMPLE = 'GPT-5.5 (xhigh effort, fast speed)';
+
+// Mirror of `buildRules` without the validation errors — used purely for
+// the live placeholder so a half-typed budget value (e.g. mid-typing) does
+// not bubble validation text into a UI hint. Invalid intermediate states
+// fall back to the empty rules object.
+const buildRulesForPreview = (): MutableRules => {
+  const rules: MutableRules = {};
+  const reasoning: NonNullable<MutableRules['reasoning']> = {};
+  const effort = reasoningEffort.value.trim();
+  if (effort !== '') reasoning.effort = effort;
+  const budgetRaw = reasoningBudgetTokens.value.trim();
+  if (budgetRaw !== '' && /^\d+$/.test(budgetRaw)) reasoning.budgetTokens = Number(budgetRaw);
+  if (reasoningAdaptive.value) reasoning.adaptive = true;
+  const summary = reasoningSummary.value.trim();
+  if (summary !== '') reasoning.summary = summary;
+  if (Object.keys(reasoning).length > 0) rules.reasoning = reasoning;
+  const verb = verbosity.value.trim();
+  if (verb !== '') rules.verbosity = verb;
+  const tier = serviceTier.value.trim();
+  if (tier !== '') rules.serviceTier = tier;
+  const betas = anthropicBeta.value.map(s => s.trim()).filter(s => s !== '');
+  if (betas.length > 0) rules.anthropicBeta = betas;
+  return rules;
+};
+
+const displayNamePlaceholder = computed(() => {
+  const trimmedTarget = targetModelId.value.trim();
+  if (trimmedTarget === '') return FALLBACK_PLACEHOLDER_EXAMPLE;
+  const targetDisplay = targetMatch.value?.display_name ?? trimmedTarget;
+  return composeAliasDisplayName({
+    targetDisplayName: targetDisplay,
+    rules: buildRulesForPreview(),
+  });
+});
 
 // --- save ---
 
@@ -245,18 +294,18 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Alias name</label>
-          <Input v-model="aliasName" placeholder="codex-auto-review" class="font-mono" />
+          <Input v-model="aliasName" placeholder="gpt-5.5-xhigh-fast" class="font-mono" />
         </div>
 
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Target model id</label>
-          <Combobox v-model="targetModelId" :items="modelOptions" placeholder="gpt-5.4" input-class="font-mono" />
+          <Combobox v-model="targetModelId" :items="modelOptions" placeholder="gpt-5.5" input-class="font-mono" />
         </div>
       </div>
 
       <div>
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Display name <span class="text-gray-600">(optional)</span></label>
-        <Input v-model="displayName" placeholder="Codex Auto Review" />
+        <Input v-model="displayName" :placeholder="displayNamePlaceholder" />
       </div>
 
       <div>
@@ -264,25 +313,17 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
         <TagCombobox v-model="upstreamIds" :items="upstreamItems" placeholder="Pick an upstream..." empty-text="No upstreams match" />
       </div>
 
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label class="mb-1.5 block text-xs font-medium text-gray-500">On conflict</label>
-          <Select v-model="onConflict" :options="onConflictOptions">
-            <template #description="{ option }">
-              <p class="text-[11px] text-gray-500">{{ option.explanation }}</p>
-            </template>
-          </Select>
-        </div>
-
-        <div class="flex items-center gap-2 pt-6">
-          <Checkbox v-model="visibleInModelsList" />
-          <label class="text-sm text-gray-300">Visible in <code class="rounded bg-white/[0.04] px-1 font-mono text-xs">/v1/models</code></label>
-        </div>
+      <div>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">On conflict</label>
+        <Select v-model="onConflict" :options="onConflictOptions">
+          <template #description="{ option }">
+            <p class="text-[11px] text-gray-500">{{ option.explanation }}</p>
+          </template>
+        </Select>
+        <p v-if="selectedOnConflict" class="mt-1.5 text-xs text-gray-500">{{ selectedOnConflict.explanation }}</p>
       </div>
 
-      <div class="space-y-4">
-        <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Reasoning</h4>
-
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Effort</label>
           <Combobox v-model="reasoningEffort" :items="effortSuggestions" placeholder="high" />
@@ -306,20 +347,22 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
             <template v-if="budgetMax !== undefined">max {{ budgetMax }}</template>
           </p>
         </div>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <div class="flex h-9 items-center gap-2">
+            <Switch v-model="reasoningAdaptive" />
+            <span class="text-sm text-gray-300">Adaptive reasoning</span>
+          </div>
+          <p v-if="reasoningAdaptive && !adaptiveSupported" class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+            Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
+          </p>
+        </div>
 
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Summary</label>
           <Combobox v-model="reasoningSummary" :items="SUMMARY_HINTS" placeholder="auto" />
-        </div>
-
-        <div>
-          <label class="inline-flex items-center gap-2">
-            <Checkbox v-model="reasoningAdaptive" />
-            <span class="text-sm text-gray-300">Adaptive reasoning</span>
-          </label>
-          <p v-if="reasoningAdaptive && !adaptiveSupported" class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
-            Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
-          </p>
         </div>
       </div>
 
@@ -340,9 +383,15 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
         <TagCombobox v-model="anthropicBeta" :items="[]" placeholder="extended-cache-ttl-2025-04-11" empty-text="Type a header token and press Enter" />
       </div>
 
-      <div class="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-5">
-        <Button :loading="saving" @click="save">Save</Button>
-        <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-5">
+        <label class="flex items-center gap-2">
+          <Switch v-model="visibleInModelsList" />
+          <span class="text-sm text-gray-300">Visible in <code class="rounded bg-white/[0.04] px-1 font-mono text-xs">/v1/models</code></span>
+        </label>
+        <div class="flex items-center gap-2">
+          <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
+          <Button :loading="saving" @click="save">Save</Button>
+        </div>
       </div>
     </div>
   </Dialog>
