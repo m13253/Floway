@@ -136,11 +136,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // the inbound public id. Iteration order follows configured sort_order
     // across upstreams, with the unprefixed interpretation pushed before the
     // prefixed one within a single upstream. The first match whose binding
-    // satisfies the endpoint capability wins. `resolveModelForRequest` also
-    // owns alias resolution: when the inbound id is an alias, the returned
-    // `aliasResolution` carries the original alias name (for the response
-    // header) and the targets feeding `matches` are the alias's resolved
-    // target id; `AliasNoTargetAvailableError` propagates as the 404 below.
+    // satisfies the endpoint capability wins. See resolve.ts for the
+    // alias-resolves-once-above-prefix-routing contract; `resolveModelForRequest`
+    // runs it and surfaces the result on `aliasResolution`.
     let resolution;
     try {
       resolution = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler, endpoints => endpoints[endpointKey] !== undefined);

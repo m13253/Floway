@@ -15,10 +15,9 @@ export type ChatCandidate = ProviderCandidate;
 // "model is missing entirely" failure from "model exists but does not
 // expose the endpoint this source needs", plus the names of upstreams
 // whose catalog fetch rejected this round so the caller's failure
-// renderer can surface them parenthetically. Alias resolution runs inside
-// this entry — if the inbound id is an alias, the resolution is returned
-// on `aliasResolution` so the caller can overlay rules onto the IR and
-// stage the `x-floway-alias` response header.
+// renderer can surface them parenthetically. See resolve.ts for the
+// alias-resolves-once-above-prefix-routing contract; this entry runs it
+// and returns the resolution on `aliasResolution`.
 export const enumerateProviderCandidates = async ({
   upstreamIds, model, pickTarget, scheduler, currentColo,
 }: {
@@ -43,15 +42,10 @@ export const enumerateProviderCandidates = async ({
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
 
-  // Alias resolution runs above prefix routing so every data-plane endpoint
-  // sees the same alias surface. The target id is fed verbatim into prefix
-  // routing; alias names never re-enter the alias layer.
-  // `AliasNoTargetAvailableError` propagates so the chat serve's catch maps
-  // it to its protocol-native 404. The endpoint predicate piggybacks on
-  // `pickTarget` so the resolver's pool narrows to targets whose binding
-  // exposes one of the chat surfaces the source serve actually wants —
-  // first-available / random pick from a set the prefix router can serve
-  // end-to-end.
+  // See resolve.ts for the alias-resolves-once-above-prefix-routing contract.
+  // The endpoint predicate piggybacks on `pickTarget` so the resolver's pool
+  // narrows to targets whose binding exposes one of the chat surfaces the
+  // source serve actually wants.
   const aliasResolution = await resolveAlias({
     modelName: model,
     providers,

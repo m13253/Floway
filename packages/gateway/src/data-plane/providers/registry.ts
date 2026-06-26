@@ -373,11 +373,7 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  // Alias resolution runs above prefix routing so every data-plane endpoint
-  // sees the same alias surface. The target id is then fed verbatim back
-  // into prefix routing; alias names never re-enter the alias layer.
-  // `AliasNoTargetAvailableError` propagates so the protocol's catch maps
-  // it to its native 404.
+  // See resolve.ts for the alias-resolves-once-above-prefix-routing contract.
   const aliasResolution = await resolveAlias({
     modelName: modelId,
     providers,
