@@ -7,9 +7,11 @@
 
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { ModelAliasesRepo, ModelAliasRecord } from '../../repo/types.ts';
+import type { ModelProviderInstance } from '../providers/registry.ts';
 import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { AliasKind, AliasRules, ModelEndpointKey } from '@floway-dev/protocols/common';
+import type { Fetcher } from '@floway-dev/provider';
 
 // Endpoint family the inbound request belongs to. Mirrors `AliasKind` but
 // named in the data-plane vocabulary so the resolver argument site reads as
@@ -79,15 +81,17 @@ interface ResolveAliasArgs {
 // `endpointKind` cares about. Mirrors the resolution path
 // `enumerateProviderCandidates` takes, narrowed to a yes/no answer so we
 // can pre-filter the alias target list once.
+//
+// `fetcherForUpstream` and `providers` are passed in (not derived here) so a
+// caller filtering N targets hits the underlying repo / dial factories once,
+// not N times.
 const candidateIsRoutable = async (
   targetModelId: string,
   endpointKind: AliasEndpointKind,
-  upstreamIds: readonly string[] | null,
+  providers: readonly ModelProviderInstance[],
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-  currentColo: string,
 ): Promise<boolean> => {
-  const fetcherForUpstream = await createPerRequestFetcher(currentColo);
-  const providers = await listModelProviders(upstreamIds);
   if (providers.length === 0) return false;
   const interpretations = enumerateModelInterpretations(targetModelId, providers);
   const { resolutions } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
@@ -106,8 +110,14 @@ const buildAvailablePool = async (
   scheduler: BackgroundScheduler,
   currentColo: string,
 ): Promise<ModelAliasRecord['targets']> => {
+  // Hoist both registry calls out of the per-target loop: their results
+  // depend only on (upstreamIds, currentColo), not on the target id, so the
+  // upstreams-list + proxy-factory cost is paid once per alias instead of
+  // once per target row.
+  const fetcherForUpstream = await createPerRequestFetcher(currentColo);
+  const providers = await listModelProviders(upstreamIds);
   const availability = await Promise.all(record.targets.map(target =>
-    candidateIsRoutable(target.target_model_id, endpointKind, upstreamIds, scheduler, currentColo)));
+    candidateIsRoutable(target.target_model_id, endpointKind, providers, fetcherForUpstream, scheduler)));
   return record.targets.filter((_, index) => availability[index]);
 };
 
