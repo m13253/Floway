@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Operator editor for one alias. The form is intentionally Goal-2-friendly:
-// every "enum" field below is rendered as a plain text input with hints
+// every "enum" field below is rendered as a combobox with suggestions
 // pulled from the target model's chat metadata (when available) and from
-// well-known wire values. The dashboard never gates the value set so a new
-// upstream-side level (e.g. an "xhigh" effort that shipped this morning)
-// can flow through without a frontend release.
+// well-known wire values, but the operator can type any value verbatim so
+// a new upstream-side level (e.g. an "xhigh" effort that shipped this
+// morning) flows through without a frontend release.
 
 import { computed, ref } from 'vue';
 
@@ -12,7 +12,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { ModelAlias, ModelAliasOnConflict } from '../../api/types.ts';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import { Button, Checkbox, Dialog, Input, Select, TagCombobox } from '@floway-dev/ui';
+import { Button, Checkbox, Combobox, Dialog, Input, Select, TagCombobox } from '@floway-dev/ui';
 
 // Mutable mirror of @floway-dev/protocols ModelAliasRules — the wire shape
 // is `readonly` at the contract boundary, but the form mutates it in place
@@ -33,7 +33,7 @@ interface MutableRules {
 const open = defineModel<boolean>('open', { required: true });
 
 const props = defineProps<{
-  /** null = create; non-null = edit (alias is the PK, so editing it is disabled). */
+  /** null = create; non-null = edit. The alias name is editable in both modes. */
   record: ModelAlias | null;
 }>();
 
@@ -56,23 +56,16 @@ const upstreamIds = ref<string[]>([...(props.record?.upstream_ids ?? [])]);
 const visibleInModelsList = ref(props.record?.visible_in_models_list ?? true);
 const onConflict = ref<ModelAliasOnConflict>(props.record?.on_conflict ?? 'real-only');
 
-// Reasoning is modeled as a tagged radio + a separate summary input so the
-// three approaches (effort preset / token budget / adaptive) are mutually
-// exclusive in the wire shape but visible to the operator at a glance.
-type ReasoningMode = 'none' | 'effort' | 'budget' | 'adaptive';
-
+// Reasoning fields are flat: every input is always visible. The wire schema
+// still allows the four facets (effort / budget / adaptive / summary) to
+// coexist; the apply layer's adaptive-first precedence handles the runtime
+// resolution. Forcing mutual exclusivity at the UI level previously meant
+// operators had to nuke an existing knob before setting another, which
+// fought their actual workflow.
 const initialReasoning = props.record?.rules.reasoning;
-const initialReasoningMode: ReasoningMode = initialReasoning?.effort !== undefined
-  ? 'effort'
-  : initialReasoning?.budgetTokens !== undefined
-    ? 'budget'
-    : initialReasoning?.adaptive === true
-      ? 'adaptive'
-      : 'none';
-
-const reasoningMode = ref<ReasoningMode>(initialReasoningMode);
 const reasoningEffort = ref(initialReasoning?.effort ?? '');
 const reasoningBudgetTokens = ref<string>(initialReasoning?.budgetTokens === undefined ? '' : String(initialReasoning.budgetTokens));
+const reasoningAdaptive = ref(initialReasoning?.adaptive === true);
 const reasoningSummary = ref(initialReasoning?.summary ?? '');
 
 const verbosity = ref(props.record?.rules.verbosity ?? '');
@@ -111,11 +104,37 @@ const SUMMARY_HINTS = ['auto', 'concise', 'detailed', 'omitted'];
 const VERBOSITY_HINTS = ['low', 'medium', 'high'];
 const SERVICE_TIER_HINTS = ['auto', 'default', 'flex', 'scale', 'priority', 'standard_only'];
 
-const onConflictOptions: { value: ModelAliasOnConflict; label: string }[] = [
-  { value: 'real-only', label: 'real-only — alias hidden when target id collides' },
-  { value: 'alias-only', label: 'alias-only — alias replaces a colliding real id' },
-  { value: 'both-real-first', label: 'both — real first' },
-  { value: 'both-alias-first', label: 'both — alias first' },
+// Each on-conflict option carries a one-line explanation surfaced in the
+// Select popover so an operator picks by what happens at request time, not
+// by guessing what `real-only` / `alias-only` mean. Mirrors the Auth Style
+// pattern in CustomConfigPanel.
+interface OnConflictOption {
+  value: ModelAliasOnConflict;
+  label: string;
+  explanation: string;
+}
+
+const onConflictOptions: OnConflictOption[] = [
+  {
+    value: 'real-only',
+    label: 'Real model wins',
+    explanation: "When an upstream serves a real model with the same id as this alias, the real model is used and the alias's rules don't apply on that upstream.",
+  },
+  {
+    value: 'alias-only',
+    label: 'Alias replaces real',
+    explanation: 'The alias always wins, even when an upstream serves a real model with the same id.',
+  },
+  {
+    value: 'both-real-first',
+    label: 'Both, real first',
+    explanation: 'Both entries appear; routing prefers the real model when present, falling back to the alias.',
+  },
+  {
+    value: 'both-alias-first',
+    label: 'Both, alias first',
+    explanation: 'Both entries appear; routing prefers the alias when present, falling back to the real model.',
+  },
 ];
 
 // --- save ---
@@ -130,23 +149,23 @@ const trimOrUndef = (s: string): string | undefined => {
 
 const buildRules = (): MutableRules | { error: string } => {
   const rules: MutableRules = {};
+  const reasoning: NonNullable<MutableRules['reasoning']> = {};
 
-  if (reasoningMode.value === 'effort') {
-    const v = trimOrUndef(reasoningEffort.value);
-    if (v === undefined) return { error: 'Reasoning effort cannot be empty' };
-    rules.reasoning = { effort: v };
-  } else if (reasoningMode.value === 'budget') {
-    const raw = reasoningBudgetTokens.value.trim();
-    if (raw === '' || !/^\d+$/.test(raw)) return { error: 'Reasoning budget tokens must be a non-negative integer' };
-    rules.reasoning = { budgetTokens: Number(raw) };
-  } else if (reasoningMode.value === 'adaptive') {
-    rules.reasoning = { adaptive: true };
+  const effort = trimOrUndef(reasoningEffort.value);
+  if (effort !== undefined) reasoning.effort = effort;
+
+  const budgetRaw = reasoningBudgetTokens.value.trim();
+  if (budgetRaw !== '') {
+    if (!/^\d+$/.test(budgetRaw)) return { error: 'Reasoning budget tokens must be a non-negative integer' };
+    reasoning.budgetTokens = Number(budgetRaw);
   }
+
+  if (reasoningAdaptive.value) reasoning.adaptive = true;
 
   const summary = trimOrUndef(reasoningSummary.value);
-  if (summary !== undefined) {
-    rules.reasoning = { ...(rules.reasoning ?? {}), summary };
-  }
+  if (summary !== undefined) reasoning.summary = summary;
+
+  if (Object.keys(reasoning).length > 0) rules.reasoning = reasoning;
 
   const verb = trimOrUndef(verbosity.value);
   if (verb !== undefined) rules.verbosity = verb;
@@ -162,7 +181,7 @@ const save = async () => {
   saveError.value = null;
   const trimmedAlias = aliasName.value.trim();
   const trimmedTarget = targetModelId.value.trim();
-  if (mode.value === 'create' && trimmedAlias === '') { saveError.value = 'Alias name is required'; return; }
+  if (trimmedAlias === '') { saveError.value = 'Alias name is required'; return; }
   if (trimmedTarget === '') { saveError.value = 'Target model id is required'; return; }
 
   const rulesOrErr = buildRules();
@@ -186,9 +205,13 @@ const save = async () => {
       }));
       if (error) { saveError.value = error.message; return; }
     } else if (props.record) {
+      // PATCH addresses the row at its *original* PK; `alias` in the body
+      // requests a rename when it differs. The backend route handles the
+      // 409-on-collision path and the safe no-op when nothing changed.
       const { error } = await callApi(() => api.api.aliases[':alias'].$patch({
         param: { alias: props.record!.alias },
         json: {
+          alias: trimmedAlias,
           targetModelId: trimmedTarget,
           upstreamIds: [...upstreamIds.value],
           rules: rulesOrErr,
@@ -210,13 +233,6 @@ const save = async () => {
 };
 
 const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Alias: ${props.record?.alias ?? ''}`);
-
-const reasoningModeOptions: { value: ReasoningMode; label: string }[] = [
-  { value: 'none', label: 'None' },
-  { value: 'effort', label: 'Effort preset' },
-  { value: 'budget', label: 'Token budget' },
-  { value: 'adaptive', label: 'Adaptive' },
-];
 </script>
 
 <template>
@@ -226,36 +242,36 @@ const reasoningModeOptions: { value: ReasoningMode; label: string }[] = [
         {{ saveError }}
       </p>
 
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Alias name</label>
-          <Input v-model="aliasName" placeholder="codex-auto-review" :disabled="mode === 'edit'" class="font-mono" />
-          <p v-if="mode === 'edit'" class="text-xs text-gray-600">Alias names are the primary key and cannot be changed; delete and recreate to rename.</p>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Alias name</label>
+          <Input v-model="aliasName" placeholder="codex-auto-review" class="font-mono" />
         </div>
 
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Display name <span class="text-gray-600">(optional)</span></label>
-          <Input v-model="displayName" placeholder="Codex Auto Review" />
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Target model id</label>
+          <Combobox v-model="targetModelId" :items="modelOptions" placeholder="gpt-5.4" input-class="font-mono" />
         </div>
       </div>
 
-      <div class="space-y-1.5">
-        <label class="block text-xs font-medium text-gray-500">Target model id</label>
-        <Input v-model="targetModelId" placeholder="gpt-5.4" class="font-mono" list="alias-model-options" />
-        <datalist id="alias-model-options">
-          <option v-for="opt in modelOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-        </datalist>
+      <div>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">Display name <span class="text-gray-600">(optional)</span></label>
+        <Input v-model="displayName" placeholder="Codex Auto Review" />
       </div>
 
-      <div class="space-y-1.5">
-        <label class="block text-xs font-medium text-gray-500">Upstreams <span class="text-gray-600">(leave empty to allow any upstream that serves the target)</span></label>
+      <div>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">Upstreams <span class="text-gray-600">(leave empty to allow any upstream that serves the target)</span></label>
         <TagCombobox v-model="upstreamIds" :items="upstreamItems" placeholder="Pick an upstream..." empty-text="No upstreams match" />
       </div>
 
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">On conflict</label>
-          <Select v-model="onConflict" :options="onConflictOptions" />
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">On conflict</label>
+          <Select v-model="onConflict" :options="onConflictOptions">
+            <template #description="{ option }">
+              <p class="text-[11px] text-gray-500">{{ option.explanation }}</p>
+            </template>
+          </Select>
         </div>
 
         <div class="flex items-center gap-2 pt-6">
@@ -264,34 +280,26 @@ const reasoningModeOptions: { value: ReasoningMode; label: string }[] = [
         </div>
       </div>
 
-      <section class="space-y-3 rounded-md border border-white/[0.06] bg-surface-800/50 p-4">
+      <div class="space-y-4">
         <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Reasoning</h4>
-        <div class="flex flex-wrap gap-3">
-          <label v-for="opt in reasoningModeOptions" :key="opt.value" class="inline-flex items-center gap-2 text-sm text-gray-300">
-            <input
-              type="radio"
-              :value="opt.value"
-              :checked="reasoningMode === opt.value"
-              :disabled="opt.value === 'adaptive' && !adaptiveSupported && reasoningMode !== 'adaptive'"
-              @change="reasoningMode = opt.value"
-            >
-            {{ opt.label }}
-          </label>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Effort</label>
+          <Combobox v-model="reasoningEffort" :items="effortSuggestions" placeholder="high" />
+          <p v-if="effortSuggestions.length > 0" class="mt-1 text-xs text-gray-600">Target supports: {{ effortSuggestions.join(', ') }}</p>
         </div>
 
-        <div v-if="reasoningMode === 'effort'" class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Effort</label>
-          <Input v-model="reasoningEffort" placeholder="high" list="alias-effort-options" />
-          <datalist id="alias-effort-options">
-            <option v-for="v in effortSuggestions" :key="v" :value="v" />
-          </datalist>
-          <p v-if="effortSuggestions.length > 0" class="text-xs text-gray-600">Target supports: {{ effortSuggestions.join(', ') }}</p>
-        </div>
-
-        <div v-if="reasoningMode === 'budget'" class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Budget tokens</label>
-          <Input v-model="reasoningBudgetTokens" placeholder="4096" inputmode="numeric" class="font-mono" />
-          <p v-if="budgetMin !== undefined || budgetMax !== undefined" class="text-xs text-gray-600">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Budget tokens</label>
+          <Input
+            v-model="reasoningBudgetTokens"
+            placeholder="4096"
+            inputmode="numeric"
+            class="font-mono"
+            :min="budgetMin"
+            :max="budgetMax"
+          />
+          <p v-if="budgetMin !== undefined || budgetMax !== undefined" class="mt-1 text-xs text-gray-600">
             Target range:
             <template v-if="budgetMin !== undefined">min {{ budgetMin }}</template>
             <template v-if="budgetMin !== undefined && budgetMax !== undefined">, </template>
@@ -299,39 +307,36 @@ const reasoningModeOptions: { value: ReasoningMode; label: string }[] = [
           </p>
         </div>
 
-        <div v-if="reasoningMode === 'adaptive' && !adaptiveSupported" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
-          Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Summary</label>
+          <Combobox v-model="reasoningSummary" :items="SUMMARY_HINTS" placeholder="auto" />
         </div>
 
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Reasoning summary <span class="text-gray-600">(optional)</span></label>
-          <Input v-model="reasoningSummary" placeholder="auto" list="alias-summary-options" />
-          <datalist id="alias-summary-options">
-            <option v-for="v in SUMMARY_HINTS" :key="v" :value="v" />
-          </datalist>
-        </div>
-      </section>
-
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Verbosity</label>
-          <Input v-model="verbosity" placeholder="medium" list="alias-verbosity-options" />
-          <datalist id="alias-verbosity-options">
-            <option v-for="v in VERBOSITY_HINTS" :key="v" :value="v" />
-          </datalist>
-        </div>
-
-        <div class="space-y-1.5">
-          <label class="block text-xs font-medium text-gray-500">Service tier</label>
-          <Input v-model="serviceTier" placeholder="auto" list="alias-tier-options" />
-          <datalist id="alias-tier-options">
-            <option v-for="v in SERVICE_TIER_HINTS" :key="v" :value="v" />
-          </datalist>
+        <div>
+          <label class="inline-flex items-center gap-2">
+            <Checkbox v-model="reasoningAdaptive" />
+            <span class="text-sm text-gray-300">Adaptive reasoning</span>
+          </label>
+          <p v-if="reasoningAdaptive && !adaptiveSupported" class="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+            Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.
+          </p>
         </div>
       </div>
 
-      <div class="space-y-1.5">
-        <label class="block text-xs font-medium text-gray-500">Anthropic beta headers <span class="text-gray-600">(comma- or Enter-separated tokens)</span></label>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Verbosity</label>
+          <Combobox v-model="verbosity" :items="VERBOSITY_HINTS" placeholder="medium" />
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Service tier</label>
+          <Combobox v-model="serviceTier" :items="SERVICE_TIER_HINTS" placeholder="auto" />
+        </div>
+      </div>
+
+      <div>
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">Anthropic beta headers <span class="text-gray-600">(comma- or Enter-separated tokens)</span></label>
         <TagCombobox v-model="anthropicBeta" :items="[]" placeholder="extended-cache-ttl-2025-04-11" empty-text="Type a header token and press Enter" />
       </div>
 

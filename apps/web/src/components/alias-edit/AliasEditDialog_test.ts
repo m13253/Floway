@@ -112,7 +112,7 @@ test('AliasEditDialog (create mode) posts a payload matching the form state', as
   });
 });
 
-test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the diff', async () => {
+test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the merged shape', async () => {
   const { default: AliasEditDialog } = await import('./AliasEditDialog.vue');
   const open = ref(true);
   const record: ModelAlias = {
@@ -132,10 +132,10 @@ test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the diff', asyn
     template: '<AliasEditDialog v-model:open="open" :record="record" />',
   }));
 
-  // Alias name input should be disabled in edit mode (PK is immutable).
+  // Alias name input is editable in edit mode — the PK can now be renamed.
   const aliasInput = wrapper.find('input[placeholder="codex-auto-review"]');
   expect(aliasInput.exists()).toBe(true);
-  expect((aliasInput.element as HTMLInputElement).disabled).toBe(true);
+  expect((aliasInput.element as HTMLInputElement).disabled).toBe(false);
   expect((aliasInput.element as HTMLInputElement).value).toBe('opus-xhigh');
 
   // Display name pre-filled.
@@ -157,6 +157,7 @@ test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the diff', asyn
   const args = patchAliasMock.mock.calls[0]![0];
   expect(args.param.alias).toBe('opus-xhigh');
   expect(args.json).toMatchObject({
+    alias: 'opus-xhigh',
     targetModelId: 'gpt-5.4',
     upstreamIds: ['up_anth'],
     rules: { reasoning: { effort: 'xhigh' } },
@@ -164,4 +165,39 @@ test('AliasEditDialog (edit mode) pre-fills the form and PATCHes the diff', asyn
     onConflict: 'real-only',
     displayName: 'Opus XHigh',
   });
+});
+
+test('AliasEditDialog (edit mode) PATCHes the original alias when the operator renames it', async () => {
+  const { default: AliasEditDialog } = await import('./AliasEditDialog.vue');
+  const open = ref(true);
+  const record: ModelAlias = {
+    alias: 'opus-xhigh',
+    target_model_id: 'claude-opus-4-6',
+    upstream_ids: [],
+    rules: {},
+    visible_in_models_list: true,
+    on_conflict: 'real-only',
+    display_name: null,
+    created_at: 1_700_000_000,
+  };
+
+  const wrapper = mount(defineComponent({
+    components: { AliasEditDialog },
+    setup() { return { open, record }; },
+    template: '<AliasEditDialog v-model:open="open" :record="record" />',
+  }));
+
+  const aliasInput = wrapper.find('input[placeholder="codex-auto-review"]');
+  await aliasInput.setValue('opus-renamed');
+
+  const saveBtn = wrapper.findAll('button').find(b => b.text() === 'Save');
+  await saveBtn!.trigger('click');
+  await new Promise(r => setTimeout(r, 0));
+
+  expect(patchAliasMock).toHaveBeenCalledTimes(1);
+  const args = patchAliasMock.mock.calls[0]![0];
+  // The PATCH path stays at the row's *original* PK; the rename is requested
+  // via `body.alias`, which the route handler maps to the rename codepath.
+  expect(args.param.alias).toBe('opus-xhigh');
+  expect(args.json).toMatchObject({ alias: 'opus-renamed' });
 });

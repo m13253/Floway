@@ -30,6 +30,25 @@ describe('AliasRow', () => {
     expect(wrapper.text()).toContain('claude-opus-4-6');
   });
 
+  test('does not render the on_conflict label as a badge', () => {
+    // The row used to surface `real-only` / `alias-only` as a coloured badge.
+    // Operator feedback was that the inline label was noisy and the same
+    // information lives inside the edit dialog. Asserting absence here pins
+    // the regression — the words must not slip back into the row template.
+    const wrapper = mount(AliasRow, { props: { alias: baseAlias } });
+    expect(wrapper.text()).not.toContain('real-only');
+    expect(wrapper.text()).not.toContain('alias-only');
+  });
+
+  test('renders upstream-id pills when the alias whitelists upstreams', () => {
+    const wrapper = mount(AliasRow, {
+      props: { alias: { ...baseAlias, upstream_ids: ['up_anth', 'up_oai'] } },
+    });
+    const text = wrapper.text();
+    expect(text).toContain('up_anth');
+    expect(text).toContain('up_oai');
+  });
+
   test('falls back to alias name when display_name is null', () => {
     const wrapper = mount(AliasRow, { props: { alias: { ...baseAlias, display_name: null } } });
     // alias id appears twice (label fallback + the small font-mono id), but the

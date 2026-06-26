@@ -20,28 +20,22 @@ defineEmits<{
 const labelText = computed(() => props.alias.display_name ?? props.alias.alias);
 
 const badges = computed(() => formatAliasRuleBadges(props.alias.rules));
-
-const onConflictBadgeClass = computed(() => {
-  switch (props.alias.on_conflict) {
-  case 'alias-only': return 'border-accent-violet/30 bg-accent-violet/10 text-accent-violet';
-  case 'real-only': return 'border-white/10 bg-white/5 text-gray-400';
-  case 'both-real-first':
-  case 'both-alias-first': return 'border-accent-cyan/30 bg-accent-cyan/10 text-accent-cyan';
-  }
-});
 </script>
 
 <template>
   <div class="flex items-center gap-3 rounded-lg border border-white/5 bg-surface-800/80 px-3 py-2">
-    <span
-      class="shrink-0 rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-      :class="onConflictBadgeClass"
-    >{{ alias.on_conflict }}</span>
-
     <div class="min-w-0 flex-1 truncate">
-      <span class="text-sm font-semibold text-white">{{ labelText }}</span>
-      <span class="ml-2 font-mono text-xs text-gray-500">{{ alias.alias }}</span>
+      <span class="font-mono text-xs text-gray-500">{{ alias.alias }}</span>
+      <span class="ml-2 text-sm font-semibold text-white">{{ labelText }}</span>
       <span class="ml-2 text-xs text-gray-500">&rarr; {{ alias.target_model_id }}</span>
+    </div>
+
+    <div v-if="alias.upstream_ids.length > 0" class="hidden shrink-0 items-center gap-1 sm:flex">
+      <span
+        v-for="id in alias.upstream_ids"
+        :key="id"
+        class="rounded border border-white/10 bg-white/[0.02] px-1.5 py-0.5 font-mono text-[10px] text-gray-400"
+      >{{ id }}</span>
     </div>
 
     <div v-if="badges.length > 0" class="hidden shrink-0 items-center gap-1 sm:flex">
