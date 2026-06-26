@@ -105,14 +105,46 @@ const adaptiveSupported = computed(() => targetChat.value?.reasoning?.adaptive =
 
 // Collected at the bottom of the dialog so a misalignment between the
 // rule and the target model's advertised capability stays visible without
-// crowding the per-field area. Add a new entry per condition; the labels
-// double as the field name an operator should look up to fix it.
+// crowding the per-field area. Each entry tells the operator which field
+// to revisit; the values still flow through to the upstream verbatim
+// (Goal 2: pass through, don't enum-gate) so a warning is informational,
+// not blocking.
 interface FieldWarning { field: string; message: string }
 const fieldWarnings = computed<FieldWarning[]>(() => {
   const out: FieldWarning[] = [];
-  if (reasoningAdaptive.value && !adaptiveSupported.value) {
-    out.push({ field: 'Adaptive reasoning', message: 'Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.' });
+  const chatReasoning = targetChat.value?.reasoning;
+
+  if (reasoningEffort.value.trim() !== '' && chatReasoning?.effort?.supported) {
+    const value = reasoningEffort.value.trim();
+    const supported = chatReasoning.effort.supported;
+    if (!supported.includes(value)) {
+      out.push({
+        field: 'Effort',
+        message: `"${value}" is not in the target's supported list (${supported.join(', ')}). The rule will still be sent verbatim.`,
+      });
+    }
   }
+
+  const budgetRaw = reasoningBudgetTokens.value.trim();
+  if (budgetRaw !== '') {
+    const n = Number(budgetRaw);
+    const range = chatReasoning?.budget_tokens;
+    if (Number.isFinite(n) && range) {
+      if (range.min !== undefined && n < range.min) {
+        out.push({ field: 'Budget tokens', message: `${n} is below the target's minimum (${range.min}). The rule will still be sent verbatim.` });
+      } else if (range.max !== undefined && n > range.max) {
+        out.push({ field: 'Budget tokens', message: `${n} is above the target's maximum (${range.max}). The rule will still be sent verbatim.` });
+      }
+    }
+  }
+
+  if (reasoningAdaptive.value && !adaptiveSupported.value) {
+    out.push({
+      field: 'Adaptive reasoning',
+      message: 'Target model does not advertise adaptive reasoning support. The rule will still be sent verbatim.',
+    });
+  }
+
   return out;
 });
 
@@ -399,7 +431,7 @@ const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Al
           :key="warning.field"
           class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300"
         >
-          <span class="font-medium">{{ warning.field }}:</span> {{ warning.message }}
+          <span class="font-bold">{{ warning.field }}:</span> {{ warning.message }}
         </p>
       </div>
 
