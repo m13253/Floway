@@ -1,5 +1,5 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
-import { aliasNoTargetMessage, type ChatServeFailure } from '../shared/errors.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -54,6 +54,6 @@ export const renderGeminiFailure = (
   case 'model-unsupported':
     return geminiRpcErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`, failure.failedUpstreams));
   case 'alias-no-target-available':
-    return geminiRpcErrorResult(404, aliasNoTargetMessage(failure));
+    return geminiRpcErrorResult(404, failure.message);
   }
 };

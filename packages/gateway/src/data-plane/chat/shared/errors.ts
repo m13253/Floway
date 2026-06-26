@@ -13,17 +13,16 @@ export type ChatServeFailure =
   | { readonly kind: 'item-not-found'; readonly itemId: string }
   | { readonly kind: 'routing-unavailable'; readonly message: string }
   // Alias name resolved, but no entry in its targets list currently maps
-  // to an enabled upstream binding that exposes the inbound endpoint.
-  | { readonly kind: 'alias-no-target-available'; readonly aliasName: string; readonly targetCount: number };
-
-export { aliasNoTargetMessage } from '../../model-aliases/resolve.ts';
+  // to an enabled upstream binding. `message` carries the canonical
+  // wording the Error class already built, so renderers do not re-derive
+  // it.
+  | { readonly kind: 'alias-no-target-available'; readonly message: string };
 
 // Lift `AliasNoTargetAvailableError` into a `ChatServeFailure` so the
 // existing failure renderer can surface it without special-casing.
 export const aliasFailureFromError = (error: AliasNoTargetAvailableError): Extract<ChatServeFailure, { kind: 'alias-no-target-available' }> => ({
   kind: 'alias-no-target-available',
-  aliasName: error.aliasName,
-  targetCount: error.targetCount,
+  message: error.message,
 });
 
 class ChatServeFailureError extends Error {

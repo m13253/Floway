@@ -3,7 +3,7 @@ import { computed } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
-import { formatAliasRuleBadges } from '@floway-dev/protocols/common';
+import { type AliasRuleBadgeField, formatAliasRuleBadges } from '@floway-dev/protocols/common';
 
 const props = defineProps<{
   model: ControlPlaneModel;
@@ -28,22 +28,19 @@ const aliasOfLabel = computed<string | null>(() => {
 });
 
 // Single-target aliases render one badge per rule; multi-target aliases
-// collapse each field to "<field>: varies" when its values differ.
+// collapse to "<field>: varies" for any field whose values disagree across
+// targets. Each badge carries an explicit `field` key so the bucket walk
+// groups by the rule slot directly rather than parsing the label string.
 const ruleBadges = computed<{ label: string }[]>(() => {
   const a = props.model.aliasedFrom;
   if (!a) return [];
   if (a.targets.length === 1) return formatAliasRuleBadges(a.targets[0].rules);
-  // Walk each target and bucket their badge labels by the field they
-  // describe (the leading word of every badge — "low effort", "summary:
-  // auto"). Any field that shows up in two distinct shapes collapses to
-  // "<field>: varies".
-  const byField = new Map<string, Set<string>>();
+  const byField = new Map<AliasRuleBadgeField, Set<string>>();
   for (const t of a.targets) {
     for (const badge of formatAliasRuleBadges(t.rules)) {
-      const field = badge.label.includes(':') ? badge.label.split(':')[0].trim() : badge.label.split(' ').slice(1).join(' ').trim() || badge.label;
-      const set = byField.get(field) ?? new Set<string>();
+      const set = byField.get(badge.field) ?? new Set<string>();
       set.add(badge.label);
-      byField.set(field, set);
+      byField.set(badge.field, set);
     }
   }
   return Array.from(byField.entries()).map(([field, set]) => ({

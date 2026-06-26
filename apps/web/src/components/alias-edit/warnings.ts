@@ -69,19 +69,16 @@ export const computeRuleWarnings = (
   return out;
 };
 
-// One model-level warning attached to one target row. Today the only
-// trigger is the target id failing to resolve to any catalog model.
-export interface AliasModelWarning {
-  message: string;
-}
-
+// Model-level warnings for one target row. Today the only trigger is the
+// target id failing to resolve to any catalog model. Returned as plain
+// strings — the dialog already joins them with newlines for the tooltip.
 export const computeModelWarnings = (
   targetModelId: string,
   catalog: ControlPlaneModel | undefined,
-): AliasModelWarning[] => {
+): string[] => {
   if (targetModelId === '') return [];
   if (catalog === undefined) {
-    return [{ message: `"${targetModelId}" does not currently resolve to any enabled upstream binding.` }];
+    return [`"${targetModelId}" does not currently resolve to any enabled upstream binding.`];
   }
   return [];
 };

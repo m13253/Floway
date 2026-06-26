@@ -97,7 +97,7 @@ const catalog = computed(() => findCatalogModel(props.models, target.value.targe
 const modelWarnings = computed(() => computeModelWarnings(target.value.target_model_id, catalog.value));
 const ruleWarnings = computed(() => computeRuleWarnings(chatRules.value, catalog.value));
 const warningFor = (field: string) => ruleWarnings.value.find(w => w.field === field)?.message;
-const modelWarningTooltip = computed(() => modelWarnings.value.map(w => w.message).join('\n'));
+const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
 </script>
 
 <template>

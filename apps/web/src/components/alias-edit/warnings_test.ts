@@ -57,8 +57,8 @@ describe('computeModelWarnings', () => {
   it('returns a "does not resolve" warning when the target is unknown', () => {
     const w = computeModelWarnings('mystery-model', undefined);
     expect(w).toHaveLength(1);
-    expect(w[0].message).toContain('mystery-model');
-    expect(w[0].message).toContain('does not currently resolve');
+    expect(w[0]).toContain('mystery-model');
+    expect(w[0]).toContain('does not currently resolve');
   });
 
   it('emits no warning for an empty id (the row is mid-edit)', () => {

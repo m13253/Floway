@@ -39,14 +39,14 @@ describe('formatAliasRulesInline', () => {
 });
 
 describe('formatAliasRuleBadges', () => {
-  test('returns one badge per configured part in the canonical order', () => {
+  test('returns one badge per configured part in the canonical order with explicit field keys', () => {
     expect(formatAliasRuleBadges({
       reasoning: { effort: 'high', budget_tokens: 2048 },
       verbosity: 'medium',
     })).toEqual([
-      { label: 'high effort' },
-      { label: '2048tok budget' },
-      { label: 'medium verbosity' },
+      { field: 'reasoning.effort', label: 'high effort' },
+      { field: 'reasoning.budget_tokens', label: '2048tok budget' },
+      { field: 'verbosity', label: 'medium verbosity' },
     ]);
   });
 

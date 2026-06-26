@@ -85,43 +85,54 @@ export interface ModelAlias {
   updated_at: string;
 }
 
-// Inline-prose parts for an alias's rules, in the canonical field order. The
-// same builder backs `formatAliasRulesInline` (joins with `, ` for a single
-// summary string) and `formatAliasRuleBadges` (one badge per part). Keeping
-// every surface — inline copy, badge sequence, parenthesized suffix in the
-// derived display name — on a single ordered walk means an operator who
-// configures `effort + verbosity` sees them in the same order whether the
-// dashboard renders badges or a comma-joined caption.
-const aliasRulePartLabels = (rules: AliasRules): string[] => {
-  const chat = rules as ChatAliasRules;
-  const parts: string[] = [];
-  if (chat.reasoning?.effort !== undefined) parts.push(`${chat.reasoning.effort} effort`);
-  if (chat.reasoning?.budget_tokens !== undefined) parts.push(`${chat.reasoning.budget_tokens}tok budget`);
-  if (chat.reasoning?.adaptive === true) parts.push('adaptive');
-  else if (chat.reasoning?.adaptive === false) parts.push('non-adaptive');
-  if (chat.reasoning?.summary !== undefined) parts.push(`summary: ${chat.reasoning.summary}`);
-  if (chat.verbosity !== undefined) parts.push(`${chat.verbosity} verbosity`);
-  if (chat.serviceTier !== undefined) parts.push(`${chat.serviceTier} tier`);
-  return parts;
-};
-
-// One badge per configured rule field, in the canonical order. `value` is
-// reserved for callers that want to render a separate value pill alongside
-// the label; today every part already self-describes through `label`, so
+// One badge per configured rule field, in the canonical order. `field`
+// names the specific rule slot the badge describes so consumers (the
+// dashboard's `ModelInfoBar`, alias-of multi-target collapse) can group
+// by field without parsing the human-readable label. `value` is reserved
+// for callers that want to render a separate value pill alongside the
+// label; today every part already self-describes through `label`, so
 // `value` stays undefined.
+export type AliasRuleBadgeField =
+  | 'reasoning.effort'
+  | 'reasoning.budget_tokens'
+  | 'reasoning.adaptive'
+  | 'reasoning.summary'
+  | 'verbosity'
+  | 'serviceTier';
+
 export interface AliasRuleBadge {
   label: string;
+  field: AliasRuleBadgeField;
   value?: string;
 }
 
-export const formatAliasRuleBadges = (rules: AliasRules): AliasRuleBadge[] =>
-  aliasRulePartLabels(rules).map(label => ({ label }));
+// Inline-prose parts for an alias's rules, in the canonical field order. The
+// same builder backs `formatAliasRulesInline` (joins labels with `, ` for a
+// single summary string) and `formatAliasRuleBadges` (emits badge rows).
+// Keeping every surface — inline copy, badge sequence, parenthesized
+// suffix in the derived display name — on a single ordered walk means an
+// operator who configures `effort + verbosity` sees them in the same order
+// whether the dashboard renders badges or a comma-joined caption.
+const aliasRuleParts = (rules: AliasRules): AliasRuleBadge[] => {
+  const chat = rules as ChatAliasRules;
+  const parts: AliasRuleBadge[] = [];
+  if (chat.reasoning?.effort !== undefined) parts.push({ field: 'reasoning.effort', label: `${chat.reasoning.effort} effort` });
+  if (chat.reasoning?.budget_tokens !== undefined) parts.push({ field: 'reasoning.budget_tokens', label: `${chat.reasoning.budget_tokens}tok budget` });
+  if (chat.reasoning?.adaptive === true) parts.push({ field: 'reasoning.adaptive', label: 'adaptive' });
+  else if (chat.reasoning?.adaptive === false) parts.push({ field: 'reasoning.adaptive', label: 'non-adaptive' });
+  if (chat.reasoning?.summary !== undefined) parts.push({ field: 'reasoning.summary', label: `summary: ${chat.reasoning.summary}` });
+  if (chat.verbosity !== undefined) parts.push({ field: 'verbosity', label: `${chat.verbosity} verbosity` });
+  if (chat.serviceTier !== undefined) parts.push({ field: 'serviceTier', label: `${chat.serviceTier} tier` });
+  return parts;
+};
+
+export const formatAliasRuleBadges = (rules: AliasRules): AliasRuleBadge[] => aliasRuleParts(rules);
 
 // Comma-joined version of the same ordered parts. Empty string when no
 // rule applies — callers should drop the line entirely rather than render
 // blank.
 export const formatAliasRulesInline = (rules: AliasRules): string =>
-  aliasRulePartLabels(rules).join(', ');
+  aliasRuleParts(rules).map(p => p.label).join(', ');
 
 // Derived display name for a single-target alias whose operator did not set
 // `display_name`. Bare `target_model_id` when no rule is configured; with

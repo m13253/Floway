@@ -27,10 +27,10 @@ export interface AliasResolution {
   readonly aliasName: string;
 }
 
-// Canonical wording for the alias-no-target-available 404. The Error class
-// and every protocol-shaped renderer (chat/{*}/errors.ts, passthroughServe)
-// read the same string from here so wording changes land in one place.
-export const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }): string =>
+// Canonical wording for the alias-no-target-available 404. Called only
+// from inside the `AliasNoTargetAvailableError` constructor so wording
+// changes land in one place; consumers read `error.message` directly.
+const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }): string =>
   `alias '${params.aliasName}' has ${params.targetCount} target(s); none currently map to an enabled upstream binding`;
 
 // Thrown when the alias name was found but no target currently resolves to
@@ -38,13 +38,11 @@ export const aliasNoTargetMessage = (params: { aliasName: string; targetCount: n
 // surfaced as a 404 in the protocol-specific error envelope.
 export class AliasNoTargetAvailableError extends Error {
   readonly aliasName: string;
-  readonly targetCount: number;
 
   constructor(aliasName: string, targetCount: number) {
     super(aliasNoTargetMessage({ aliasName, targetCount }));
     this.name = 'AliasNoTargetAvailableError';
     this.aliasName = aliasName;
-    this.targetCount = targetCount;
   }
 }
 
