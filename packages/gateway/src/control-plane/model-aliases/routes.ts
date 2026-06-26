@@ -1,6 +1,6 @@
-// Admin-only CRUD for model aliases. Wire shape (snake_case) is documented in
-// `@floway-dev/protocols/common`; this layer translates between the wire DTO
-// and the camelCase `ModelAliasRecord` the repo stores.
+// Admin-only CRUD for model aliases. Wire shape (snake_case) is in
+// `@floway-dev/protocols/common`; this layer maps to the camelCase
+// `ModelAliasRecord` the repo stores.
 
 import type { Context } from 'hono';
 
@@ -10,8 +10,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { createAliasBody, updateAliasBody } from '../schemas.ts';
 
-// Place a new alias at the end of the sort order by default. Empty list → 0
-// so the very first alias starts the sequence at the same origin as upstreams.
+// New alias goes at the end of the sort order by default. Empty list → 0.
 const nextSortOrder = (existing: readonly ModelAliasRecord[]): number =>
   existing.reduce((acc, record) => Math.max(acc, record.sortOrder), -1) + 1;
 
@@ -41,7 +40,7 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
 };
 
 export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
-  const oldName = c.req.param('name') ?? '';
+  const oldName = c.req.param('name')!;
   const body = c.req.valid('json');
   const repo = getRepo();
 
@@ -65,9 +64,9 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
 };
 
 export const deleteAlias = async (c: Context) => {
-  const name = c.req.param('name') ?? '';
-  // Idempotent: the spec calls for a successful response whether or not a row
-  // existed. 204 keeps the verb-shape parity with DELETE /api/proxies/:id.
+  const name = c.req.param('name')!;
+  // Idempotent — success whether or not a row existed. 204 keeps verb-shape
+  // parity with DELETE /api/proxies/:id.
   await getRepo().modelAliases.delete(name);
   return c.body(null, 204);
 };

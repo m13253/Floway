@@ -31,10 +31,8 @@ const modelsStore = useModelsStore();
 
 const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'));
 
-// Empty rules per kind. Chat carries an open ChatAliasRules; embedding and
-// image carry an empty record per the spec — switching kind resets every
-// target row to this empty default so a chat-only rule doesn't survive a
-// switch to image.
+// Switching kind discards rule state — a chat-only rule must not survive a
+// switch into embedding/image.
 const emptyRulesFor = (k: AliasKind): AliasTarget['rules'] => (k === 'chat' ? {} as ChatAliasRules : {} as Record<string, never>);
 
 const blankTarget = (k: AliasKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
@@ -45,8 +43,8 @@ const kind = ref<AliasKind>(props.record?.kind ?? 'chat');
 const selection = ref<AliasSelection>(props.record?.selection ?? 'first-available');
 const visibleInModelsList = ref(props.record?.visible_in_models_list ?? true);
 
-// Local working copy of the targets list. Defaults to a single blank
-// target on create so the operator immediately sees a row to fill in.
+// Create mode starts with one blank target so the operator immediately sees
+// a row to fill in.
 const targets = ref<AliasTarget[]>(
   props.record
     ? props.record.targets.map(t => ({ target_model_id: t.target_model_id, rules: { ...t.rules } as AliasTarget['rules'] }))
@@ -55,9 +53,6 @@ const targets = ref<AliasTarget[]>(
 
 const setKind = (k: AliasKind) => {
   kind.value = k;
-  // Reset every target's rules to the new kind's empty default. The spec
-  // is explicit: switching kind discards rule state so a chat-only rule
-  // doesn't survive a switch into image.
   targets.value = targets.value.map(t => ({ target_model_id: t.target_model_id, rules: emptyRulesFor(k) }));
 };
 
@@ -83,13 +78,9 @@ const removeTarget = (idx: number) => {
 };
 
 // Suggestion list for every target-id combobox. Aliases are excluded so an
-// operator can't accidentally hop into the alias layer twice (it never
-// recurses at request time anyway, but suggesting alias names would just
-// be confusing).
+// operator can't accidentally hop into the alias layer twice.
 const targetIdItems = computed(() => realModelIds(modelsStore.models.value));
 
-// Alias-level warnings. Today only the shadow warning fires; future
-// alias-wide checks plug in here.
 const shadowWarning = computed(() => computeShadowWarning(aliasName.value.trim(), targets.value, modelsStore.models.value));
 
 const saving = ref(false);
@@ -115,14 +106,15 @@ const save = async () => {
   if (saveError.value !== null) return;
 
   const trimmedName = aliasName.value.trim();
+  const trimmedDisplay = displayName.value.trim();
   // The Hono RPC body type infers each target's `rules` as the loose
-  // `Record<string, unknown>` from the Zod schema. Build the payload with
-  // that loose shape so the typed save call doesn't need an `as`.
+  // `Record<string, unknown>` from the Zod schema, so build the payload
+  // with that loose shape and cast each target's rules to match.
   const body = {
     name: trimmedName,
     kind: kind.value,
     selection: selection.value,
-    display_name: displayName.value.trim() === '' ? null : displayName.value.trim(),
+    display_name: trimmedDisplay === '' ? null : trimmedDisplay,
     visible_in_models_list: visibleInModelsList.value,
     targets: targets.value.map(t => ({
       target_model_id: t.target_model_id.trim(),
@@ -138,7 +130,7 @@ const save = async () => {
       if (error) { saveError.value = error.message; return; }
     } else if (props.record) {
       const { error } = await callApi(() => api.api.aliases[':name'].$put({
-        param: { name: props.record!.name },
+        param: { name: props.record.name },
         json: body,
       }));
       if (error) { saveError.value = error.message; return; }

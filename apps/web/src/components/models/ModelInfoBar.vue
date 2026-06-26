@@ -17,9 +17,8 @@ const formatTokenLimit = (n: number) => {
   return n.toString();
 };
 
-// Alias-of badge: truncate the target list to the first three with a
-// "+N more" tail when needed. Keeps the badge readable for aliases that
-// fan out to a long fallback chain.
+// Truncate to the first three with a "+N more" tail to keep the badge
+// readable for aliases that fan out to a long fallback chain.
 const aliasOfLabel = computed<string | null>(() => {
   const a = props.model.aliasedFrom;
   if (!a) return null;
@@ -28,9 +27,8 @@ const aliasOfLabel = computed<string | null>(() => {
   return `alias of: ${ids.slice(0, 3).join(', ')} +${ids.length - 3} more`;
 });
 
-// Rule badge sequence. Single-target aliases keep the existing
-// per-rule badges; multi-target aliases collapse the rule set into one
-// "<field>: varies" pill per field configured on any target.
+// Single-target aliases render one badge per rule; multi-target aliases
+// collapse each field to "<field>: varies" when its values differ.
 const ruleBadges = computed<{ label: string }[]>(() => {
   const a = props.model.aliasedFrom;
   if (!a) return [];

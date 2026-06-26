@@ -1,7 +1,5 @@
 <script setup lang="ts">
-// Settings card listing every alias the operator has configured. Mirrors
-// the Proxies card's chrome: section title, "Add alias" button, empty
-// state, list body, surfaced load-error banner.
+// Settings card listing every alias the operator has configured.
 
 import { computed } from 'vue';
 

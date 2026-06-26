@@ -595,11 +595,9 @@ export const searchConfigSchema = z.object({
 
 // --- model aliases ---
 
-// Per-target chat rules. Field names mirror the IR slot each value overlays —
-// `reasoning.effort` / `verbosity` / `serviceTier` flow verbatim onto the
-// outbound request, so the schema does not narrow them against the target's
-// advertised capability metadata (the spec calls for verbatim forwarding so
-// the operator can drive a feature the catalog doesn't yet advertise).
+// Per-target chat rules. Field names mirror the IR slot each value overlays.
+// Values forward verbatim — no capability narrowing here, so an operator
+// can drive a feature the catalog hasn't advertised yet.
 const chatAliasReasoningSchema = z.object({
   effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).optional(),
   budget_tokens: z.number().int().nonnegative().optional(),
@@ -614,10 +612,10 @@ const chatAliasRulesSchema = z.object({
   serviceTier: z.enum(['default', 'flex', 'priority', 'scale', 'fast']).optional(),
 }).strict();
 
-// Rules are validated against the alias-level kind in a superRefine pass on
-// the body schema below — chat-kind aliases accept ChatAliasRules; other kinds
-// require an empty object. Each target_model_id is opaque (no `/` semantics
-// inside the alias layer), so the only structural check is non-emptiness.
+// Rules are validated against the alias-level kind in the superRefine pass
+// below — chat-kind aliases accept ChatAliasRules; other kinds require an
+// empty object. Each target_model_id is opaque (no `/` semantics in the
+// alias layer), so the only structural check is non-emptiness.
 const aliasTargetSchema = z.object({
   target_model_id: z.string().min(1),
   rules: z.record(z.string(), z.unknown()),
@@ -636,9 +634,9 @@ const aliasBaseShape = {
 const aliasBodyCore = z.object(aliasBaseShape);
 
 // superRefine cross-validates each target's `rules` against the alias-level
-// kind. For chat: parse through chatAliasRulesSchema and surface the inner
-// issue verbatim. For embedding / image: today there are no per-target rules,
-// so the slot must be `{}` — populating it later just needs a fresh schema.
+// kind. Chat: parse through `chatAliasRulesSchema` and surface the inner
+// issue verbatim. Embedding / image: the slot must be `{}` until a future
+// schema lands.
 const aliasBodyRulesRefinement = (
   value: z.infer<typeof aliasBodyCore>,
   ctx: z.core.$RefinementCtx,

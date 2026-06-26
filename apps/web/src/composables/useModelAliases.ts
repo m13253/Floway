@@ -3,10 +3,8 @@ import { ref, shallowRef } from 'vue';
 import { callApi, useApi } from '../api/client.ts';
 import type { ModelAlias } from '../api/types.ts';
 
-// Module-scoped cache so concurrent callers share one fetch — mirrors the
-// proxies/upstreams stores. Settings tabs that mount in parallel reuse a
-// single in-flight request instead of fan-out per-component, and edits in
-// the Settings card reflect on the Models page without a page reload.
+// Module-scoped cache so concurrent callers share one fetch and edits in
+// the Settings card reflect on the Models page without a reload.
 const aliases = shallowRef<ModelAlias[] | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);

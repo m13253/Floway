@@ -1,9 +1,5 @@
 <script setup lang="ts">
-// One target row inside the alias edit dialog. Header: chevron + borderless
-// target-id combobox (the row's title) + action cluster (warning icon ·
-// up · down · remove). Body (chat kind only): flat rules form with one
-// rule-level warning rendered as inline yellow text under each annotated
-// field.
+// One target row inside the alias edit dialog.
 
 import { computed, ref } from 'vue';
 
@@ -37,9 +33,9 @@ const targetId = computed({
   set: v => { target.value = { ...target.value, target_model_id: v }; },
 });
 
-// Mutable mirror of the chat rules. Every field setter clones the rules so
-// the v-model emit fires and the parent's targets array stays referentially
-// up to date.
+// Read-only view of the rules as `ChatAliasRules`. The template gates this
+// to the chat branch; setters always clone the rules so the v-model emit
+// fires and the parent's targets array stays referentially up to date.
 const chatRules = computed<ChatAliasRules>(() => target.value.rules as ChatAliasRules);
 
 const setRules = (next: ChatAliasRules) => { target.value = { ...target.value, rules: next }; };
@@ -74,10 +70,10 @@ const setServiceTier = (raw: string) => {
   setRules(next);
 };
 
-// String-bound view of the integer budget. The form keeps the typed string
-// for round-trip stability (so an in-progress "" or "1024foo" doesn't
-// clobber the underlying numeric value mid-keystroke) and writes back to
-// the rules object only when the parsed number is a finite integer.
+// String-bound view of the integer budget. Keeping the typed string in
+// state means an in-progress "" or "1024foo" doesn't clobber the
+// underlying numeric value mid-keystroke; the rules object only updates
+// when the parsed number is a finite integer.
 const budgetText = ref(chatRules.value.reasoning?.budget_tokens === undefined ? '' : String(chatRules.value.reasoning.budget_tokens));
 const onBudgetChange = (raw: string) => {
   budgetText.value = raw;
@@ -90,10 +86,7 @@ const onBudgetChange = (raw: string) => {
   patchReasoning({ budget_tokens: Number(trimmed) });
 };
 
-// Suggestion lists for chat-rule comboboxes. The operator can still type
-// any value verbatim; the gateway forwards rule values without enum-gating
-// them so a brand-new upstream tier flows through without a frontend
-// release.
+// Suggestion lists for chat-rule comboboxes.
 const EFFORT_ITEMS = ['none', 'low', 'medium', 'high', 'xhigh'];
 const SUMMARY_ITEMS = ['auto', 'concise', 'detailed', 'none'];
 const VERBOSITY_ITEMS = ['low', 'medium', 'high'];
