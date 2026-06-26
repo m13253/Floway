@@ -82,6 +82,11 @@ describe('computeCatalog', () => {
     expect(out.models.map(m => m.slug)).not.toContain('codex-auto-review');
   });
 
+  test('throws when alias target is in registry but bundled lacks the alias entry', () => {
+    const bundledWithoutAlias = { models: bundled.models.filter(m => m.slug !== 'codex-auto-review') };
+    expect(() => computeCatalog(bundledWithoutAlias, [chat('gpt-5.4')])).toThrow(/codex-auto-review/);
+  });
+
   test('bundled reuse: registry cost.tiers replaces bundled service_tiers', () => {
     const im: InternalModel = {
       ...chat('openrouter/gpt-5.5:nitro'),

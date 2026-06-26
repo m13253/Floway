@@ -95,7 +95,10 @@ export const computeCatalog = (
   }
   if (aliasActive) {
     const aliasEntry = bundledBySlug.get(CODEX_AUTO_REVIEW_ALIAS);
-    if (aliasEntry) models.push({ ...aliasEntry });
+    if (aliasEntry === undefined) {
+      throw new Error(`Bundled Codex catalog missing required alias entry for slug "${CODEX_AUTO_REVIEW_ALIAS}"`);
+    }
+    models.push({ ...aliasEntry });
   }
   const slugContextWindow = new Map<string, number>();
   for (const m of internalModels) {
