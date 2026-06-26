@@ -35,11 +35,3 @@ export const sanitizeForResponsesUpstream = (body: Record<string, unknown>, trac
 export const sanitizeForMessagesUpstream = (body: Record<string, unknown>, trace?: SanitizeTraceCtx): void => {
   stripKeys(body, FLOWAY_EXTENSION_FIELDS.messages, 'messages', trace);
 };
-
-export const sanitizeForGeminiUpstream = (body: Record<string, unknown>, trace?: SanitizeTraceCtx): void => {
-  stripKeys(body, FLOWAY_EXTENSION_FIELDS.gemini.topLevel, 'gemini', trace);
-  const generationConfig = body.generationConfig;
-  if (generationConfig && typeof generationConfig === 'object') {
-    stripKeys(generationConfig as Record<string, unknown>, FLOWAY_EXTENSION_FIELDS.gemini.generationConfig, 'gemini', trace, 'generationConfig.');
-  }
-};

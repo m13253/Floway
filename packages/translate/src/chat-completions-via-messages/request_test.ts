@@ -1283,17 +1283,3 @@ test('translateChatCompletionsToMessages does not emit Messages-protocol fields 
   assertEquals(result.speed, undefined);
   assertEquals(result.service_tier, undefined);
 });
-
-test('translateChatCompletionsToMessages leaves anthropic_beta as inbound residue (header injection is the gateway-side rule-apply step)', async () => {
-  const result = await translateChatCompletionsToMessages(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      anthropic_beta: ['fast-mode-2026-02-01', 'context-1m-2025-08-07'],
-    }),
-  );
-
-  // The translated body must not echo the OpenAI-family `anthropic_beta`
-  // field; the per-upstream sanitizer is responsible for stripping any
-  // residue, and the rule-apply pass handles the outbound header.
-  assertEquals('anthropic_beta' in result, false);
-});

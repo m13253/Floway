@@ -431,15 +431,3 @@ test('buildTargetRequest emits generationConfig.serviceTier onto Responses servi
 
   assertEquals(result.service_tier, 'priority');
 });
-
-test('buildTargetRequest drops top-level Anthropic extensions on Responses', () => {
-  const result = buildTargetRequest(
-    {
-      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      anthropicBeta: ['fast-mode-2026-02-01'],
-    },
-    'gpt-test',
-  );
-
-  assertEquals('anthropicBeta' in result, false);
-});

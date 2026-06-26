@@ -1486,12 +1486,10 @@ test('translateResponsesToChatCompletions leaves Messages-only extensions as inb
     input: [{ type: 'message', role: 'user', content: 'hi' }],
     thinking_budget: 4096,
     adaptive_thinking: true,
-    anthropic_beta: ['fast-mode-2026-02-01'],
   });
 
   assertEquals('thinking_budget' in result.target, false);
   assertEquals('adaptive_thinking' in result.target, false);
-  assertEquals('anthropic_beta' in result.target, false);
 });
 
 test('translateResponsesToChatCompletions drops reasoning.summary (Chat has no slot)', () => {

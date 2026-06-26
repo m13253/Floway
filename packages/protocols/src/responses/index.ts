@@ -41,8 +41,6 @@ export interface ResponsesPayload {
   thinking_budget?: number;
   /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
   adaptive_thinking?: boolean;
-  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. */
-  anthropic_beta?: readonly string[];
 }
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a

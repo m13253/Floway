@@ -190,8 +190,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
   // Materialize the Floway extension fields onto their Messages-natural
-  // slots. `anthropic_beta` is body-side residue that the per-upstream
-  // sanitizer strips after translation.
+  // slots.
   const thinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,

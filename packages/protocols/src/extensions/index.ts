@@ -5,11 +5,7 @@
  * extension residue before the upstream HTTP call.
  */
 export const FLOWAY_EXTENSION_FIELDS = {
-  chatCompletions: ['thinking_budget', 'adaptive_thinking', 'reasoning_summary', 'anthropic_beta'] as const,
-  responses: ['thinking_budget', 'adaptive_thinking', 'anthropic_beta'] as const,
+  chatCompletions: ['thinking_budget', 'adaptive_thinking', 'reasoning_summary'] as const,
+  responses: ['thinking_budget', 'adaptive_thinking'] as const,
   messages: ['verbosity'] as const,
-  gemini: {
-    topLevel: ['anthropicBeta'] as const,
-    generationConfig: ['verbosity', 'serviceTier'] as const,
-  },
 } as const;

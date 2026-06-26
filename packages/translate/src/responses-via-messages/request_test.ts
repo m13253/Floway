@@ -708,8 +708,3 @@ test('translateResponsesToMessages emits adaptive_thinking onto thinking.{adapti
   const result = await translateResponsesToMessages(minimalResponsesPayload({ adaptive_thinking: true }));
   assertEquals(result.target.thinking, { type: 'adaptive' });
 });
-
-test('translateResponsesToMessages leaves anthropic_beta as inbound residue for the gateway header pass', async () => {
-  const result = await translateResponsesToMessages(minimalResponsesPayload({ anthropic_beta: ['fast-mode-2026-02-01'] }));
-  assertEquals('anthropic_beta' in result.target, false);
-});

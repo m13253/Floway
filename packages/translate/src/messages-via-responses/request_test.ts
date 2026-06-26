@@ -542,7 +542,6 @@ test('translateMessagesToResponses drops Anthropic-only mode knobs the Responses
   // bridge test below and is intentionally excluded here.
   assertEquals('thinking_budget' in result, false);
   assertEquals('adaptive_thinking' in result, false);
-  assertEquals('anthropic_beta' in result, false);
 });
 
 // ── speed ↔ service_tier bridge ──

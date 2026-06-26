@@ -6,8 +6,6 @@ export interface GeminiPayload {
   generationConfig?: GeminiGenerationConfig;
   safetySettings?: GeminiSafetySetting[];
   cachedContent?: string;
-  /** Floway protocol extension. Translated to the Anthropic `anthropic-beta` header (list-merged, deduped) when routed to a Messages upstream; dropped elsewhere. */
-  anthropicBeta?: readonly string[];
 }
 
 export interface GeminiContent {
