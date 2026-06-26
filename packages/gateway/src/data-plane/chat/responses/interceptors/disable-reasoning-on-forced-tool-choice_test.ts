@@ -44,6 +44,7 @@ const invocation = (
     stageInputs: false,
   }),
   headers: new Headers(),
+  action: 'generate',
 });
 
 test('responses required tool_choice sets reasoning.effort to none', async () => {

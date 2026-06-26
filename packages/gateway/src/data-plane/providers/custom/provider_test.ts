@@ -72,7 +72,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       assertEquals(model.id, 'echo');
 
       await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callResponses(model, { input: [] }, undefined, noopUpstreamCallOptions());
+      await provider.callResponses(model, { input: [] }, 'generate', undefined, noopUpstreamCallOptions());
       await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       await provider.callEmbeddings(model, { input: 'hi' }, undefined, noopUpstreamCallOptions());

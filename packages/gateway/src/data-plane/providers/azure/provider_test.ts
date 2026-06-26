@@ -87,7 +87,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
     },
     async () => {
       const chat = await instance.provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
-      const responses = await instance.provider.callResponses(model, { input: 'hello' }, undefined, noopUpstreamCallOptions());
+      const responses = await instance.provider.callResponses(model, { input: 'hello' }, 'generate', undefined, noopUpstreamCallOptions());
       const embeddings = await instance.provider.callEmbeddings(model, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
       assertEquals(chat.modelKey, 'gpt-prod');
@@ -149,7 +149,7 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
     },
     async () => {
       const chat = await instance.provider.callChatCompletions(chatModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, noopUpstreamCallOptions());
-      const responses = await instance.provider.callResponses(responsesModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
+      const responses = await instance.provider.callResponses(responsesModel, { input: 'hello' }, 'generate', undefined, noopUpstreamCallOptions());
       assertEquals(chat.modelKey, 'deepseek-v4-pro');
       assertEquals(responses.modelKey, 'gpt-5.4-pro');
     },

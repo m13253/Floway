@@ -78,10 +78,18 @@ const makeCandidate = (overrides: {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
   const upstreamModel = stubUpstreamModel();
+  const callResponsesGen = overrides.callResponses;
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
-    callResponses: overrides.callResponses,
+    callResponses: callResponsesGen
+      ? async (model, body, _action, signal, opts) => {
+        const stream = await callResponsesGen(model, body, signal, opts);
+        return stream.ok
+          ? { action: 'generate' as const, ok: true as const, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate' as const, ok: false as const, response: stream.response, modelKey: stream.modelKey };
+      }
+      : undefined,
   });
   return {
     provider: {

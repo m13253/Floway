@@ -127,9 +127,17 @@ const makeCandidate = (overrides: {
   const targetApi = overrides.targetApi ?? 'messages';
   const providerKind = overrides.providerKind ?? 'custom';
   const upstreamModel = stubUpstreamModel();
+  const callResponsesGen = overrides.callResponses;
   const provider = stubProvider({
     callMessages: overrides.callMessages,
-    callResponses: overrides.callResponses,
+    callResponses: callResponsesGen
+      ? async (model, body, _action, signal, opts) => {
+        const stream = await callResponsesGen(model, body, signal, opts);
+        return stream.ok
+          ? { action: 'generate' as const, ok: true as const, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate' as const, ok: false as const, response: stream.response, modelKey: stream.modelKey };
+      }
+      : undefined,
     callMessagesCountTokens: overrides.callMessagesCountTokens,
   });
   return {

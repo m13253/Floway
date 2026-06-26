@@ -12,7 +12,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -56,10 +56,15 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>): ProviderCandidate => {
+const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: 'generate' | 'compact', signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>): ProviderCandidate => {
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
-    callResponses: (model, body, signal, opts) => callResponses(model, body, signal, opts),
+    callResponses: (model, body, action, signal, opts) => {
+      return callResponses(model, body, action, signal, opts).then(stream =>
+        stream.ok
+          ? { action: 'generate' as const, ok: true as const, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate' as const, ok: false as const, response: stream.response, modelKey: stream.modelKey });
+    },
   });
   return {
     provider: {
@@ -86,10 +91,16 @@ const makeCandidate = (callResponses: (model: unknown, body: unknown, signal?: A
   };
 };
 
-const makeCompactCandidate = (callResponsesCompact: (...args: unknown[]) => Promise<unknown>): ProviderCandidate => {
+const makeCompactCandidate = (callResponsesCompact: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>) => Promise<{ ok: true; result: ResponsesResult; modelKey: string } | { ok: false; response: Response; modelKey: string }>): ProviderCandidate => {
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
-    callResponsesCompact: callResponsesCompact as never,
+    callResponses: (model, body, action) => {
+      if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
+      return callResponsesCompact(model, body).then(res =>
+        res.ok
+          ? { action: 'compact' as const, ok: true as const, result: res.result, modelKey: res.modelKey }
+          : { action: 'compact' as const, ok: false as const, response: res.response, modelKey: res.modelKey });
+    },
   });
   return {
     provider: {
@@ -298,12 +309,13 @@ test('compact reshapes the trigger turn into a result and forwards snapshotMode=
   }));
 
   const candidate = makeCompactCandidate(callResponsesCompact);
-  const result = await responsesAttempt.compact({
+  const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
         { type: 'message', role: 'user', content: 'kept message' },
       ],
     }),
+    action: 'compact',
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,

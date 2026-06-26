@@ -47,6 +47,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   }),
   payload: { model: 'm', input: [], ...payload } as ResponsesPayload,
   headers: new Headers(),
+  action: 'generate',
 });
 const gatewayCtx = (): GatewayCtx => ({
   apiKeyId: 'test-key',
