@@ -111,11 +111,6 @@ const normalizeNonEmptyDomainList = (domains?: string[]): string[] | undefined =
   return normalized && normalized.length > 0 ? [...new Set(normalized)] : undefined;
 };
 
-// Replay detection is purely structural: a foreign upstream's opaque
-// `encrypted_content` / `encrypted_index` will fail base64url+JSON decoding or
-// fail the strict exact-keys schema validators below, so it round-trips through
-// the shim untouched.
-
 const hasExactKeys = (value: Record<string, unknown>, keys: string[]): boolean => {
   const actualKeys = Object.keys(value);
   return actualKeys.length === keys.length && actualKeys.every(key => keys.includes(key));
@@ -152,6 +147,10 @@ const isShimWebSearchCitationPayload = (value: unknown): value is ShimWebSearchC
 
 export const encodeWebSearchResultPayload = (payload: ShimWebSearchResultPayload): string => encodeBase64UrlJson(payload);
 
+// Replay detection is purely structural: a foreign upstream's opaque
+// `encrypted_content` / `encrypted_index` will fail base64url+JSON decoding or
+// fail the strict exact-keys schema validators above, so it round-trips through
+// the shim untouched.
 export const decodeWebSearchResultPayload = (value: string): ShimWebSearchResultPayload | null => {
   const decoded = decodeBase64UrlJson(value);
   return isShimWebSearchResultPayload(decoded) ? decoded : null;
