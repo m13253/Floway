@@ -30,10 +30,6 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async (args: { model: string; scheduler: () => void }) => {
-      // Drain a queued resolution from `aliasResolutionQueue` (set up by
-      // sees the resolved target id reach the candidates layer and the
-      // serve overlays rules from the returned `aliasResolution`. Tests
-      // queue a resolution via `aliasResolutionQueue` when they want one.
       const aliasResolution = await resolveAlias({
         modelName: args.model,
         providers: [],
