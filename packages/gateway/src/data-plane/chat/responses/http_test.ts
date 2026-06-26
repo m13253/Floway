@@ -8,21 +8,58 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
-// provider candidates it wants. Mirrors the pattern from serve_test.ts.
+// provider candidates it wants. The mock mirrors `serve_test.ts` by
+// running the real `resolveAlias` against the in-memory repo so any
+// alias seeded by a test (e.g. `codex-auto-review`) rewrites the model
+// id and rule overlay reaches the upstream call.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+// `lastSeenModel` captures the effective model id the serve passes downstream
+// — the alias rewrite (if any) applied. Tests assert against this to confirm
+// the alias table drove the rewrite.
+const lastSeenModel: { value: string | null } = { value: null };
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+  const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async (_args: { model: string }) => {
+    enumerateProviderCandidates: vi.fn(async (args: { model: string; scheduler: () => void }) => {
+      // Mirror the real entry's alias resolution so the rule-overlay test
+      // sees the resolved target id reach the candidates layer and the
+      // serve overlays rules from the returned `aliasResolution`. Tests
+      // queue a resolution via `aliasResolutionQueue` when they want one.
+      const aliasResolution = await resolveAlias({
+        modelName: args.model,
+        providers: [],
+        fetcherForUpstream: () => directFetcher,
+        scheduler: args.scheduler,
+        endpointAccepts: () => true,
+        repo: { getByName: () => Promise.resolve(null) } as never,
+      });
+      lastSeenModel.value = aliasResolution?.targetModelId ?? args.model;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return { ...next, failedUpstreams: [], aliasResolution: null };
+      return { ...next, failedUpstreams: [], aliasResolution };
+    }),
+  };
+});
+
+// Mock the alias resolver so the alias-rewrite tests can inject a resolution
+// without standing up the per-request fetcher + registry stack the routability
+// pool needs. Tests that don't enqueue a resolution see the default
+// (`null` = no alias matched).
+const aliasResolutionQueue: ({ targetModelId: string; rules: Record<string, unknown>; aliasName: string } | null)[] = [];
+vi.mock('../../model-aliases/resolve.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../model-aliases/resolve.ts')>();
+  return {
+    ...original,
+    resolveAlias: vi.fn(async () => {
+      if (aliasResolutionQueue.length === 0) return null;
+      return aliasResolutionQueue.shift()!;
     }),
   };
 });
@@ -278,4 +315,75 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(response.status, 400);
   const body = await response.json() as { error: { code: string } };
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
+});
+
+const seedCodexAutoReviewAliasResolution = (): void => {
+  aliasResolutionQueue.push({
+    targetModelId: 'gpt-5.4',
+    rules: { reasoning: { effort: 'low' } },
+    aliasName: 'codex-auto-review',
+  });
+};
+
+test('POST /v1/responses routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
+  installRepo();
+  seedCodexAutoReviewAliasResolution();
+  lastSeenModel.value = null;
+  const observedBodies: ResponsesPayload[] = [];
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+    observedBodies.push(body as ResponsesPayload);
+    return {
+      action: 'generate', ok: true,
+      events: makeProviderEvents([completedEvent()]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueCandidates([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'codex-auto-review', input: 'hello', stream: true }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(lastSeenModel.value, 'gpt-5.4');
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callResponses to receive a body');
+  assertEquals(observed.reasoning?.effort, 'low');
+});
+
+test('POST /v1/responses/compact routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
+  installRepo();
+  seedCodexAutoReviewAliasResolution();
+  lastSeenModel.value = null;
+  const observedBodies: ResponsesPayload[] = [];
+  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
+  const compactionResult: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
+  };
+  const callResponses = vi.fn(async (_model: unknown, body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    observedBodies.push(body as ResponsesPayload);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  queueCandidates([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'codex-auto-review',
+      input: [{ type: 'message', role: 'user', content: 'kept' }],
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(lastSeenModel.value, 'gpt-5.4');
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callResponses to receive a body');
+  assertEquals(observed.reasoning?.effort, 'low');
 });

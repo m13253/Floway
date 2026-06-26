@@ -433,13 +433,25 @@ describe('codex 1p namespace', () => {
       const slugs = body.models.map(m => m.slug);
       // The bundled catalog ships with six slugs (gpt-5.5, gpt-5.4,
       // gpt-5.4-mini, gpt-5.3-codex, gpt-5.2, codex-auto-review). Registry
-      // here advertises only gpt-5.5, and codex-auto-review's target
-      // (gpt-5.4) is missing — so the response is just gpt-5.5.
+      // here advertises only gpt-5.5, and no alias is seeded — so the
+      // response is just gpt-5.5.
       expect(slugs).toEqual(['gpt-5.5']);
     });
 
-    it('keeps codex-auto-review when its alias target is in the registry, drops it otherwise, and reports the target window', async () => {
-      const { apiKey } = await setupAppTest();
+    it('keeps codex-auto-review when the seeded alias target is in the registry, drops it otherwise, and reports the target window', async () => {
+      const { apiKey, repo } = await setupAppTest();
+      await repo.modelAliases.insert({
+        name: 'codex-auto-review',
+        kind: 'chat',
+        selection: 'first-available',
+        displayName: 'Codex Auto Review',
+        visibleInModelsList: true,
+        targets: [{ target_model_id: 'gpt-5.4', rules: {} }],
+        announcedMetadata: null,
+        sortOrder: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
       const app = buildCodexApp();
       const body = await withMockedFetch(
         copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
@@ -455,10 +467,10 @@ describe('codex 1p namespace', () => {
       expect(slugs.has('gpt-5.4')).toBe(true);
       expect(slugs.has('codex-auto-review')).toBe(true);
       expect(slugs.has('gpt-5.5')).toBe(false);
-      // codex-auto-review has no registry entry of its own, but it gets
-      // rewritten to gpt-5.4 at request time, so its catalog row reports
-      // gpt-5.4's window — not the bundled 1000000 max that would advertise
-      // a tier the gateway cannot serve.
+      // codex-auto-review has no registry entry of its own; the alias's
+      // first available target is gpt-5.4, so its catalog row reports
+      // gpt-5.4's 272000 window — not the bundled 1000000 max that would
+      // advertise a tier the gateway cannot serve.
       const autoReview = body.models.find(m => m.slug === 'codex-auto-review');
       expect(autoReview?.context_window).toBe(272000);
       expect(autoReview?.max_context_window).toBe(272000);
