@@ -75,10 +75,16 @@ export interface AliasTarget {
 
 // Operator-set override for the alias's announced /v1/models payload —
 // the `limits` + `chat.*` block the listing surfaces to clients. Sparse:
-// any sub-field the operator leaves unset falls back to the rule-aware
-// intersection across the alias's available targets. `kind` and the
-// supported endpoint set are not part of this payload; they follow from
-// the alias row (`kind`) and the target intersection (endpoints).
+// any top-level sub-block (`limits` / `chat`) the operator leaves unset
+// falls back wholesale to the rule-aware intersection across the alias's
+// available targets. Fallback is at the sub-block boundary, not per-leaf:
+// posting `{ limits: { max_output_tokens: 8192 } }` replaces `limits`
+// entirely, so other limit keys disappear from the announced metadata
+// unless the override re-states them. (The dashboard hides this by
+// seeding the buffer from the full computed snapshot at the moment the
+// "Enable override" switch flips on.) `kind` and the supported endpoint
+// set are not part of this payload; they follow from the alias row
+// (`kind`) and the target union (endpoints).
 export interface AnnouncedMetadata {
   limits?: PublicModelLimits;
   chat?: ChatModelInfo;
