@@ -110,9 +110,11 @@ const save = async () => {
 
   const trimmedName = aliasName.value.trim();
   const trimmedDisplay = displayName.value.trim();
-  // The Hono RPC body type infers each target's `rules` as the loose
-  // `Record<string, unknown>` from the Zod schema, so build the payload
-  // with that loose shape and cast each target's rules to match.
+  // The Hono RPC body type widens the per-target rules to the loose
+  // `Record<string, unknown>` it gets from the Zod schema, and likewise
+  // widens `announced_metadata` to its zod-inferred shape (mutable
+  // modality arrays). Cast through the loose shapes so the typed body
+  // matches what the schema accepts.
   const body = {
     name: trimmedName,
     kind: kind.value,
@@ -123,6 +125,7 @@ const save = async () => {
       target_model_id: t.target_model_id.trim(),
       rules: t.rules as Record<string, unknown>,
     })),
+    announced_metadata: (props.record?.announced_metadata ?? null) as Record<string, unknown> | null,
     sort_order: props.record?.sort_order ?? 0,
   };
 

@@ -52,6 +52,7 @@ const aliasRecord = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecor
   displayName: null,
   visibleInModelsList: true,
   targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
+  announcedMetadata: null,
   sortOrder: 0,
   createdAt: '2026-06-26T00:00:00.000Z',
   updatedAt: '2026-06-26T00:00:00.000Z',

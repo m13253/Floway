@@ -14,6 +14,7 @@ const record: ModelAliasRecord = {
     { target_model_id: 'codex-auto-review', rules: {} },
     { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
   ],
+  announcedMetadata: null,
   sortOrder: 3,
   createdAt: '2026-06-26T00:00:00.000Z',
   updatedAt: '2026-06-26T12:00:00.000Z',
@@ -59,4 +60,25 @@ test('wireToRecord preserves a null display_name', () => {
     { sortOrder: 0, createdAt: 'x', updatedAt: 'y' },
   );
   assertEquals(built.displayName, null);
+});
+
+test('announced_metadata round-trips a populated override', () => {
+  const withOverride: ModelAliasRecord = {
+    ...record,
+    announcedMetadata: {
+      limits: { max_output_tokens: 8192 },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    },
+  };
+  const wire = recordToWire(withOverride);
+  assertEquals(wire.announced_metadata, {
+    limits: { max_output_tokens: 8192 },
+    chat: { modalities: { input: ['text'], output: ['text'] } },
+  });
+  const roundTripped = wireToRecord(wire, {
+    sortOrder: wire.sort_order,
+    createdAt: wire.created_at,
+    updatedAt: wire.updated_at,
+  });
+  assertEquals(roundTripped, withOverride);
 });

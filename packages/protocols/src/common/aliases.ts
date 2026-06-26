@@ -9,6 +9,8 @@
 // Resolution runs above prefix routing and never re-enters itself, which
 // makes recursive aliasing impossible by construction.
 
+import type { ChatModelInfo, PublicModelLimits } from './models.ts';
+
 // Endpoint family the alias serves. An alias belongs to exactly one kind;
 // rules are only allowed when the kind admits them (today that is `chat`).
 export type AliasKind = 'chat' | 'embedding' | 'image';
@@ -71,8 +73,21 @@ export interface AliasTarget {
   rules: AliasRules;
 }
 
+// Operator-set override for the alias's announced /v1/models payload —
+// the `limits` + `chat.*` block the listing surfaces to clients. Sparse:
+// any sub-field the operator leaves unset falls back to the rule-aware
+// intersection across the alias's available targets. `kind` and the
+// supported endpoint set are not part of this payload; they follow from
+// the alias row (`kind`) and the target intersection (endpoints).
+export interface AnnouncedMetadata {
+  limits?: PublicModelLimits;
+  chat?: ChatModelInfo;
+}
+
 // Wire DTO returned by `/api/aliases`. snake_case to match the rest of the
-// control plane; `display_name === null` means "derive at render time".
+// control plane; `display_name === null` means "derive at render time";
+// `announced_metadata === null` means "compute the announced payload from
+// targets + rules at listing time".
 export interface ModelAlias {
   name: string;
   kind: AliasKind;
@@ -80,6 +95,7 @@ export interface ModelAlias {
   display_name: string | null;
   visible_in_models_list: boolean;
   targets: AliasTarget[];
+  announced_metadata: AnnouncedMetadata | null;
   sort_order: number;
   created_at: string;
   updated_at: string;

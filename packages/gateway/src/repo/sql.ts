@@ -40,7 +40,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { BILLING_DIMENSIONS, type AliasKind, type AliasSelection, type AliasTarget, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type AliasKind, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
@@ -1594,12 +1594,13 @@ interface ModelAliasRow {
   display_name: string | null;
   visible_in_models_list: number;
   targets: string;
+  announced_metadata_json: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
 }
 
-const MODEL_ALIAS_COLUMNS = 'name, kind, selection, display_name, visible_in_models_list, targets, sort_order, created_at, updated_at';
+const MODEL_ALIAS_COLUMNS = 'name, kind, selection, display_name, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at';
 
 const parseAliasTargets = (raw: string, name: string): AliasTarget[] => {
   let parsed: unknown;
@@ -1612,6 +1613,15 @@ const parseAliasTargets = (raw: string, name: string): AliasTarget[] => {
   return parsed as AliasTarget[];
 };
 
+const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMetadata | null => {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as AnnouncedMetadata;
+  } catch (cause) {
+    throw new Error(`model_aliases.announced_metadata_json is malformed for ${name}`, { cause });
+  }
+};
+
 const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   name: row.name,
   kind: row.kind as AliasKind,
@@ -1619,10 +1629,14 @@ const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
   displayName: row.display_name,
   visibleInModelsList: row.visible_in_models_list !== 0,
   targets: parseAliasTargets(row.targets, row.name),
+  announcedMetadata: parseAnnouncedMetadata(row.announced_metadata_json, row.name),
   sortOrder: row.sort_order,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+const announcedMetadataBind = (value: AnnouncedMetadata | null): string | null =>
+  value === null ? null : JSON.stringify(value);
 
 class SqlModelAliasesRepo implements ModelAliasesRepo {
   constructor(private db: SqlDatabase) {}
@@ -1645,7 +1659,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
   async insert(record: ModelAliasRecord): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         record.name,
@@ -1654,6 +1668,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
         record.displayName,
         record.visibleInModelsList ? 1 : 0,
         JSON.stringify(record.targets),
+        announcedMetadataBind(record.announcedMetadata),
         record.sortOrder,
         record.createdAt,
         record.updatedAt,
@@ -1671,6 +1686,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
              display_name = ?,
              visible_in_models_list = ?,
              targets = ?,
+             announced_metadata_json = ?,
              sort_order = ?,
              created_at = ?,
              updated_at = ?
@@ -1682,6 +1698,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
           record.displayName,
           record.visibleInModelsList ? 1 : 0,
           JSON.stringify(record.targets),
+          announcedMetadataBind(record.announcedMetadata),
           record.sortOrder,
           record.createdAt,
           record.updatedAt,
@@ -1701,7 +1718,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
 
     await runStatements(this.db, [
       this.db
-        .prepare(`INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .prepare(`INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .bind(
           record.name,
           record.kind,
@@ -1709,6 +1726,7 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
           record.displayName,
           record.visibleInModelsList ? 1 : 0,
           JSON.stringify(record.targets),
+          announcedMetadataBind(record.announcedMetadata),
           record.sortOrder,
           record.createdAt,
           record.updatedAt,

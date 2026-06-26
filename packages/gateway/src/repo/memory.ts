@@ -889,6 +889,7 @@ const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
   // Deep-clone so a caller's mutation of the returned record never leaks
   // back into the store.
   targets: structuredClone(record.targets),
+  announcedMetadata: record.announcedMetadata === null ? null : structuredClone(record.announcedMetadata),
 });
 
 class MemoryModelAliasesRepo implements ModelAliasesRepo {

@@ -1,6 +1,6 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { AliasKind, AliasSelection, AliasTarget, BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
 import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -277,6 +277,11 @@ export interface ModelAliasRecord {
   // Order is meaningful for selection=first-available; preserved (but
   // ignored) for selection=random.
   targets: AliasTarget[];
+  // null = compute the announced /v1/models payload automatically from
+  // targets + rules at listing time. A non-null payload is sparse — any
+  // sub-field the operator did not override falls back to the automatic
+  // computation.
+  announcedMetadata: AnnouncedMetadata | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

@@ -122,6 +122,14 @@ const chatSchema = z.object({
   reasoning: reasoningSchema.optional(),
 });
 
+// Shared limits shape used by both the upstream-model schema and the
+// alias's announced-metadata override.
+const limitsSchema = z.object({
+  max_context_window_tokens: z.number().optional(),
+  max_prompt_tokens: z.number().optional(),
+  max_output_tokens: z.number().optional(),
+});
+
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
 // Azure and custom upstreams share this per-model entry; the canonical
 // per-model endpoint validation lives in the runtime validator.
@@ -146,11 +154,7 @@ const upstreamModelSchema = z.object({
     enabled: z.boolean(),
     values: flagOverrideValuesSchema,
   }).optional(),
-  limits: z.object({
-    max_context_window_tokens: z.number().optional(),
-    max_prompt_tokens: z.number().optional(),
-    max_output_tokens: z.number().optional(),
-  }).optional(),
+  limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
@@ -623,6 +627,17 @@ const aliasTargetSchema = z.object({
   rules: z.record(z.string(), z.unknown()),
 });
 
+// Operator override for an alias's announced /v1/models payload. Sparse —
+// both sub-fields are independently optional, and the alias-listing pipeline
+// falls back to the rule-aware automatic computation for any sub-field the
+// operator did not provide. `chatSchema` and `limitsSchema` are the same
+// shapes the upstream-model surface validates, so the override carries the
+// catalog's full vocabulary.
+const announcedMetadataSchema = z.object({
+  limits: limitsSchema.optional(),
+  chat: chatSchema.optional(),
+});
+
 const aliasBaseShape = {
   name: z.string().min(1),
   kind: z.enum(['chat', 'embedding', 'image']),
@@ -630,6 +645,7 @@ const aliasBaseShape = {
   display_name: z.string().min(1).nullable(),
   visible_in_models_list: z.boolean(),
   targets: z.array(aliasTargetSchema).min(1),
+  announced_metadata: announcedMetadataSchema.nullable(),
   sort_order: z.number().int().optional(),
 };
 

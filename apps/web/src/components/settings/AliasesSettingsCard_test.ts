@@ -39,6 +39,7 @@ const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => 
   display_name: null,
   visible_in_models_list: true,
   targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }],
+  announced_metadata: null,
   sort_order: 0,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',

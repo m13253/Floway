@@ -24,6 +24,7 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
   targets: [
     { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
   ],
+  announcedMetadata: null,
   sortOrder: 0,
   createdAt: '2026-06-26T00:00:00.000Z',
   updatedAt: '2026-06-26T00:00:00.000Z',
@@ -141,6 +142,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     await repo.modelAliases.insert(aliasFixture({ visibleInModelsList: false }));
     const row = await repo.modelAliases.getByName('gpt-fast');
     assertEquals(row?.visibleInModelsList, false);
+  });
+
+  test(`[${backend}] announcedMetadata round-trips through JSON column`, async () => {
+    const repo = await freshRepo();
+    await repo.modelAliases.insert(aliasFixture({
+      name: 'overridden',
+      announcedMetadata: {
+        limits: { max_output_tokens: 8192 },
+        chat: { modalities: { input: ['text'], output: ['text'] } },
+      },
+    }));
+    const row = await repo.modelAliases.getByName('overridden');
+    assertEquals(row?.announcedMetadata, {
+      limits: { max_output_tokens: 8192 },
+      chat: { modalities: { input: ['text'], output: ['text'] } },
+    });
   });
 
   test(`[${backend}] deleteAll wipes every row`, async () => {

@@ -28,6 +28,7 @@ const baseBody = (overrides: Record<string, unknown> = {}) => ({
   targets: [
     { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
   ],
+  announced_metadata: null,
   ...overrides,
 });
 
@@ -37,11 +38,13 @@ test('GET /api/aliases lists every row in sort order', async () => {
   await repo.modelAliases.insert({
     name: 'b', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
     targets: [{ target_model_id: 'm1', rules: {} }],
+    announcedMetadata: null,
     sortOrder: 1, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
   });
   await repo.modelAliases.insert({
     name: 'a', kind: 'chat', selection: 'random', displayName: null, visibleInModelsList: true,
     targets: [{ target_model_id: 'm2', rules: {} }],
+    announcedMetadata: null,
     sortOrder: 0, createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
   });
 

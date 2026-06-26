@@ -128,6 +128,15 @@ export interface PublicModelAliasedFrom {
   targets: AliasTarget[];
 }
 
+// Operator-set context-window / prompt / output token limits the gateway
+// surfaces on /v1/models. Pure data — every field is optional so a
+// partially-known upstream still produces a sensible row.
+export interface PublicModelLimits {
+  max_output_tokens?: number;
+  max_context_window_tokens?: number;
+  max_prompt_tokens?: number;
+}
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -142,11 +151,7 @@ export interface PublicModel {
   display_name: string;
   created_at?: string;
   // Non-standard extra fields below.
-  limits: {
-    max_output_tokens?: number;
-    max_context_window_tokens?: number;
-    max_prompt_tokens?: number;
-  };
+  limits: PublicModelLimits;
   kind: ModelKind;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
