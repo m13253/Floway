@@ -597,19 +597,22 @@ export const searchConfigSchema = z.object({
 
 // Per-target chat rules. Field names mirror the IR slot each value overlays.
 // Values forward verbatim — no capability narrowing here, so an operator
-// can drive a feature the catalog hasn't advertised yet.
+// can drive a feature the catalog hasn't advertised yet. The four value
+// fields below (`effort`, `summary`, `verbosity`, `serviceTier`) accept
+// any string for the same reason; the dashboard pins canonical presets as
+// combobox suggestions.
 const chatAliasReasoningSchema = z.object({
-  effort: z.enum(['none', 'low', 'medium', 'high', 'xhigh']).optional(),
+  effort: z.string().min(1).optional(),
   budget_tokens: z.number().int().nonnegative().optional(),
   adaptive: z.boolean().optional(),
-  summary: z.enum(['auto', 'concise', 'detailed', 'none']).optional(),
+  summary: z.string().min(1).optional(),
   mandatory: z.boolean().optional(),
 }).strict();
 
 const chatAliasRulesSchema = z.object({
   reasoning: chatAliasReasoningSchema.optional(),
-  verbosity: z.enum(['low', 'medium', 'high']).optional(),
-  serviceTier: z.enum(['default', 'flex', 'priority', 'scale', 'fast']).optional(),
+  verbosity: z.string().min(1).optional(),
+  serviceTier: z.string().min(1).optional(),
 }).strict();
 
 // Rules are validated against the alias-level kind in the superRefine pass

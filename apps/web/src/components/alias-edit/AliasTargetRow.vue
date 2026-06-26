@@ -5,7 +5,6 @@ import { computed, ref } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
 import type { AliasKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
-import type { ReasoningEffort, ReasoningSummary, ServiceTier, Verbosity } from '@floway-dev/protocols/common';
 import { Combobox, Switch, Tooltip } from '@floway-dev/ui';
 
 const target = defineModel<AliasTarget>({ required: true });
@@ -54,19 +53,19 @@ const patchReasoning = (patch: Partial<NonNullable<ChatAliasRules['reasoning']>>
   }
 };
 
-const setEffort = (raw: string) => patchReasoning({ effort: raw === '' ? undefined : (raw as ReasoningEffort) });
-const setSummary = (raw: string) => patchReasoning({ summary: raw === '' ? undefined : (raw as ReasoningSummary) });
+const setEffort = (raw: string) => patchReasoning({ effort: raw === '' ? undefined : raw });
+const setSummary = (raw: string) => patchReasoning({ summary: raw === '' ? undefined : raw });
 const setAdaptive = (on: boolean | undefined) => patchReasoning({ adaptive: on === true ? true : undefined });
 const setVerbosity = (raw: string) => {
   const next = { ...chatRules.value };
   if (raw === '') delete next.verbosity;
-  else next.verbosity = raw as Verbosity;
+  else next.verbosity = raw;
   setRules(next);
 };
 const setServiceTier = (raw: string) => {
   const next = { ...chatRules.value };
   if (raw === '') delete next.serviceTier;
-  else next.serviceTier = raw as ServiceTier;
+  else next.serviceTier = raw;
   setRules(next);
 };
 
@@ -86,7 +85,9 @@ const onBudgetChange = (raw: string) => {
   patchReasoning({ budget_tokens: Number(trimmed) });
 };
 
-// Suggestion lists for chat-rule comboboxes.
+// Suggestion lists for chat-rule comboboxes. Combobox accepts free-form
+// values; these arrays are the canonical presets the dashboard pins as
+// type-ahead hints.
 const EFFORT_ITEMS = ['none', 'low', 'medium', 'high', 'xhigh'];
 const SUMMARY_ITEMS = ['auto', 'concise', 'detailed', 'none'];
 const VERBOSITY_ITEMS = ['low', 'medium', 'high'];
