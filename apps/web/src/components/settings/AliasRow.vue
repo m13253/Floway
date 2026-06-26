@@ -7,7 +7,6 @@ import { computed } from 'vue';
 
 import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 import { computeShadowWarning } from '../alias-edit/warnings.ts';
-import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import { Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -20,16 +19,11 @@ defineEmits<{
   delete: [];
 }>();
 
-// Operator-set `display_name` wins; single-target aliases fall through to
-// the compose helper; multi-target falls back to `name`.
-const title = computed(() => {
-  if (props.alias.display_name !== null) return props.alias.display_name;
-  if (props.alias.targets.length === 1) {
-    const t = props.alias.targets[0];
-    return composeAliasDisplayName(t.target_model_id, t.rules);
-  }
-  return props.alias.name;
-});
+// Operator-set `display_name` wins; otherwise fall back to the alias id
+// itself. The id is also stamped next to the title in mono, so an empty
+// display_name produces "alias-id (sans-serif) · alias-id (mono)" — same
+// visual idiom the chat playground uses for the active model.
+const title = computed(() => props.alias.display_name ?? props.alias.name);
 
 const KIND_LABELS: Record<ModelAlias['kind'], string> = {
   chat: 'Chat',
@@ -57,11 +51,14 @@ const shadowTooltip = computed(() => {
 
 <template>
   <div class="rounded-lg border border-white/5 bg-surface-800/80 px-3 py-2.5">
-    <div class="flex items-start gap-3">
+    <div class="flex items-center gap-3">
       <div class="min-w-0 flex-1">
-        <h4 class="truncate text-sm font-semibold text-white">{{ title }}</h4>
+        <div class="flex flex-wrap items-baseline gap-x-2">
+          <h4 class="truncate text-sm font-semibold text-white">{{ title }}</h4>
+          <span class="truncate font-mono text-xs text-gray-500">{{ alias.name }}</span>
+        </div>
         <p class="mt-0.5 truncate text-xs text-gray-500">
-          <span class="font-mono">{{ alias.name }}</span> · {{ kindLabel }} · {{ targetCountLabel }} · {{ selectionLabel }}<template v-if="!alias.visible_in_models_list"> · hidden from <code class="font-mono">/v1/models</code></template>
+          {{ kindLabel }} · {{ targetCountLabel }} · {{ selectionLabel }}<template v-if="!alias.visible_in_models_list"> · hidden from <code class="font-mono">/v1/models</code></template>
         </p>
       </div>
 

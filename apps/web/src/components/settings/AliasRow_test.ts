@@ -29,17 +29,19 @@ const aliasModel = (id: string): ControlPlaneModel => ({
 });
 
 describe('AliasRow', () => {
-  it('renders display_name when set; falls back to compose helper for single-target; alias name for multi-target', () => {
+  it('renders display_name when set; otherwise falls back to the alias id', () => {
     const withDisplay = mount(AliasRow, { props: { alias: alias({ name: 'a', display_name: 'My Friendly Name' }), models: [] } });
     expect(withDisplay.find('h4').text()).toBe('My Friendly Name');
 
+    // No operator-set display: title shows the alias id verbatim (same string
+    // as the mono pill next to it — the chat-playground idiom).
     const single = mount(AliasRow, {
       props: {
         alias: alias({ name: 'a', display_name: null, targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } as ChatAliasRules }] }),
         models: [],
       },
     });
-    expect(single.find('h4').text()).toBe('gpt-5 (low effort)');
+    expect(single.find('h4').text()).toBe('a');
 
     const multi = mount(AliasRow, {
       props: {
@@ -57,7 +59,7 @@ describe('AliasRow', () => {
     expect(multi.find('h4').text()).toBe('gizmo');
   });
 
-  it('formats the caption: name · Kind · N targets · Selection (and optional hidden suffix)', () => {
+  it('formats the caption: Kind · N targets · Selection (and optional hidden suffix); the alias id sits next to the title', () => {
     const w = mount(AliasRow, {
       props: {
         alias: alias({
@@ -72,12 +74,14 @@ describe('AliasRow', () => {
         models: [],
       },
     });
-    expect(w.find('p').text()).toBe('auto-review · Chat · 2 targets · Random · hidden from /v1/models');
+    expect(w.find('p').text()).toBe('Chat · 2 targets · Random · hidden from /v1/models');
+    // The alias id stamp sits on the title row, in mono.
+    expect(w.find('div.flex.items-baseline span').text()).toBe('auto-review');
 
     const sole = mount(AliasRow, {
       props: { alias: alias({ name: 'one' }), models: [] },
     });
-    expect(sole.find('p').text()).toBe('one · Chat · 1 target · First available');
+    expect(sole.find('p').text()).toBe('Chat · 1 target · First available');
   });
 
   it('emits edit on the pencil button and delete on the trash button', async () => {
