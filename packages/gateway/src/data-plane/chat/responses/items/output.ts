@@ -150,13 +150,14 @@ export const wrapResponsesOutputForStorage = async function* (
       // breaks the for-await on the terminal yield never gives this
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
-      // ordering matches a synchronous emit.
-      if (snapshotMode !== 'none') {
-        try {
-          await store.commitSnapshot(responseId, snapshotMode);
-        } catch (error) {
-          console.error('Failed to persist stored Responses snapshot:', error);
-        }
+      // ordering matches a synchronous emit. Whether the snapshot is
+      // actually persisted is owned by the store's `snapshotWrites` —
+      // an empty list (HTTP `store=false`, no-op cross-protocol store)
+      // makes this a no-op at the store layer.
+      try {
+        await store.commitSnapshot(responseId, snapshotMode);
+      } catch (error) {
+        console.error('Failed to persist stored Responses snapshot:', error);
       }
       yield rewritten;
       return;

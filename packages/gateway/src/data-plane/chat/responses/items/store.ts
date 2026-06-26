@@ -51,7 +51,6 @@ export interface LayeredStatefulResponsesStoreOptions {
 }
 
 // How a Responses turn should commit its snapshot:
-//   - 'none'    : do not write a snapshot at all
 //   - 'append'  : conversation continuation — previous snapshot + this turn's
 //                 input + this turn's output. Default for /responses generate.
 //   - 'replace' : the turn's output IS the new conversation — drop prior
@@ -59,7 +58,12 @@ export interface LayeredStatefulResponsesStoreOptions {
 //                 so that referencing the compact response via
 //                 previous_response_id replays only the retained messages +
 //                 the encrypted compaction blob, not the original full history.
-export type ResponsesSnapshotMode = 'none' | 'append' | 'replace';
+//
+// "Do not write a snapshot" is not a mode — it is the absence of writes.
+// A store whose `snapshotWrites` is empty (HTTP `store=false`, no-op store
+// for cross-protocol callers) turns `commitSnapshot` into a no-op regardless
+// of the mode passed in.
+export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string | null;

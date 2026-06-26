@@ -53,14 +53,14 @@ const TEST_RESPONSE_ID = 'resp_test123';
 const wrap = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   overrides: Parameters<typeof makeStore>[0] = {},
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; responseId?: string } = {},
+  extra: { snapshotMode?: 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; responseId?: string } = {},
 ) => {
   const store = makeStore(overrides);
   return {
     events: wrapResponsesOutputForStorage(frames, {
       store,
       upstream: 'up_native',
-      snapshotMode: extra.snapshotMode ?? 'none',
+      snapshotMode: extra.snapshotMode ?? 'append',
       targetApi: extra.targetApi ?? 'responses',
       responseId: extra.responseId ?? TEST_RESPONSE_ID,
     }),
@@ -71,11 +71,11 @@ const wrap = (
 const wrapWithStore = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   store: ReturnType<typeof createResponsesHttpStore>,
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string; responseId?: string } = {},
+  extra: { snapshotMode?: 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string; responseId?: string } = {},
 ) => wrapResponsesOutputForStorage(frames, {
   store,
   upstream: extra.upstream ?? 'up_native',
-  snapshotMode: extra.snapshotMode ?? 'none',
+  snapshotMode: extra.snapshotMode ?? 'append',
   targetApi: extra.targetApi ?? 'responses',
   responseId: extra.responseId ?? TEST_RESPONSE_ID,
 });
@@ -205,7 +205,11 @@ test('insert failure does not sink the stream', async () => {
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
     const original = messageItem('raw_msg_native', 'hello');
-    const store = createResponsesHttpStore(apiKeyId, undefined);
+    // `store: false` removes the snapshot write so we do not race the
+    // controlled item-insert stub against a second `commitItems` invoked
+    // during the snapshot commit on the terminal frame. The test asserts
+    // the item-insert failure path; snapshot semantics are covered below.
+    const store = createResponsesHttpStore(apiKeyId, false);
     const iterator = wrapWithStore(framesFrom([
       { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
       { type: 'response.output_item.done', output_index: 0, item: original },
@@ -367,16 +371,20 @@ test('private payload registered on the request is attached to the persisted row
 
 // --- snapshotMode tests ---
 
-test('snapshotMode=none: no snapshot written after terminal event', async () => {
+// "Skip the snapshot entirely" is no longer a mode passed at the call site —
+// it is the absence of writes in the store. `createResponsesHttpStore(_, false)`
+// supplies an empty `snapshotWrites` list, so `commitSnapshot` is a no-op even
+// when `wrapResponsesOutputForStorage` always calls it.
+test('store=false: snapshot is not written even though wrap always calls commitSnapshot', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_msg_snap_none', 'hi');
-  const store = createResponsesHttpStore(apiKeyId, undefined);
+  const store = createResponsesHttpStore(apiKeyId, false);
 
   const events = wrapWithStore(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
     { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_none' } },
-  ]), store, { snapshotMode: 'none' });
+  ]), store, { snapshotMode: 'append', responseId: 'resp_snap_none' });
 
   await collectEvents(events);
   const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_none');
