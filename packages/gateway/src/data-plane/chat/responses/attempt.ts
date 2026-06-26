@@ -88,9 +88,8 @@ export const responsesAttempt = {
     // storage end-to-end. A generate request carrying a `compaction_trigger`
     // input item produces a compaction-shape envelope at the upstream and
     // must also snapshot=replace.
-    const effectiveAction = invocation.action;
     const responseId = createStoredResponseId();
-    if (effectiveAction === 'compact') {
+    if (invocation.action === 'compact') {
       // Drain the events into a single envelope and return the value branch
       // so the http compact endpoint can JSON-encode it directly. Storage
       // still runs over the synthesized event stream so the snapshot is
@@ -111,10 +110,16 @@ export const responsesAttempt = {
       };
     }
 
-    const snapshotMode: ResponsesSnapshotMode = snapshotModeOverride
-      ?? (containsCompactionTrigger(normalized.input)
-        ? 'replace'
-        : (normalized.store === false ? 'none' : 'append'));
+    // The base mode comes from the caller's override (WS pins 'append',
+    // cross-protocol translation pins 'none') or, when absent (native HTTP),
+    // is derived from `payload.store`. A `compaction_trigger` in the input
+    // then upgrades the base to 'replace' — except when the base is 'none',
+    // which the translation-in path uses to opt out of inner persistence.
+    const baseSnapshotMode: ResponsesSnapshotMode = snapshotModeOverride
+      ?? (normalized.store === false ? 'none' : 'append');
+    const snapshotMode: ResponsesSnapshotMode = baseSnapshotMode !== 'none' && containsCompactionTrigger(normalized.input)
+      ? 'replace'
+      : baseSnapshotMode;
     // Persistence and id rewriting wrap the *outermost* stream — after every
     // interceptor (including the server-tool shim) has emitted its final
     // events. This is the only seam at which the gateway-owned response id
