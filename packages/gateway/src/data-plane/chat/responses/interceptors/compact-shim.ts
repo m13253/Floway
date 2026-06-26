@@ -111,11 +111,16 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
   // `protocols/responses/from-result.ts:14`.
   const { output_text: _droppedOutputText, ...upstreamBase } = upstream;
 
+  // `status`, `incomplete_details`, and `error` flow through verbatim from
+  // the spread: a summarization turn that hit `max_output_tokens` returns
+  // `status: 'incomplete'` with `incomplete_details.reason` set, and an
+  // upstream-side failure returns `status: 'failed'` with `error` populated.
+  // Synthesizing `status: 'completed'` would have the envelope confidently
+  // lie about the underlying turn's outcome.
   return {
     ...upstreamBase,
     id: `resp_compact_shim_${crypto.randomUUID()}`,
     object: 'response.compaction',
-    status: 'completed',
     output: [
       {
         type: 'compaction',
@@ -123,8 +128,6 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
         encrypted_content: encryptedContent,
       },
     ] as unknown as ResponsesResult['output'],
-    incomplete_details: null,
-    error: null,
   };
 };
 

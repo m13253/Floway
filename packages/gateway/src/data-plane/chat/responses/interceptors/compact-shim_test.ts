@@ -229,6 +229,48 @@ test('compact + flag on: upstream `output_text` SDK alias is dropped from the sy
   assertEquals(collected.output_text, undefined);
 });
 
+test('compact + flag on: upstream incomplete status propagates onto the synthesized envelope', async () => {
+  const inv = makeInvocation(
+    { input: [{ type: 'message', role: 'user', content: 'history' }] },
+    { action: 'compact' },
+  );
+
+  // Simulate a summarization turn that hit `max_output_tokens` mid-stream:
+  // the upstream returns `status: 'incomplete'` with `incomplete_details`
+  // populated. The synthesized envelope must surface that — not pretend the
+  // turn ran to completion.
+  const runIncomplete = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+    const response: ResponsesResult = {
+      id: 'resp_fake_upstream',
+      object: 'response',
+      model: 'test-upstream-model',
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+      output: [{
+        type: 'message',
+        id: 'msg_1',
+        role: 'assistant',
+        status: 'incomplete',
+        content: [{ type: 'output_text', text: 'partial summary' }],
+      }],
+      error: null,
+      usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+    };
+    return Promise.resolve(eventResult(
+      (async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+        yield eventFrame({ type: 'response.completed', sequence_number: 0, response });
+        yield doneFrame();
+      })(),
+      testTelemetryModelIdentity,
+    ));
+  };
+  const result = await withResponsesCompactShim(inv, stubCtx, runIncomplete);
+  if (result.type !== 'events') throw new Error('expected events branch');
+  const collected = await collectResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.status, 'incomplete');
+  assertEquals(collected.incomplete_details, { reason: 'max_output_tokens' });
+});
+
 test('compact + flag on: string input is materialized into one user-message item before the upstream call', async () => {
   const inv = makeInvocation(
     { input: 'a single string turn' as unknown as never },
