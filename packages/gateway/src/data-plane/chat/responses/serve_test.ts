@@ -11,7 +11,7 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // `enumerateProviderCandidates` is the only seam between serve and the
@@ -91,31 +91,13 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact?: (model: unknown, body: unknown) => Promise<{ ok: true; result: import('@floway-dev/protocols/responses').ResponsesResult; modelKey: string } | { ok: false; response: Response; modelKey: string }>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
-  const callResponsesGen = overrides.callResponses;
-  const callResponsesCompactFn = overrides.callResponsesCompact;
   const provider = stubProvider({
-    callResponses: (callResponsesGen || callResponsesCompactFn)
-      ? async (model, body, action, signal, opts) => {
-        if (action === 'compact') {
-          if (!callResponsesCompactFn) throw new Error('compact called but no callResponsesCompact stub provided');
-          const res = await callResponsesCompactFn(model, body);
-          return res.ok
-            ? { action: 'compact' as const, ok: true as const, result: res.result, modelKey: res.modelKey }
-            : { action: 'compact' as const, ok: false as const, response: res.response, modelKey: res.modelKey };
-        }
-        if (!callResponsesGen) throw new Error('generate called but no callResponses stub provided');
-        const stream = await callResponsesGen(model, body, signal, opts);
-        return stream.ok
-          ? { action: 'generate' as const, ok: true as const, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate' as const, ok: false as const, response: stream.response, modelKey: stream.modelKey };
-      }
-      : undefined,
+    callResponses: overrides.callResponses,
   });
   return {
     provider: {
@@ -156,8 +138,8 @@ test('generate routes a native Responses candidate end to end', async () => {
     sequence_number: 0,
     response: makeResponsesResult(),
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProtocolFrames([completed]),
     modelKey: 'test-model-key',
     headers: new Headers(),
@@ -187,12 +169,11 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponsesCompact = vi.fn(async () => ({
-    ok: true as const,
-    result: compactionResult,
-    modelKey: 'test-model-key',
-  }));
-  const candidate = makeCandidate({ upstream: 'up_a', callResponsesCompact });
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
   queueCandidates([candidate]);
 
   const result = await responsesServe.compact({
@@ -205,7 +186,8 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   assertEquals(result.type, 'result');
   if (result.type !== 'result') throw new Error('unreachable');
   assertEquals(result.result.object, 'response.compaction');
-  assertEquals(callResponsesCompact.mock.calls.length, 1);
+  assertEquals(callResponses.mock.calls.length, 1);
+  assertEquals(callResponses.mock.calls[0][2], 'compact');
 });
 
 test('generate stops at the first candidate even when it yields an upstream error', async () => {
@@ -213,16 +195,16 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+  const firstCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
   }));
   const completed: ResponsesStreamEvent = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeResponsesResult('resp_second'),
   };
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
+  const secondCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
   }));
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
@@ -537,10 +519,10 @@ test('generate falls through translate-out to chat-completions target', async ()
 test('generate reuses an existing input row when a later turn echoes the same user message', async () => {
   const repo = installRepo();
   let turn = 0;
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
     turn += 1;
     return {
-      ok: true,
+      action: 'generate', ok: true,
       events: makeProtocolFrames([{
         type: 'response.completed',
         sequence_number: 0,
@@ -576,4 +558,87 @@ test('generate reuses an existing input row when a later turn echoes the same us
   const turn2InputId = snap2.itemIds[0];
   if (turn1InputId === undefined || turn2InputId === undefined) throw new Error('expected each snapshot to start with a staged input item');
   assertEquals(turn2InputId, turn1InputId);
+});
+
+test('generate treats compaction_trigger-bearing input as compaction: snapshot replaces prior history with the compaction output alone, trigger reaches the wire but never stores a row', async () => {
+  const repo = installRepo();
+
+  // Seed a prior conversation: one user message + a snapshot pointing at it.
+  // The compacting turn references that snapshot via previous_response_id, so
+  // generate without the trigger would normally append [prior items + this
+  // turn's input + output] into the new snapshot. The trigger flips that to
+  // 'replace' so the new snapshot only carries the compaction blob — the
+  // whole point of compaction is to drop the prior history.
+  const priorMessageId = createStoredResponsesItemId('message');
+  await repo.responsesItems.insertMany([{
+    id: priorMessageId,
+    apiKeyId: API_KEY_ID,
+    upstreamId: null,
+    upstreamItemId: null,
+    itemType: 'message',
+    origin: 'input',
+    contentHash: null,
+    encryptedContentHash: null,
+    payload: { item: { type: 'message', id: priorMessageId, role: 'user', content: 'old turn' } },
+    createdAt: 1_000,
+    refreshedAt: 1_000,
+  }]);
+  await repo.responsesSnapshots.insert({
+    id: 'resp_before_compact',
+    apiKeyId: API_KEY_ID,
+    itemIds: [priorMessageId],
+    createdAt: 1_000,
+    refreshedAt: 1_000,
+  });
+
+  let receivedInput: unknown = null;
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+    receivedInput = (body as { input: unknown }).input;
+    return {
+      action: 'generate', ok: true,
+      events: makeProtocolFrames([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: {
+          ...makeResponsesResult(),
+          output: [{ type: 'compaction', id: 'upstream_cmp_id', encrypted_content: 'ENC' }] as unknown as ResponsesResult['output'],
+        },
+      }]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueCandidates([makeCandidate({ upstream: 'up_a', callResponses })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({
+      previous_response_id: 'resp_before_compact',
+      input: [{ type: 'compaction_trigger' }],
+    }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    headers: new Headers(),
+  });
+
+  if (result.type !== 'events') throw new Error('expected events');
+  const events = await collectEvents(result.events);
+  const completed = events.find(e => e.type === 'response.completed') as Extract<ResponsesStreamEvent, { type: 'response.completed' }>;
+  const responseId = completed.response.id;
+
+  // 'replace' semantics: only the new compaction row, no item_reference to
+  // priorMessageId and no row for the trigger. (The test would also throw
+  // outright at `stageInputItem` if the trigger early-return regressed,
+  // since createStoredResponsesItemId('compaction_trigger') has no prefix.)
+  const snap = await repo.responsesSnapshots.lookup(API_KEY_ID, responseId);
+  if (snap === null) throw new Error('expected snapshot to be persisted');
+  assertEquals(snap.itemIds.length, 1);
+  const onlyItemId = snap.itemIds[0];
+  if (onlyItemId === undefined) throw new Error('unreachable');
+  assertEquals(onlyItemId.startsWith('cmp_'), true);
+
+  // The trigger still reaches the upstream — the gateway only intercepts at
+  // the storage seam, not on the wire. The expanded prefix puts item_reference
+  // first, the trigger last.
+  if (!Array.isArray(receivedInput)) throw new Error('expected the wire input to be an array');
+  assertEquals((receivedInput.at(-1) as { type?: unknown })?.type, 'compaction_trigger');
 });

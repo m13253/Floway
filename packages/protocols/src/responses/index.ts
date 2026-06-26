@@ -57,6 +57,23 @@ export interface ResponsesCompactPayload {
   store?: boolean | null;
 }
 
+// Project a (possibly-wider) ResponsesPayload-shaped object into the strict
+// compact wire shape. Every native-compact provider terminal calls this
+// before dispatching to its upstream's `/responses/compact` endpoint, so a
+// post-chain action pivot that arrived carrying generate-only fields
+// (tools/temperature/reasoning/...) cannot leak them onto the compact wire.
+// `model` and `store` are caller-supplied at the dispatch site (model is
+// the resolved upstream id; store is gateway-only). `prompt_cache_retention`
+// only exists on the compact payload type today, so there is no
+// generate-side value to forward.
+export const toCompactPayloadShape = (payload: Omit<ResponsesPayload, 'model'>): Omit<ResponsesCompactPayload, 'model' | 'store'> => ({
+  input: payload.input,
+  ...(payload.instructions !== undefined && { instructions: payload.instructions }),
+  ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
+  ...(payload.prompt_cache_key !== undefined && { prompt_cache_key: payload.prompt_cache_key }),
+  ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
+});
+
 export type ResponsesInputItem =
   | ResponsesInputMessage
   | ResponsesFunctionToolCallItem

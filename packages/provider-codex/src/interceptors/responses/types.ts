@@ -9,8 +9,9 @@ export interface ResponsesBoundaryCtx {
   payload: ResponsesPayload;
   headers: Headers;
   readonly model: UpstreamModel;
-  // Mirrors the gateway-side `ResponsesInvocation.action`; the terminal
-  // handler reads it to dispatch generate vs compact. Mutable to match the
-  // gateway-side parallel.
+  // Mirrors the gateway-side ResponsesInvocation.action. Interceptors MAY
+  // mutate it during the chain to re-route dispatch in the terminal
+  // handler — the terminal reads `ctx.action`, not the parameter the
+  // provider was originally called with.
   action: ResponsesAction;
 }

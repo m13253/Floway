@@ -16,7 +16,15 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type ProviderCompactionResult, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+
+// Pre-tagging shape used by the unary compact backend call; the codex provider
+// terminal re-tags it onto the unified `ProviderResponsesResult` with
+// `action: 'compact'`. Other providers build the tagged compact variant
+// directly at their call sites, so the shape is provider-local.
+export type ProviderCompactionResult =
+  | { ok: true; result: ResponsesResult; modelKey: string }
+  | { ok: false; response: Response; modelKey: string };
 
 // Hooks for repo-side state transitions, applied with optimistic concurrency.
 // Refresh-token rotations and terminal-state transitions go through the repo;

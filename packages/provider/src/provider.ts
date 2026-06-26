@@ -76,11 +76,11 @@ export type ProviderStreamResult<TEvent> =
 // `response.compaction` envelope. Some upstreams expose a native compaction
 // endpoint and produce the envelope directly; others synthesize the envelope
 // from a regular /responses turn — both return the typed value rather than a
-// re-parsed synthesized SSE body. The unified discriminated result tags which
-// branch actually ran, so downstream consumers — snapshot mode in particular —
-// switch on the result rather than relying on the caller's input.
-// `ok: false` carries the raw upstream Response verbatim; see
-// `ProviderStreamResult` above for the boundary-relay contract.
+// re-parsed synthesized SSE body. The discriminated result tags which branch
+// actually ran so the gateway's shape-lowering can pick between the streaming
+// and value-envelope arms; snapshot mode itself reads `invocation.action` (the
+// post-chain caller intent), not the result tag.
+// The `ok: false` contract is identical to ProviderStreamResult above.
 export type ProviderResponsesResult =
   | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>; modelKey: string; headers?: Headers }
   | { action: 'generate'; ok: false; response: Response; modelKey: string }

@@ -45,7 +45,6 @@ export type {
   ModelProvider,
   ModelProviderInstance,
   ProviderCallResult,
-  ProviderCompactionResult,
   ProviderModelRecord,
   ProviderResponsesResult,
   ProviderStreamResult,

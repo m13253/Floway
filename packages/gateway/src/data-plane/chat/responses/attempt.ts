@@ -76,7 +76,7 @@ export const responsesAttempt = {
       headers,
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
-      await dispatchResponses(invocation, ctx, store, candidate));
+      await dispatchResponses(invocation, ctx));
 
     if (chainResult.type !== 'events') return chainResult;
 
@@ -192,13 +192,29 @@ const rewriteOrRenderFailure = async (
 const dispatchResponses = async (
   invocation: ResponsesInvocation,
   ctx: GatewayCtx,
-  store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const { candidate, store } = invocation;
   switch (candidate.targetApi) {
   case 'responses': {
-    const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
     const recorder = createUpstreamLatencyRecorder();
+    if (invocation.action === 'compact') {
+      // The compact wire body drops `stream` and `store` — `store` is a
+      // gateway-only snapshot-persistence hint that the upstream compact
+      // endpoint rejects, and `stream` is irrelevant on a non-streaming
+      // call. The generate branch leaves both fields on the body so the
+      // provider can decide for itself (every provider's streaming call
+      // forces stream=true anyway).
+      const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
+      const providerResult = await candidate.binding.provider.callResponses(
+        candidate.binding.upstreamModel,
+        body,
+        invocation.action,
+        ctx.abortSignal,
+        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+      );
+      return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
+    }
+    const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.binding.provider.callResponses(
       candidate.binding.upstreamModel,
       body,
