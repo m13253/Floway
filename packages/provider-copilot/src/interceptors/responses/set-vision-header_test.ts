@@ -17,6 +17,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 test('Responses vision header set when an input_image block is present on a top-level message', async () => {
