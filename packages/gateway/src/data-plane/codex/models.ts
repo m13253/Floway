@@ -29,7 +29,7 @@ import type { Context } from 'hono';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
 import { parseCodexVersion, resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
-import { synthesizeCatalogEntry } from './synthesize.ts';
+import { synthesizeCatalogEntry, deriveServiceTiers } from './synthesize.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -80,7 +80,7 @@ export const computeCatalog = (
       // Registry-derived tiers win over bundled: a tier we can bill must
       // have unit prices in the registry, so any bundled tier we lack
       // pricing for cannot be surfaced to the client.
-      cloned.service_tiers = Object.keys(im.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
+      cloned.service_tiers = deriveServiceTiers(im);
       models.push(cloned);
       // The alias entry itself does not trigger an extra alias append. Only a
       // registry model whose public id is exactly the alias target triggers it

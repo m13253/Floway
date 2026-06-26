@@ -9,6 +9,12 @@ import type { InternalModel, Modality } from '@floway-dev/provider';
 
 const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
 
+// Registry-derived: each key in cost.tiers is a billable tier wire-id. Names
+// mirror ids and descriptions are blank — Floway does not yet carry tier
+// metadata, and Codex only needs the id to round-trip the selection.
+export const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
+  Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
+
 export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
   const inputModalities = model.chat?.modalities?.input ?? BASELINE_INPUT_MODALITIES;
   const hasImage = inputModalities.includes('image');
@@ -55,8 +61,7 @@ export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
     effective_context_window_percent: 95,
     experimental_supported_tools: [],
     additional_speed_tiers: [],
-    // Registry-derived: each key in cost.tiers is a billable tier wire-id.
-    service_tiers: Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' })),
+    service_tiers: deriveServiceTiers(model),
     priority: 0,
     visibility: 'list',
     availability_nux: null,
