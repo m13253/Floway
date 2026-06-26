@@ -133,6 +133,18 @@ test('messages: effort lands on output_config, budget+adaptive land on thinking'
   assertEquals(body.verbosity, 'low');
 });
 
+test('messages: summary has no Anthropic-shaped slot — silently dropped', () => {
+  // The Messages IR has no reasoning_summary field; the helper must NOT
+  // surface the value onto thinking/output_config/metadata. Pinning the
+  // drop here so a later contributor doesn't wire summary onto a
+  // protocol that can't carry it.
+  const body = msgPayload();
+  applyChatRulesToMessages(body, { reasoning: { summary: 'detailed' } });
+  assertEquals(body.thinking, undefined);
+  assertEquals(body.output_config, undefined);
+  assertEquals(body.metadata, undefined);
+});
+
 test('messages: adaptive=true sets thinking.type=adaptive and ignores budget_tokens', () => {
   const body = msgPayload();
   applyChatRulesToMessages(body, { reasoning: { adaptive: true, budget_tokens: 4096 } });
