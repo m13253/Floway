@@ -51,8 +51,6 @@ const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | nul
   return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
 };
 
-// Pure function over already-resolved inputs — the request handler does the
-// I/O, this does the catalog shape.
 export const computeCatalog = (
   bundled: CodexCatalog,
   internalModels: readonly InternalModel[],
@@ -70,9 +68,12 @@ export const computeCatalog = (
   };
 
   const models: CatalogModel[] = [];
+  const slugContextWindow = new Map<string, number>();
   let aliasActive = false;
   for (const im of internalModels) {
     if (im.kind !== 'chat') continue;
+    const limit = im.limits.max_context_window_tokens;
+    if (typeof limit === 'number') slugContextWindow.set(im.id, limit);
     const hit = matchBundled(im.id);
     if (hit) {
       const cloned: CatalogModel = { ...hit, slug: im.id };
@@ -99,11 +100,6 @@ export const computeCatalog = (
       throw new Error(`Bundled Codex catalog missing required alias entry for slug "${CODEX_AUTO_REVIEW_ALIAS}"`);
     }
     models.push({ ...aliasEntry });
-  }
-  const slugContextWindow = new Map<string, number>();
-  for (const m of internalModels) {
-    const limit = m.limits.max_context_window_tokens;
-    if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
   }
   const contextWindowOf: ContextWindowResolver = slug =>
     slugContextWindow.get(slug === CODEX_AUTO_REVIEW_ALIAS ? CODEX_AUTO_REVIEW_TARGET : slug) ?? null;
