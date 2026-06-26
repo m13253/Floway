@@ -84,8 +84,8 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   }
 
   try {
-    const accessToken = await ensureAccessToken(opts);
-    return { ok: true, accessToken };
+    const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
+    return { ok: true, accessToken: entry.token };
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
@@ -97,11 +97,6 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
 
 const mintAccessToken = (opts: CodexBackendCallBase, refreshToken: string) =>
   mintCodexAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
-
-const ensureAccessToken = async (opts: CodexBackendCallBase): Promise<string> => {
-  const entry = await ensureCodexAccessToken(opts.upstreamId, opts.account.chatgptAccountId, refresh => mintAccessToken(opts, refresh));
-  return entry.token;
-};
 
 // One upstream round-trip with quota-header persistence and terminal-401
 // classification. The returned Response is what the caller relays:
