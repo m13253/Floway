@@ -31,15 +31,20 @@ const title = computed(() => {
   return props.alias.name;
 });
 
-const caption = computed(() => {
-  const parts: string[] = [
-    props.alias.name,
-    `${props.alias.targets.length} target${props.alias.targets.length === 1 ? '' : 's'}`,
-    props.alias.selection,
-  ];
-  if (!props.alias.visible_in_models_list) parts.push('hidden from /v1/models');
-  return parts.join(' · ');
-});
+const KIND_LABELS: Record<ModelAlias['kind'], string> = {
+  chat: 'Chat',
+  embedding: 'Embedding',
+  image: 'Image',
+};
+
+const SELECTION_LABELS: Record<ModelAlias['selection'], string> = {
+  'first-available': 'First available',
+  random: 'Random',
+};
+
+const kindLabel = computed(() => KIND_LABELS[props.alias.kind]);
+const selectionLabel = computed(() => SELECTION_LABELS[props.alias.selection]);
+const targetCountLabel = computed(() => `${props.alias.targets.length} target${props.alias.targets.length === 1 ? '' : 's'}`);
 
 const shadowWarning = computed(() => computeShadowWarning(props.alias.name, props.alias.targets, props.models));
 const shadowTooltip = computed(() => {
@@ -55,7 +60,9 @@ const shadowTooltip = computed(() => {
     <div class="flex items-start gap-3">
       <div class="min-w-0 flex-1">
         <h4 class="truncate text-sm font-semibold text-white">{{ title }}</h4>
-        <p class="mt-0.5 truncate font-mono text-xs text-gray-500">{{ caption }}</p>
+        <p class="mt-0.5 truncate text-xs text-gray-500">
+          <span class="font-mono">{{ alias.name }}</span> · {{ kindLabel }} · {{ targetCountLabel }} · {{ selectionLabel }}<template v-if="!alias.visible_in_models_list"> · hidden from <code class="font-mono">/v1/models</code></template>
+        </p>
       </div>
 
       <div class="flex shrink-0 items-center gap-1">

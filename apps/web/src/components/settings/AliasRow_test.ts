@@ -57,7 +57,7 @@ describe('AliasRow', () => {
     expect(multi.find('h4').text()).toBe('gizmo');
   });
 
-  it('formats the caption: name · N targets · selection (and optional hidden suffix)', () => {
+  it('formats the caption: name · Kind · N targets · Selection (and optional hidden suffix)', () => {
     const w = mount(AliasRow, {
       props: {
         alias: alias({
@@ -72,12 +72,12 @@ describe('AliasRow', () => {
         models: [],
       },
     });
-    expect(w.find('p').text()).toBe('auto-review · 2 targets · random · hidden from /v1/models');
+    expect(w.find('p').text()).toBe('auto-review · Chat · 2 targets · Random · hidden from /v1/models');
 
     const sole = mount(AliasRow, {
       props: { alias: alias({ name: 'one' }), models: [] },
     });
-    expect(sole.find('p').text()).toBe('one · 1 target · first-available');
+    expect(sole.find('p').text()).toBe('one · Chat · 1 target · First available');
   });
 
   it('emits edit on the pencil button and delete on the trash button', async () => {
