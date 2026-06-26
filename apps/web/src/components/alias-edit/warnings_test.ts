@@ -36,6 +36,16 @@ describe('findCatalogModel', () => {
     expect(findCatalogModel(catalog, 'claude')?.id).toBe('claude');
     expect(findCatalogModel(catalog, 'unknown')).toBeUndefined();
   });
+
+  it('skips alias rows that share an id with a target — they never re-enter the alias layer at runtime', () => {
+    // Both rows share id 'auto-review' (the alias name shadowing nothing
+    // real). findCatalogModel must not return the alias entry — its
+    // capability metadata is the wrong source for a real-model rule
+    // warning. computeModelWarnings should treat the id as unknown
+    // instead.
+    const catalog: ControlPlaneModel[] = [aliasModel({ id: 'auto-review' })];
+    expect(findCatalogModel(catalog, 'auto-review')).toBeUndefined();
+  });
 });
 
 describe('computeModelWarnings', () => {
