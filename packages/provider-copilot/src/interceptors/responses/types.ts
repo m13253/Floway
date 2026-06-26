@@ -7,14 +7,14 @@ import type { ExecuteResult, ProviderResponsesResult, ResponsesAction, UpstreamM
 // the boundary-isolation rationale. The same ctx shape feeds both the
 // streaming `/responses` chain and the non-streaming compaction (synth-via-
 // trigger) chain; the difference is the result type the terminal produces,
-// which is the type parameter on the interceptor aliases below. The
-// `action` tag mirrors the gateway-side ResponsesInvocation so a future
-// Copilot-side interceptor could pivot just like the gateway shim — today
-// it is read-only on the wire-shape terminal.
+// which is the type parameter on the interceptor aliases below.
 export interface ResponsesBoundaryCtx {
   payload: ResponsesPayload;
   headers: Headers;
   readonly model: UpstreamModel;
+  // Mirrors the gateway-side `ResponsesInvocation.action`; the terminal
+  // handler reads it to dispatch generate vs compact. Mutable to match the
+  // gateway-side parallel.
   action: ResponsesAction;
 }
 
