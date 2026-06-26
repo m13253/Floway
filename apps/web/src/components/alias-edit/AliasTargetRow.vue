@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One target row inside the alias edit dialog.
 
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
 import type { AliasKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
@@ -72,8 +72,14 @@ const setServiceTier = (raw: string) => {
 // String-bound view of the integer budget. Keeping the typed string in
 // state means an in-progress "" or "1024foo" doesn't clobber the
 // underlying numeric value mid-keystroke; the rules object only updates
-// when the parsed number is a finite integer.
+// when the parsed number is a finite integer. The watch syncs the input
+// back to the parent's value when the parent resets the rule object (e.g.
+// the dialog switches `kind` and re-initialises every target row's rules).
 const budgetText = ref(chatRules.value.reasoning?.budget_tokens === undefined ? '' : String(chatRules.value.reasoning.budget_tokens));
+watch(() => chatRules.value.reasoning?.budget_tokens, parsed => {
+  const next = parsed === undefined ? '' : String(parsed);
+  if (next !== budgetText.value.trim()) budgetText.value = next;
+});
 const onBudgetChange = (raw: string) => {
   budgetText.value = raw;
   const trimmed = raw.trim();

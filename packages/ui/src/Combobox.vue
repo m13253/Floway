@@ -72,11 +72,13 @@ const normalizedItems = computed<NormalizedItem[]>(() => props.items.map(it =>
 const query = ref(value.value);
 watch(value, v => { if (v !== query.value) query.value = v; });
 
-// Free-form commit: any keystroke or blur sets the model to the current
-// query so the dialog's submit handler always reads the latest typed text,
-// even when the operator never clicks a suggestion row. ComboboxRoot's
-// own onChange path still fires for clicked rows and just re-writes the
-// same value.
+// Single writer: every keystroke pushes the raw query into `value` so the
+// save gate of any consuming dialog reflects what the operator typed
+// without waiting for blur. Trimming is the caller's job — doing it here
+// would clip a trailing space mid-keystroke and force the operator to
+// re-press space to keep typing. ComboboxRoot's own onChange path still
+// fires for clicked rows and just re-writes the same value via this
+// watch.
 watch(query, q => { value.value = q; });
 
 // Always show every suggestion; rank items whose label or value contains the
@@ -106,10 +108,10 @@ const open = ref(false);
 
 // Reka's Combobox only registers items present in the DOM. When the operator
 // types a brand-new value, surface a synthesized "Use 'foo'" row so the
-// arrow keys + Enter path still commits it. Without this row Enter on a
-// brand-new value falls back to default form behavior.
+// arrow keys + Enter path still commits it. The `watch(query)` above is
+// the sole writer to `value`; this handler just closes the popover after
+// the operator confirms.
 const commitTyped = async () => {
-  value.value = trimmedQuery.value;
   open.value = false;
   await nextTick();
 };
