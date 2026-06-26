@@ -15,13 +15,26 @@ const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; read
 const lastCandidatesCall: { model?: string } = {};
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+  const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async (args: { model: string }) => {
-      lastCandidatesCall.model = args.model;
+    enumerateProviderCandidates: vi.fn(async (args: { model: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
+      // Mirror the real entry's alias resolution so the rule-overlay test
+      // sees the resolved target id reach the candidates layer and the
+      // serve overlays rules from the returned `aliasResolution`. Tests
+      // queue the resolution via `aliasResolutionQueue`.
+      const aliasResolution = await resolveAlias({
+        modelName: args.model,
+        providers: [],
+        fetcherForUpstream: () => directFetcher,
+        scheduler: args.scheduler,
+        repo: { getByName: () => Promise.resolve(null) } as never,
+      });
+      const effectiveModel = aliasResolution?.targetModelId ?? args.model;
+      lastCandidatesCall.model = effectiveModel;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return next;
+      return { ...next, failedUpstreams: [], ...(aliasResolution !== null ? { aliasResolution } : {}) };
     }),
   };
 });

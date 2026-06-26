@@ -1,8 +1,8 @@
 import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
+import { ALIAS_RESPONSE_HEADER, applyChatRulesToGemini } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-import { resolveAndApplyAliasForGemini } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
@@ -33,22 +33,27 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    let model: string;
+    let enumerated;
     try {
-      model = await resolveAndApplyAliasForGemini(args.model, payload, ctx);
+      enumerated = await enumerateProviderCandidates({
+        upstreamIds: ctx.upstreamIds,
+        model: args.model,
+        // Gemini has no native upstream target in the provider API; prefer
+        // Chat Completions, then Messages, then Responses.
+        pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+      });
     } catch (error) {
       if (error instanceof AliasNoTargetAvailableError) return renderGeminiFailure(aliasFailureFromError(error), 'generate');
       throw error;
     }
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
-      upstreamIds: ctx.upstreamIds,
-      model,
-      // Gemini has no native upstream target in the provider API; prefer
-      // Chat Completions, then Messages, then Responses.
-      pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
+    const model = aliasResolution?.targetModelId ?? args.model;
+    if (aliasResolution) {
+      applyChatRulesToGemini(payload, aliasResolution.rules);
+      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    }
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
 
@@ -70,23 +75,28 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
-    let model: string;
+    let enumerated;
     try {
-      model = await resolveAndApplyAliasForGemini(args.model, payload, ctx);
+      enumerated = await enumerateProviderCandidates({
+        upstreamIds: ctx.upstreamIds,
+        model: args.model,
+        // Gemini countTokens has no native upstream support; only providers
+        // exposing the Messages endpoint qualify because we translate Gemini
+        // → Messages and call Messages count_tokens upstream.
+        pickTarget: endpoints => endpoints.messages ? 'messages' : null,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+      });
     } catch (error) {
       if (error instanceof AliasNoTargetAvailableError) return renderGeminiFailure(aliasFailureFromError(error), 'countTokens');
       throw error;
     }
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
-      upstreamIds: ctx.upstreamIds,
-      model,
-      // Gemini countTokens has no native upstream support; only providers
-      // exposing the Messages endpoint qualify because we translate Gemini
-      // → Messages and call Messages count_tokens upstream.
-      pickTarget: endpoints => endpoints.messages ? 'messages' : null,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
+    const model = aliasResolution?.targetModelId ?? args.model;
+    if (aliasResolution) {
+      applyChatRulesToGemini(payload, aliasResolution.rules);
+      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    }
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
 

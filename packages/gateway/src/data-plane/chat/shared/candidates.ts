@@ -1,4 +1,6 @@
 import { createPerRequestFetcher } from '../../../dial/per-request.ts';
+import { getRepo } from '../../../repo/index.ts';
+import { type AliasResolution, resolveAlias } from '../../model-aliases/resolve.ts';
 import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
@@ -13,7 +15,10 @@ export type ChatCandidate = ProviderCandidate;
 // "model is missing entirely" failure from "model exists but does not
 // expose the endpoint this source needs", plus the names of upstreams
 // whose catalog fetch rejected this round so the caller's failure
-// renderer can surface them parenthetically.
+// renderer can surface them parenthetically. Alias resolution runs inside
+// this entry — if the inbound id is an alias, the resolution is returned
+// on `aliasResolution` so the caller can overlay rules onto the IR and
+// stage the `x-floway-alias` response header.
 export const enumerateProviderCandidates = async ({
   upstreamIds, model, pickTarget, scheduler, currentColo,
 }: {
@@ -29,9 +34,28 @@ export const enumerateProviderCandidates = async ({
   // into the per-request fetcher so colo-scoped fallback entries can be
   // honoured at dial time.
   currentColo: string;
-}): Promise<{ readonly candidates: readonly ChatCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }> => {
+}): Promise<{
+  readonly candidates: readonly ChatCandidate[];
+  readonly sawModel: boolean;
+  readonly failedUpstreams: readonly string[];
+  readonly aliasResolution?: AliasResolution;
+}> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
+
+  // Alias resolution runs above prefix routing so every data-plane endpoint
+  // sees the same alias surface. The target id is fed verbatim into prefix
+  // routing; alias names never re-enter the alias layer.
+  // `AliasNoTargetAvailableError` propagates so the chat serve's catch maps
+  // it to its protocol-native 404.
+  const aliasResolution = await resolveAlias({
+    modelName: model,
+    providers,
+    fetcherForUpstream,
+    scheduler,
+    repo: getRepo().modelAliases,
+  });
+  const effectiveModel = aliasResolution?.targetModelId ?? model;
 
   // Each (provider, lookupId) interpretation describes one way the inbound
   // id can address an upstream — bare form for `[unprefixed]`-addressable
@@ -41,7 +65,7 @@ export const enumerateProviderCandidates = async ({
   // `resolveModelForRequest`; first-viable-wins ordering follows configured
   // sort_order across upstreams, with the unprefixed interpretation pushed
   // before the prefixed one within a single upstream.
-  const interpretations = enumerateModelInterpretations(model, providers);
+  const interpretations = enumerateModelInterpretations(effectiveModel, providers);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
 
   const candidates: ChatCandidate[] = [];
@@ -54,5 +78,10 @@ export const enumerateProviderCandidates = async ({
     candidates.push({ provider, binding: resolved.binding, targetApi, fetcher: fetcherForUpstream(provider.upstream) });
   }
 
-  return { candidates, sawModel, failedUpstreams };
+  return {
+    candidates,
+    sawModel,
+    failedUpstreams,
+    ...(aliasResolution !== null ? { aliasResolution } : {}),
+  };
 };

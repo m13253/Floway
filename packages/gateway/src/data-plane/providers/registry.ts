@@ -1,5 +1,6 @@
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
+import { type AliasResolution, resolveAlias } from '../model-aliases/resolve.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -277,6 +278,12 @@ interface ModelResolution {
   // surfaces, but inlined into the per-request 404/400 so a client sees
   // why their model might be temporarily missing.
   failedUpstreams: readonly string[];
+  // Set when the inbound id resolved through the alias layer. Callers
+  // stage the `x-floway-alias` response header from this and ignore it
+  // otherwise. `AliasNoTargetAvailableError` is thrown out of
+  // `resolveModelForRequest` itself when the alias exists but has no
+  // routable target, and is caught at each protocol's serve seam.
+  aliasResolution?: AliasResolution;
 }
 
 export interface ProviderModelResolution {
@@ -369,9 +376,27 @@ export const resolveModelForRequest = async (
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  const interpretations = enumerateModelInterpretations(modelId, providers);
+  // Alias resolution runs above prefix routing so every data-plane endpoint
+  // sees the same alias surface. The target id is then fed verbatim back
+  // into prefix routing; alias names never re-enter the alias layer.
+  // `AliasNoTargetAvailableError` propagates so the protocol's catch maps
+  // it to its native 404.
+  const aliasResolution = await resolveAlias({
+    modelName: modelId,
+    providers,
+    fetcherForUpstream,
+    scheduler,
+    repo: getRepo().modelAliases,
+  });
+  const effectiveModelId = aliasResolution?.targetModelId ?? modelId;
+
+  const interpretations = enumerateModelInterpretations(effectiveModelId, providers);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
+  return {
+    matches: resolutions.map(r => r.resolved),
+    failedUpstreams,
+    ...(aliasResolution !== null ? { aliasResolution } : {}),
+  };
 };
 
 export const resolveModelForProvider = async (

@@ -1,8 +1,8 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
+import { ALIAS_RESPONSE_HEADER, applyChatRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-import { resolveAndApplyAliasForChatCompletions } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
@@ -21,23 +21,29 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    let enumerated;
     try {
-      await resolveAndApplyAliasForChatCompletions(payload, ctx);
+      enumerated = await enumerateProviderCandidates({
+        upstreamIds: ctx.upstreamIds,
+        model: payload.model,
+        pickTarget: endpoints =>
+          endpoints.chatCompletions ? 'chat-completions'
+            : endpoints.messages ? 'messages'
+              : endpoints.responses ? 'responses'
+                : null,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+      });
     } catch (error) {
       if (error instanceof AliasNoTargetAvailableError) return renderChatCompletionsFailure(aliasFailureFromError(error));
       throw error;
     }
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
-      upstreamIds: ctx.upstreamIds,
-      model: payload.model,
-      pickTarget: endpoints =>
-        endpoints.chatCompletions ? 'chat-completions'
-          : endpoints.messages ? 'messages'
-            : endpoints.responses ? 'responses'
-              : null,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
+    if (aliasResolution) {
+      payload.model = aliasResolution.targetModelId;
+      applyChatRulesToChatCompletions(payload, aliasResolution.rules);
+      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    }
     const decision = await planChatCompletionsRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderChatCompletionsFailure(decision.failure);
 

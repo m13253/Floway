@@ -1,8 +1,8 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
+import { ALIAS_RESPONSE_HEADER, applyChatRulesToMessages } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-import { resolveAndApplyAliasForMessages } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
@@ -28,23 +28,29 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    let enumerated;
     try {
-      await resolveAndApplyAliasForMessages(payload, ctx);
+      enumerated = await enumerateProviderCandidates({
+        upstreamIds: ctx.upstreamIds,
+        model: payload.model,
+        pickTarget: endpoints =>
+          endpoints.messages ? 'messages'
+            : endpoints.responses ? 'responses'
+              : endpoints.chatCompletions ? 'chat-completions'
+                : null,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+      });
     } catch (error) {
       if (error instanceof AliasNoTargetAvailableError) return renderMessagesFailure(aliasFailureFromError(error), 'generate');
       throw error;
     }
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
-      upstreamIds: ctx.upstreamIds,
-      model: payload.model,
-      pickTarget: endpoints =>
-        endpoints.messages ? 'messages'
-          : endpoints.responses ? 'responses'
-            : endpoints.chatCompletions ? 'chat-completions'
-              : null,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
+    if (aliasResolution) {
+      payload.model = aliasResolution.targetModelId;
+      applyChatRulesToMessages(payload, aliasResolution.rules);
+      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    }
     const decision = await planMessagesRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
 
@@ -66,19 +72,25 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
+    let enumerated;
     try {
-      await resolveAndApplyAliasForMessages(payload, ctx);
+      enumerated = await enumerateProviderCandidates({
+        upstreamIds: ctx.upstreamIds,
+        model: payload.model,
+        pickTarget: endpoints => endpoints.messages ? 'messages' : null,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+      });
     } catch (error) {
       if (error instanceof AliasNoTargetAvailableError) return renderMessagesFailure(aliasFailureFromError(error), 'countTokens');
       throw error;
     }
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
-      upstreamIds: ctx.upstreamIds,
-      model: payload.model,
-      pickTarget: endpoints => endpoints.messages ? 'messages' : null,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
+    if (aliasResolution) {
+      payload.model = aliasResolution.targetModelId;
+      applyChatRulesToMessages(payload, aliasResolution.rules);
+      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+    }
     const decision = await planMessagesRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
 

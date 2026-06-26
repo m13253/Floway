@@ -24,6 +24,8 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
+import { ALIAS_RESPONSE_HEADER } from '../model-aliases/apply.ts';
+import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -128,8 +130,23 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // the inbound public id. Iteration order follows configured sort_order
     // across upstreams, with the unprefixed interpretation pushed before the
     // prefixed one within a single upstream. The first match whose binding
-    // satisfies the endpoint capability wins.
-    const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    // satisfies the endpoint capability wins. `resolveModelForRequest` also
+    // owns alias resolution: when the inbound id is an alias, the returned
+    // `aliasResolution` carries the original alias name (for the response
+    // header) and the targets feeding `matches` are the alias's resolved
+    // target id; `AliasNoTargetAvailableError` propagates as the 404 below.
+    let resolution;
+    try {
+      resolution = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+    } catch (e) {
+      if (e instanceof AliasNoTargetAvailableError) {
+        ctx.dump?.error('gateway');
+        return passthroughApiError(c, e.message, 404);
+      }
+      throw e;
+    }
+    const { matches, failedUpstreams, aliasResolution } = resolution;
+    if (aliasResolution) ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);

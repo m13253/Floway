@@ -1,25 +1,22 @@
-// Behavioral coverage for the alias resolver. Mocks `providers/registry.ts`
-// + the per-request fetcher so each test can hand-script which target
-// model ids look routable; the resolver itself runs unmocked, so its
-// filter logic (kind match, availability, selection strategy) is the
-// thing under test.
+// Behavioral coverage for the alias resolver. Mocks the lower-layer
+// catalog seam (`enumerateModelInterpretations` + `collectInterpretationOutcomes`
+// out of `providers/registry.ts`) so each test can hand-script which
+// target model ids look routable; the resolver itself runs unmocked, so
+// its filter logic (availability, selection strategy) is the thing under
+// test. The resolver is endpoint-blind — a target is routable iff it
+// resolves to ANY enabled binding — so the mock no longer differentiates
+// endpoints.
 
 import { test, vi } from 'vitest';
 
 import type { ModelAliasRecord, ModelAliasesRepo } from '../../repo/types.ts';
 import type { ModelInterpretation, ProviderModelResolution } from '../providers/registry.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-// Avoid the real `listModelProviders` (which reads the global repo) and the
-// real `collectInterpretationOutcomes` (which goes through the per-request
-// fetcher cache). The mocks let each test stamp which target_model_ids are
-// "routable" right now and which endpoints they expose.
-const routableModels = new Map<string, { endpoints: Record<string, unknown> }>();
-const ALWAYS_ROUTABLE_ENDPOINTS = { chatCompletions: {}, responses: {}, messages: {} };
+const routableModels = new Set<string>();
 
 vi.mock('../providers/registry.ts', () => ({
-  listModelProviders: vi.fn(async () => [{ upstream: 'u_test', name: 'u_test', modelPrefix: null }]),
   enumerateModelInterpretations: vi.fn((modelId: string, providers: readonly { upstream: string }[]): ModelInterpretation[] =>
     providers.map(p => ({ provider: p, lookupId: modelId } as unknown as ModelInterpretation))),
   collectInterpretationOutcomes: vi.fn(async (interpretations: readonly { provider: { upstream: string }; lookupId: string }[]) => ({
@@ -29,16 +26,12 @@ vi.mock('../providers/registry.ts', () => ({
         provider: i.provider,
         resolved: {
           id: i.lookupId,
-          model: { id: i.lookupId, endpoints: routableModels.get(i.lookupId)!.endpoints },
-          binding: { upstream: i.provider.upstream, upstreamModel: { id: i.lookupId, endpoints: routableModels.get(i.lookupId)!.endpoints } },
+          model: { id: i.lookupId, endpoints: {} },
+          binding: { upstream: i.provider.upstream, upstreamModel: { id: i.lookupId, endpoints: {} } },
         } as unknown as ProviderModelResolution,
       })),
     failedUpstreams: [],
   })),
-}));
-
-vi.mock('../../dial/per-request.ts', () => ({
-  createPerRequestFetcher: vi.fn(async () => () => directFetcher),
 }));
 
 const { resolveAlias, AliasNoTargetAvailableError } = await import('./resolve.ts');
@@ -65,16 +58,18 @@ const aliasRecord = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecor
   ...overrides,
 });
 
+const fetcherForUpstream: (upstreamId: string) => Fetcher = () => directFetcher;
+const providers = [{ upstream: 'u_test', name: 'u_test', modelPrefix: null }] as unknown as Parameters<typeof resolveAlias>[0]['providers'];
+
 const RESOLVE_DEFAULTS = {
-  endpointKind: 'chat' as const,
-  upstreamIds: null,
+  providers,
+  fetcherForUpstream,
   scheduler: () => {},
-  currentColo: 'TEST',
 };
 
 const setRoutable = (...ids: string[]): void => {
   routableModels.clear();
-  for (const id of ids) routableModels.set(id, { endpoints: ALWAYS_ROUTABLE_ENDPOINTS });
+  for (const id of ids) routableModels.add(id);
 };
 
 test('returns null when no alias matches the inbound name', async () => {
@@ -87,7 +82,7 @@ test('returns null when no alias matches the inbound name', async () => {
   assertEquals(result, null);
 });
 
-test('returns the target and rules when kind matches and a single target is available', async () => {
+test('returns the target and rules when a single target is available', async () => {
   setRoutable('gpt-5.4');
   const result = await resolveAlias({
     ...RESOLVE_DEFAULTS,
@@ -98,17 +93,6 @@ test('returns the target and rules when kind matches and a single target is avai
   assertEquals(result.targetModelId, 'gpt-5.4');
   assertEquals(result.aliasName, 'gpt-fast');
   assertEquals(result.rules, { reasoning: { effort: 'low' } });
-});
-
-test('returns null when the alias kind does not match the inbound endpoint group', async () => {
-  setRoutable('gpt-5.4');
-  const result = await resolveAlias({
-    ...RESOLVE_DEFAULTS,
-    endpointKind: 'embedding',
-    modelName: 'gpt-fast',
-    repo: stubRepoFor(aliasRecord()),
-  });
-  assertEquals(result, null);
 });
 
 test('throws AliasNoTargetAvailableError when the alias exists but no target is currently routable', async () => {
@@ -206,31 +190,4 @@ test('shadow pattern: alias falls back to the second target when the real model 
   assert(result !== null);
   assertEquals(result.targetModelId, 'gpt-5.4');
   assertEquals(result.rules, { reasoning: { effort: 'low' } });
-});
-
-test('embedding-kind alias accepts only embedding endpoints', async () => {
-  routableModels.clear();
-  routableModels.set('text-embedding-3', { endpoints: { embeddings: {} } });
-  routableModels.set('gpt-5.4', { endpoints: ALWAYS_ROUTABLE_ENDPOINTS });
-
-  const okResult = await resolveAlias({
-    ...RESOLVE_DEFAULTS,
-    endpointKind: 'embedding',
-    modelName: 'embed-fast',
-    repo: stubRepoFor(aliasRecord({ name: 'embed-fast', kind: 'embedding', targets: [{ target_model_id: 'text-embedding-3', rules: {} }] })),
-  });
-  assert(okResult !== null);
-  assertEquals(okResult.targetModelId, 'text-embedding-3');
-
-  await assertRejects(
-    () => resolveAlias({
-      ...RESOLVE_DEFAULTS,
-      endpointKind: 'embedding',
-      modelName: 'embed-fast',
-      // gpt-5.4 is in the catalog but only exposes chat endpoints, so it
-      // cannot satisfy an embedding-kind alias.
-      repo: stubRepoFor(aliasRecord({ name: 'embed-fast', kind: 'embedding', targets: [{ target_model_id: 'gpt-5.4', rules: {} }] })),
-    }),
-    AliasNoTargetAvailableError,
-  );
 });
