@@ -4,7 +4,7 @@ import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
-import type { StatefulResponsesStore } from './items/store.ts';
+import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
@@ -37,7 +37,11 @@ export interface ResponsesAttemptInvokeArgs {
 // inner call summarizes against SUMMARIZATION_PROMPT, then re-tags
 // `invocation.action` back to 'compact' before returning). Post-chain the
 // final `invocation.action` is what drives snapshot mode ('replace' for
-// compact, 'append' for generate). Where those writes actually land —
+// compact, 'append' for generate — with one exception: a generate call whose
+// input still carries a `compaction_trigger` is Codex CLI's RemoteCompactionV2
+// path, semantically a compact even though the action stayed 'generate', so
+// the snapshot reduces to the compaction output alone — see
+// `containsCompactionTrigger` below). Where those writes actually land —
 // durable repo, WS session memory, or nowhere — is fully owned by the
 // store factory the caller supplied (see items/store.ts factories).
 export const responsesAttempt = {
@@ -74,10 +78,12 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    // Snapshot mode is derived from the post-chain action recorded on the
+    // Snapshot mode is steered by the post-chain action recorded on the
     // invocation. Interceptors that mutate the action (compact-shim flips
     // 'compact'→'generate' for the inner call and back to 'compact' for the
-    // outer result) therefore steer storage end-to-end.
+    // outer result) therefore steer storage end-to-end. The generate branch
+    // has one extra wrinkle handled below — a trigger item that survived
+    // the chain forces a 'replace' snapshot.
     const effectiveAction = invocation.action;
     const responseId = createStoredResponseId();
     if (effectiveAction === 'compact') {
@@ -109,11 +115,12 @@ export const responsesAttempt = {
     // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
     // is committed under the same id so the next turn's
     // `previous_response_id` lookup is guaranteed to hit.
+    const snapshotMode: ResponsesSnapshotMode = containsCompactionTrigger(normalized.input) ? 'replace' : 'append';
     return eventResult(
       wrapResponsesOutputForStorage(chainResult.events, {
         store,
         upstream: candidate.binding.upstream,
-        snapshotMode: 'append',
+        snapshotMode,
         targetApi: candidate.targetApi,
         responseId,
       }),
@@ -143,6 +150,18 @@ export const responsesAttempt = {
 type RewriteOutcome =
   | RewrittenResponsesPayload
   | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
+
+// Codex CLI's RemoteCompactionV2 performs compaction through `/v1/responses`
+// itself by appending a `compaction_trigger` control item to the input;
+// semantically it is the same operation as `/responses/compact`, with the
+// upstream collapsing the prior history into a single `compaction` output
+// item that a later turn's `previous_response_id` should resolve to alone.
+// The native compact endpoint already routes through `action: 'compact'`,
+// but a direct `action: 'generate'` carrying the trigger reaches the same
+// upstream behavior — flip the snapshot to 'replace' so we do not prepend
+// the prior snapshot and the staged inputs to the compaction blob.
+const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
+  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
 
 const rewriteOrRenderFailure = async (
   payload: ResponsesPayload,

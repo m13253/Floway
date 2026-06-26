@@ -337,6 +337,53 @@ test('compact action drives a replace-mode snapshot off the synthesized envelope
   wrapSpy.mockRestore();
 });
 
+test('generate path with a compaction_trigger in input forwards snapshotMode=replace (Codex CLI RemoteCompactionV2)', async () => {
+  // Codex CLI's RemoteCompactionV2 performs compaction over `/v1/responses`
+  // itself by appending a `compaction_trigger` to the input — `action`
+  // stays 'generate' at the HTTP entry, but the upstream returns a
+  // compaction envelope and a later `previous_response_id` must resolve to
+  // only the compaction output, not the prior snapshot + staged inputs.
+  // The attempt's generate branch therefore has to detect the trigger and
+  // pick snapshotMode='replace'.
+  installRepo();
+  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
+
+  const completedEvent: ResponsesStreamEvent = {
+    type: 'response.completed',
+    sequence_number: 0,
+    response: makeResponsesResult(),
+  };
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProviderEvents([completedEvent]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+
+  const candidate = makeCandidate(callResponses);
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [
+        { type: 'message', role: 'user', content: 'kept message' },
+        { type: 'compaction_trigger' } as unknown as never,
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    candidate,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(wrapSpy.mock.calls.length, 1);
+  assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
+
+  wrapSpy.mockRestore();
+});
+
 // In-attempt test asserting the narrow header-inheritance contract: when an
 // outer protocol passes invocation headers, the translated Messages call sees
 // them on the wire.
