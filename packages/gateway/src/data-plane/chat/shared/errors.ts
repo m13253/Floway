@@ -9,7 +9,14 @@ export type ChatServeFailure =
   | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams?: readonly string[] }
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams?: readonly string[] }
   | { readonly kind: 'item-not-found'; readonly itemId: string }
-  | { readonly kind: 'routing-unavailable'; readonly message: string };
+  | { readonly kind: 'routing-unavailable'; readonly message: string }
+  // Alias name resolved, but no entry in its targets list currently maps to
+  // an enabled upstream binding that exposes the inbound endpoint group.
+  // Rendered as a 404 carrying the canonical
+  // `alias '<name>' has N target(s); none currently map to an enabled
+  // upstream binding` message — every protocol's renderer treats this as a
+  // model-not-found surface.
+  | { readonly kind: 'alias-no-target-available'; readonly aliasName: string; readonly targetCount: number };
 
 class ChatServeFailureError extends Error {
   readonly failure: ChatServeFailure;

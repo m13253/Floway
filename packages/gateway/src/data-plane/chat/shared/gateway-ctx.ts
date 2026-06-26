@@ -27,6 +27,13 @@ export interface GatewayCtx {
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
   // response untouched.
   readonly dump: DumpAccumulator | null;
+  // Headers staged by the gateway during request processing (e.g. the
+  // `x-floway-alias` header the alias resolver stamps when it picked a
+  // target). `finalizeGatewayResponse` writes each entry onto the outbound
+  // response just before returning it, so the headers ride along regardless
+  // of whether the responder built the Response via Hono's streamSSE,
+  // `Response.json`, or a raw `new Response(...)`.
+  readonly responseHeaders: Headers;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -73,12 +80,17 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     runtimeLocation: colo,
     currentColo: colo,
     dump,
+    responseHeaders: new Headers(),
   };
 };
 
 // Run the dump-accumulator's finalize tee on the outgoing Response. Every
 // inbound HTTP wrapper returns its response through this seam so the dump
 // pipeline applies uniformly across happy-path, error, and passthrough paths.
+// Gateway-staged response headers (today: `x-floway-alias`) are written onto
+// the response here so they ride along regardless of how the responder
+// built the body.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
+  for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
   return ctx.dump?.finalize(response) ?? response;
 };

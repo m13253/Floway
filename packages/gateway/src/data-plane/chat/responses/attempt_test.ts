@@ -25,6 +25,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
   requestStartedAt: 0,

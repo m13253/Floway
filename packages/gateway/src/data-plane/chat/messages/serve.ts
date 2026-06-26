@@ -1,6 +1,8 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
+import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { resolveAndApplyAliasForMessages } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -25,6 +27,12 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    try {
+      await resolveAndApplyAliasForMessages(payload, ctx);
+    } catch (error) {
+      if (error instanceof AliasNoTargetAvailableError) return renderMessagesFailure(aliasFailureFromError(error), 'generate');
+      throw error;
+    }
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
@@ -57,6 +65,12 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
+    try {
+      await resolveAndApplyAliasForMessages(payload, ctx);
+    } catch (error) {
+      if (error instanceof AliasNoTargetAvailableError) return renderMessagesFailure(aliasFailureFromError(error), 'countTokens');
+      throw error;
+    }
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,

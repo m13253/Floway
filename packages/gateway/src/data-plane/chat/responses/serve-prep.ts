@@ -1,6 +1,8 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
+import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { resolveAndApplyAliasForResponses } from '../../model-aliases/serve-integration.ts';
 import { enumerateProviderCandidates, type ChatCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -88,6 +90,12 @@ export const prepareResponsesServePlan = async (args: {
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx, store, pickTarget } = args;
   const prepared = await expandPreviousResponseId(payload, store);
+  try {
+    await resolveAndApplyAliasForResponses(prepared, ctx);
+  } catch (error) {
+    if (error instanceof AliasNoTargetAvailableError) return { kind: 'failure', result: renderResponsesFailure(aliasFailureFromError(error)) };
+    throw error;
+  }
   const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,

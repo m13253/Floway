@@ -1,6 +1,8 @@
 import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
+import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { resolveAndApplyAliasForGemini } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -29,7 +31,14 @@ export interface GeminiServeCountTokensArgs {
 
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
-    const { payload, ctx, store, model, headers } = args;
+    const { payload, ctx, store, headers } = args;
+    let model: string;
+    try {
+      model = await resolveAndApplyAliasForGemini(args.model, payload, ctx);
+    } catch (error) {
+      if (error instanceof AliasNoTargetAvailableError) return renderGeminiFailure(aliasFailureFromError(error), 'generate');
+      throw error;
+    }
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
@@ -59,7 +68,14 @@ export const geminiServe = {
   },
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
-    const { payload, ctx, store, model, headers } = args;
+    const { payload, ctx, store, headers } = args;
+    let model: string;
+    try {
+      model = await resolveAndApplyAliasForGemini(args.model, payload, ctx);
+    } catch (error) {
+      if (error instanceof AliasNoTargetAvailableError) return renderGeminiFailure(aliasFailureFromError(error), 'countTokens');
+      throw error;
+    }
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,

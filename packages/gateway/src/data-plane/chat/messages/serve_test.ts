@@ -13,13 +13,31 @@ import { defaultsForProvider, directFetcher, type ProviderCallResult, type Provi
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const lastCandidatesCall: { model?: string } = {};
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateProviderCandidates: vi.fn(async (args: { model: string }) => {
+      lastCandidatesCall.model = args.model;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
+      return next;
+    }),
+  };
+});
+
+// Mock the alias resolver so the integration test can inject a resolution
+// without standing up the full per-request fetcher + registry stack.
+const aliasResolutionQueue: ({ targetModelId: string; rules: Record<string, unknown>; aliasName: string } | null | Error)[] = [];
+vi.mock('../../model-aliases/resolve.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../model-aliases/resolve.ts')>();
+  return {
+    ...original,
+    resolveAlias: vi.fn(async () => {
+      if (aliasResolutionQueue.length === 0) return null;
+      const next = aliasResolutionQueue.shift()!;
+      if (next instanceof Error) throw next;
       return next;
     }),
   };
@@ -46,6 +64,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
   requestStartedAt: 0,
@@ -435,4 +454,36 @@ test('copilot binding strips x-anthropic-billing-header system block via the def
   assertIsArray<{ text: string }>(observed.system);
   assertEquals(observed.system.length, 1);
   assertEquals(observed.system[0].text, 'You are a helpful assistant.');
+});
+
+test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages IR', async () => {
+  installRepo();
+  aliasResolutionQueue.push({
+    targetModelId: 'claude-opus-4-7',
+    rules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' },
+    aliasName: 'claude-fast',
+  });
+  const capturedBodies: MessagesPayload[] = [];
+  const callMessages = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    capturedBodies.push({ ...(body as Omit<MessagesPayload, 'model'>), model: 'claude-opus-4-7' });
+    return { ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'claude-opus-4-7' };
+  });
+  queueCandidates([makeCandidate({ upstream: 'up_cf', callMessages })]);
+
+  const result = await messagesServe.generate({
+    payload: makePayload({ model: 'claude-fast' }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+
+  await collectEvents(assertResultType(result, 'events').events);
+
+  assertEquals(lastCandidatesCall.model, 'claude-opus-4-7');
+  const observed = capturedBodies[0]!;
+  assertEquals(observed.output_config?.effort, 'high');
+  assertEquals(observed.thinking?.budget_tokens, 2048);
+  // The serviceTier=fast → speed=fast bridge lands the alias rule on
+  // Anthropic's native Fast Mode field.
+  assertEquals(observed.speed, 'fast');
 });

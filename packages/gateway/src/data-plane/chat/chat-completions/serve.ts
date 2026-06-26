@@ -1,6 +1,8 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
+import { AliasNoTargetAvailableError, aliasFailureFromError } from '../../model-aliases/resolve.ts';
+import { resolveAndApplyAliasForChatCompletions } from '../../model-aliases/serve-integration.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -18,6 +20,12 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
+    try {
+      await resolveAndApplyAliasForChatCompletions(payload, ctx);
+    } catch (error) {
+      if (error instanceof AliasNoTargetAvailableError) return renderChatCompletionsFailure(aliasFailureFromError(error));
+      throw error;
+    }
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,

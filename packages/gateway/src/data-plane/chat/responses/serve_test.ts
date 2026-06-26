@@ -23,13 +23,31 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const lastCandidatesCall: { model?: string } = {};
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateProviderCandidates: vi.fn(async (args: { model: string }) => {
+      lastCandidatesCall.model = args.model;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
+      return next;
+    }),
+  };
+});
+
+// Mock the alias resolver so the integration test can inject a resolution
+// without standing up the full per-request fetcher + registry stack.
+const aliasResolutionQueue: ({ targetModelId: string; rules: Record<string, unknown>; aliasName: string } | null | Error)[] = [];
+vi.mock('../../model-aliases/resolve.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../model-aliases/resolve.ts')>();
+  return {
+    ...original,
+    resolveAlias: vi.fn(async () => {
+      if (aliasResolutionQueue.length === 0) return null;
+      const next = aliasResolutionQueue.shift()!;
+      if (next instanceof Error) throw next;
       return next;
     }),
   };
@@ -57,6 +75,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   c: stubAuthedContext(),
   requestStartedAt: 0,
@@ -645,4 +664,38 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
   // first, the trigger last.
   if (!Array.isArray(receivedInput)) throw new Error('expected the wire input to be an array');
   assertEquals((receivedInput.at(-1) as { type?: unknown })?.type, 'compaction_trigger');
+});
+
+test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {
+  installRepo();
+  aliasResolutionQueue.push({
+    targetModelId: 'gpt-5.4',
+    rules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
+    aliasName: 'gpt-fast',
+  });
+  const capturedBodies: ResponsesPayload[] = [];
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+    capturedBodies.push(body as ResponsesPayload);
+    return { ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
+  });
+  queueCandidates([makeCandidate({ upstream: 'up_a', callResponses })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({ model: 'gpt-fast' }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  // The resolved target id, not the alias name, reaches candidate enumeration.
+  assertEquals(lastCandidatesCall.model, 'gpt-5.4');
+  const observed = capturedBodies[0]!;
+  assertEquals(observed.reasoning?.effort, 'high');
+  assertEquals(observed.reasoning?.summary, 'detailed');
+  assertEquals(observed.text?.verbosity, 'medium');
+  assertEquals(observed.service_tier, 'priority');
 });

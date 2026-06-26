@@ -12,6 +12,8 @@ import type { Context } from 'hono';
 
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody } from '../chat/shared/request-body.ts';
+import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
+import { resolveAliasForPassthrough } from '../model-aliases/serve-integration.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 
@@ -52,11 +54,21 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(request.model);
+  let resolvedModel: string;
+  try {
+    resolvedModel = await resolveAliasForPassthrough(request.model, 'image', ctx);
+  } catch (error) {
+    if (error instanceof AliasNoTargetAvailableError) {
+      ctx.dump?.error('gateway');
+      return finalizeGatewayResponse(ctx, passthroughApiError(c, error.message, 404));
+    }
+    throw error;
+  }
   const response = await passthroughServe({
     c,
     ctx,
     sourceApi: '/images/generations',
-    model: request.model,
+    model: resolvedModel,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
     call: (binding, opts) => {
       const { model: _model, ...body } = request.body;
@@ -91,11 +103,21 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(modelRaw);
+  let resolvedModel: string;
+  try {
+    resolvedModel = await resolveAliasForPassthrough(modelRaw, 'image', ctx);
+  } catch (error) {
+    if (error instanceof AliasNoTargetAvailableError) {
+      ctx.dump?.error('gateway');
+      return finalizeGatewayResponse(ctx, passthroughApiError(c, error.message, 404));
+    }
+    throw error;
+  }
   const response = await passthroughServe({
     c,
     ctx,
     sourceApi: '/images/edits',
-    model: modelRaw,
+    model: resolvedModel,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
     call: (binding, opts) => {
       // ModelProvider.callImagesEdits takes ownership of the FormData and

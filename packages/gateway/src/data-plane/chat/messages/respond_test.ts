@@ -539,6 +539,7 @@ const makeRespondCtx = (): GatewayCtx => ({
   requestStartedAt: 0,
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
 });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [

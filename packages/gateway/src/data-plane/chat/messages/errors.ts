@@ -38,5 +38,7 @@ export const renderMessagesFailure = (
     return anthropicErrorResult(404, 'not_found_error', appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
   case 'model-unsupported':
     return anthropicErrorResult(400, 'invalid_request_error', appendFailedUpstreams(`Model ${failure.model} does not support the ${endpointPath} endpoint.`, failure.failedUpstreams));
+  case 'alias-no-target-available':
+    return anthropicErrorResult(404, 'not_found_error', `alias '${failure.aliasName}' has ${failure.targetCount} target(s); none currently map to an enabled upstream binding`);
   }
 };

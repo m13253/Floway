@@ -5,6 +5,8 @@ import type { Context } from 'hono';
 
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody } from '../chat/shared/request-body.ts';
+import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
+import { resolveAliasForPassthrough } from '../model-aliases/serve-integration.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromEmbeddingsBody } from '../shared/telemetry/usage.ts';
 
@@ -53,11 +55,21 @@ export const embeddings = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(request.model);
+  let resolvedModel: string;
+  try {
+    resolvedModel = await resolveAliasForPassthrough(request.model, 'embedding', ctx);
+  } catch (error) {
+    if (error instanceof AliasNoTargetAvailableError) {
+      ctx.dump?.error('gateway');
+      return finalizeGatewayResponse(ctx, passthroughApiError(c, error.message, 404));
+    }
+    throw error;
+  }
   const response = await passthroughServe({
     c,
     ctx,
     sourceApi: '/embeddings',
-    model: request.model,
+    model: resolvedModel,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.embeddings !== undefined,
     call: async (binding, opts) => {
       const { model: _model, ...body } = request.body;

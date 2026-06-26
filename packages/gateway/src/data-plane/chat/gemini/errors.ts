@@ -53,5 +53,7 @@ export const renderGeminiFailure = (
     return geminiRpcErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
   case 'model-unsupported':
     return geminiRpcErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`, failure.failedUpstreams));
+  case 'alias-no-target-available':
+    return geminiRpcErrorResult(404, `alias '${failure.aliasName}' has ${failure.targetCount} target(s); none currently map to an enabled upstream binding`);
   }
 };

@@ -44,6 +44,7 @@ const setup = (): Harness => {
       runtimeLocation: 'TEST',
       currentColo: 'TEST',
       dump: null,
+      responseHeaders: new Headers(),
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
       c: stubAuthedContext(),
