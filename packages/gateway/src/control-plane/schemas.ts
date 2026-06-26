@@ -606,7 +606,6 @@ const chatAliasReasoningSchema = z.object({
   budget_tokens: z.number().int().nonnegative().optional(),
   adaptive: z.boolean().optional(),
   summary: z.string().min(1).optional(),
-  mandatory: z.boolean().optional(),
 }).strict();
 
 const chatAliasRulesSchema = z.object({

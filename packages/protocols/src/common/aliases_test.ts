@@ -27,8 +27,8 @@ describe('formatAliasRulesInline', () => {
 
   test('renders boolean reasoning toggles in their dedicated wording', () => {
     expect(formatAliasRulesInline({
-      reasoning: { adaptive: false, mandatory: true, summary: 'concise' },
-    })).toBe('non-adaptive, mandatory reasoning, summary: concise');
+      reasoning: { adaptive: false, summary: 'concise' },
+    })).toBe('non-adaptive, summary: concise');
   });
 
   test('emits adaptive when reasoning.adaptive is true and budget_tokens when set', () => {

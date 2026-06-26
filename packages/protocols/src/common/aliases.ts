@@ -54,7 +54,6 @@ export interface ChatAliasRules {
     budget_tokens?: number;
     adaptive?: boolean;
     summary?: ReasoningSummary;
-    mandatory?: boolean;
   };
   verbosity?: Verbosity;
   serviceTier?: ServiceTier;
@@ -100,7 +99,6 @@ const aliasRulePartLabels = (rules: AliasRules): string[] => {
   if (chat.reasoning?.budget_tokens !== undefined) parts.push(`${chat.reasoning.budget_tokens}tok budget`);
   if (chat.reasoning?.adaptive === true) parts.push('adaptive');
   else if (chat.reasoning?.adaptive === false) parts.push('non-adaptive');
-  if (chat.reasoning?.mandatory === true) parts.push('mandatory reasoning');
   if (chat.reasoning?.summary !== undefined) parts.push(`summary: ${chat.reasoning.summary}`);
   if (chat.verbosity !== undefined) parts.push(`${chat.verbosity} verbosity`);
   if (chat.serviceTier !== undefined) parts.push(`${chat.serviceTier} tier`);

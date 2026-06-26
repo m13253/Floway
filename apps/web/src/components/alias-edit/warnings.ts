@@ -23,7 +23,7 @@ export const realModelIds = (models: readonly ControlPlaneModel[] | null | undef
 // the form's `data-field` attribute so the dialog can render the warning
 // directly under the input it annotates.
 export interface AliasRuleWarning {
-  field: 'reasoning.effort' | 'reasoning.budget_tokens' | 'reasoning.adaptive' | 'reasoning.summary' | 'reasoning.mandatory' | 'verbosity' | 'serviceTier';
+  field: 'reasoning.effort' | 'reasoning.budget_tokens' | 'reasoning.adaptive' | 'reasoning.summary' | 'verbosity' | 'serviceTier';
   message: string;
 }
 
@@ -61,10 +61,6 @@ export const computeRuleWarnings = (
 
   if (rules.reasoning?.adaptive === true && reasoning?.adaptive !== true) {
     out.push({ field: 'reasoning.adaptive', message: 'Target does not advertise adaptive reasoning.' });
-  }
-
-  if (rules.reasoning?.mandatory === true && reasoning?.mandatory !== true) {
-    out.push({ field: 'reasoning.mandatory', message: 'Target does not advertise mandatory reasoning.' });
   }
 
   // Summary, verbosity, and serviceTier carry no catalog metadata; their
