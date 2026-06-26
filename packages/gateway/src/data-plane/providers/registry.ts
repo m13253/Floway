@@ -82,7 +82,7 @@ export const listModelProviders = async (
 // Merge two capability maps: a key present in either side is present in the
 // result, and its sub-capability flags are OR-ed so a sub-cap advertised by
 // either provider survives.
-export const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
+const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
   const result: ModelEndpoints = { ...a };
   for (const key of Object.keys(b) as ModelEndpointKey[]) {
     const merged = { ...result[key], ...b[key] };
@@ -326,16 +326,16 @@ export const collectInterpretationOutcomes = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  resolutions: Array<{ interpretation: ModelInterpretation; provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
   failedUpstreams: string[];
 }> => {
-  const settled = await Promise.allSettled(interpretations.map(interpretation =>
-    resolveModelForProvider(interpretation.provider, interpretation.lookupId, fetcherForUpstream(interpretation.provider.upstream), scheduler)
-      .then(resolved => ({ interpretation, resolved }))));
+  const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
+    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
+      .then(resolved => ({ provider, resolved }))));
 
   const failedUpstreams: string[] = [];
   const failedSeen = new Set<string>();
-  const resolutions: Array<{ interpretation: ModelInterpretation; provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
+  const resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -350,9 +350,9 @@ export const collectInterpretationOutcomes = async (
       }
       continue;
     }
-    const { interpretation, resolved } = result.value;
+    const { provider, resolved } = result.value;
     if (!resolved) continue;
-    resolutions.push({ interpretation, provider: interpretation.provider, resolved });
+    resolutions.push({ provider, resolved });
   }
 
   return { resolutions, failedUpstreams };
@@ -371,8 +371,7 @@ export const resolveModelForRequest = async (
 
   const interpretations = enumerateModelInterpretations(modelId, providers);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  const matches: ProviderModelResolution[] = resolutions.map(r => r.resolved);
-  return { matches, failedUpstreams };
+  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };
 
 export const resolveModelForProvider = async (
