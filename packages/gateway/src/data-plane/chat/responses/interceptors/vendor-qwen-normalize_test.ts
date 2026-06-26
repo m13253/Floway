@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import type { ResponsesInvocation } from './types.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
-import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
@@ -19,7 +18,6 @@ const stubCtx: GatewayCtx = {
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 };
 

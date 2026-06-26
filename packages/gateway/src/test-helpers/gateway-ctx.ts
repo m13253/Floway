@@ -1,12 +1,4 @@
 import type { GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
-import type { AuthedContext } from '../middleware/auth.ts';
-
-// Minimal stub for the Hono `c` carried on `GatewayCtx`. Unit tests rarely
-// touch any methods on it; integration tests that need real Hono behavior
-// build the ctx via `createGatewayCtxFromHono` against a real `makeApp()`
-// request rather than going through this stub.
-export const stubAuthedContext = (): AuthedContext =>
-  ({ header: () => {} } as unknown as AuthedContext);
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
@@ -15,7 +7,6 @@ export const stubAuthedContext = (): AuthedContext =>
 // construct one and spread `{ abortSignal: controller.signal,
 // downstreamAbortController: controller }` into the overrides.
 export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => ({
-  c: stubAuthedContext(),
   apiKeyId: 'key_test',
   upstreamIds: null,
   wantsStream: false,

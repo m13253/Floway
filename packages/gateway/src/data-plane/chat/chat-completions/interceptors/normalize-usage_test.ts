@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { withUsageNormalized } from './normalize-usage.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -18,7 +17,6 @@ const stubCtx: GatewayCtx = {
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 };
 

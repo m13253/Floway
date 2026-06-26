@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import { stubAuthedContext } from '../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -28,7 +27,6 @@ const ctx = (): GatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 });
 

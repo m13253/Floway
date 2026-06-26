@@ -7,7 +7,6 @@
 import { test, vi } from 'vitest';
 
 import type { ModelAliasRecord, ModelAliasesRepo } from '../../repo/types.ts';
-import { stubAuthedContext } from '../../test-helpers/gateway-ctx.ts';
 import type { ModelInterpretation, ProviderModelResolution } from '../providers/registry.ts';
 import { directFetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -27,7 +26,6 @@ vi.mock('../providers/registry.ts', () => ({
     resolutions: interpretations
       .filter(i => routableModels.has(i.lookupId))
       .map(i => ({
-        interpretation: i,
         provider: i.provider,
         resolved: {
           id: i.lookupId,
@@ -78,9 +76,6 @@ const setRoutable = (...ids: string[]): void => {
   routableModels.clear();
   for (const id of ids) routableModels.set(id, { endpoints: ALWAYS_ROUTABLE_ENDPOINTS });
 };
-
-// Silence the unused-ctx warning helpers
-void stubAuthedContext;
 
 test('returns null when no alias matches the inbound name', async () => {
   setRoutable('gpt-5.4');

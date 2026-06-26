@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
 import { stripSafetySettings } from './strip-safety-settings.ts';
-import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -17,7 +16,6 @@ const stubCtx: GatewayCtx = {
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 };
 

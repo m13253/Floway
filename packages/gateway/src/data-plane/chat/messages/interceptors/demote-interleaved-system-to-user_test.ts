@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { demoteInterleavedSystemToUser } from './demote-interleaved-system-to-user.ts';
 import type { MessagesInvocation } from './types.ts';
-import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -18,7 +17,6 @@ const stubCtx: GatewayCtx = {
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 };
 

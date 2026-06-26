@@ -4,7 +4,6 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import { withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { stubAuthedContext } from '../../../test-helpers/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -25,7 +24,6 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     apiKeyId: 'key_1',
     upstreamIds: null,
     wantsStream: true,
-    c: stubAuthedContext(),
     requestStartedAt: 0,
     runtimeLocation: 'TEST',
     currentColo: 'TEST',

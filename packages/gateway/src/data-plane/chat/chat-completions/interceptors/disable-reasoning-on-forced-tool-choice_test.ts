@@ -2,7 +2,6 @@ import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { stubAuthedContext } from '../../../../test-helpers/gateway-ctx.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult } from '@floway-dev/provider';
@@ -17,7 +16,6 @@ const stubCtx: GatewayCtx = {
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  c: stubAuthedContext(),
   requestStartedAt: 0,
 };
 
