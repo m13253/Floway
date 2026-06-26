@@ -577,4 +577,3 @@ test('generate reuses an existing input row when a later turn echoes the same us
   if (turn1InputId === undefined || turn2InputId === undefined) throw new Error('expected each snapshot to start with a staged input item');
   assertEquals(turn2InputId, turn1InputId);
 });
-

@@ -3,7 +3,7 @@ import type { ChatCompletionsInvocation } from './interceptors/types.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
-import type { StatefulResponsesStore } from '../responses/items/store.ts';
+import { createNoOpResponsesStore, type StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
@@ -53,7 +53,7 @@ export const chatCompletionsAttempt = {
         return await traverseTranslation(
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.binding.upstreamModel.id }),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, headers: invocation.headers }),
+          translated => responsesAttempt.generate({ payload: translated, ctx, store: createNoOpResponsesStore(store.apiKeyId), candidate, headers: invocation.headers }),
         );
       }
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);

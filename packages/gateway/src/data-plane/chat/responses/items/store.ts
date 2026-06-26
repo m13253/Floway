@@ -625,6 +625,23 @@ export const createResponsesWsSession = (apiKeyId: string | null): {
   };
 };
 
+// For cross-protocol callers (Messages/Gemini/ChatCompletions translating
+// into Responses): the outer protocol's attempt has already resolved any
+// store-backed item references against its own store and inlined them into
+// the translated payload, so the inner Responses call needs neither reads
+// nor writes. Forwarding the outer store instead would persist
+// Responses-shape rows and snapshots into the outer protocol's store —
+// orphan rows the outer protocol's reader has no path to consume.
+export const createNoOpResponsesStore = (apiKeyId: string | null): StatefulResponsesStore =>
+  new LayeredStatefulResponsesStore({
+    apiKeyId,
+    reads: [],
+    itemWrites: [],
+    snapshotWrites: [],
+    stageInputs: false,
+    shouldStorePayload: false,
+  });
+
 const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {
   const rows = target.get(hash) ?? [];
   if (!rows.some(existing => existing.id === row.id && existing.apiKeyId === row.apiKeyId)) {
