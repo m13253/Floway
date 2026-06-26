@@ -44,6 +44,10 @@ export interface ListedAliasInputs {
 // chat-row target can be read as ChatAliasRules without a runtime check.
 const chatRules = (target: AliasTarget): ChatAliasRules => target.rules as ChatAliasRules;
 
+// Result preserves the order of `arrays[0]`. Matters for callers like the
+// reasoning-effort intersection below: when no agreed-default exists, the
+// fallback default is `supported[0]`, so the first input's relative order
+// determines which level wins as the listing's `default`.
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
   const [head, ...tail] = arrays;
