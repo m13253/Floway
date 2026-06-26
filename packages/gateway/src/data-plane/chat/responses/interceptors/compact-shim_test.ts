@@ -23,12 +23,12 @@ const stubCtx: GatewayCtx = {
 
 const makeInvocation = (
   payload: Partial<ResponsesPayload> = {},
-  options: { action?: 'generate' | 'compact'; flagOn?: boolean } = {},
+  options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'responses' | 'messages' | 'chat-completions' } = {},
 ): ResponsesInvocation => ({
   payload: { model: 'test-model', input: [], ...payload } as ResponsesPayload,
   action: options.action ?? 'generate',
   candidate: stubProviderCandidate({
-    targetApi: 'responses',
+    targetApi: options.targetApi ?? 'responses',
     binding: { enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) },
   }),
   store: new LayeredStatefulResponsesStore({
@@ -331,6 +331,100 @@ test('compact + flag off: passes through to run() unchanged', async () => {
   // run() is called directly, action stays 'compact', payload unchanged.
   assertEquals(runCalled, true);
   assertEquals(inv.action, 'compact');
+});
+
+// ── Bug 1 — engagement gating ────────────────────────────────────────────────
+//
+// The shim engages when EITHER the per-upstream flag is on OR the candidate's
+// targetApi is not 'responses'. The compact-shape check inside (action ===
+// 'compact' OR input contains compaction_trigger) decides whether to simulate
+// or just pass the request through. Together these gates make the shim
+// structurally required on non-Responses upstreams (Messages / Chat
+// Completions translation has no `compaction_trigger` variant) while keeping
+// the flag as the operator opt-in for Responses-target upstreams.
+
+test('generate + compaction_trigger + flag off + messages target: shim simulates (structurally required)', async () => {
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'message', role: 'user', content: 'real history' },
+        { type: 'compaction_trigger' } as unknown as never,
+      ],
+    },
+    { action: 'generate', flagOn: false, targetApi: 'messages' },
+  );
+
+  let seenPayload: ResponsesPayload | undefined;
+  const result = await withResponsesCompactShim(inv, stubCtx, () => {
+    seenPayload = inv.payload;
+    return fakeUpstreamRun('CONDENSED SUMMARY')();
+  });
+
+  // The shim should have engaged: the upstream sees the summarization
+  // prompt and a stripped (no compaction_trigger) history, and the result
+  // is the synthesized `response.compaction` envelope.
+  if (!seenPayload) throw new Error('expected the upstream call to fire');
+  assertEquals(typeof seenPayload.instructions, 'string');
+  assertEquals((seenPayload.instructions as string).includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  const innerItems = seenPayload.input as Array<{ type: string }>;
+  assertEquals(innerItems.every(i => i.type !== 'compaction_trigger'), true);
+
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.object, 'response.compaction');
+});
+
+test('generate + compaction_trigger + flag off + responses target: shim passes through (flag opt-in not taken)', async () => {
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'message', role: 'user', content: 'real history' },
+        { type: 'compaction_trigger' } as unknown as never,
+      ],
+    },
+    { action: 'generate', flagOn: false, targetApi: 'responses' },
+  );
+
+  let runCalled = false;
+  let seenAction: 'generate' | 'compact' | undefined;
+  let seenPayload: ResponsesPayload | undefined;
+  await withResponsesCompactShim(inv, stubCtx, () => {
+    runCalled = true;
+    seenAction = inv.action;
+    seenPayload = inv.payload;
+    return fakeUpstreamRun('unused')();
+  });
+
+  // Shim did not engage — request flowed through untouched.
+  assertEquals(runCalled, true);
+  assertEquals(seenAction, 'generate');
+  // Payload still carries the trigger (no expansion, no strip, no pivot).
+  const items = seenPayload?.input as Array<{ type: string }>;
+  assertEquals(items.some(i => i.type === 'compaction_trigger'), true);
+});
+
+test('generate + compaction_trigger + flag on + messages target: shim simulates (same as flag-off path)', async () => {
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'message', role: 'user', content: 'real history' },
+        { type: 'compaction_trigger' } as unknown as never,
+      ],
+    },
+    { action: 'generate', targetApi: 'messages' },
+  );
+
+  let seenPayload: ResponsesPayload | undefined;
+  const result = await withResponsesCompactShim(inv, stubCtx, () => {
+    seenPayload = inv.payload;
+    return fakeUpstreamRun('CONDENSED SUMMARY')();
+  });
+
+  if (!seenPayload) throw new Error('expected the upstream call to fire');
+  assertEquals((seenPayload.instructions as string).includes('CONTEXT CHECKPOINT COMPACTION'), true);
+  if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
+  const collected = await collectResponsesProtocolEventsToResult(result.events);
+  assertEquals(collected.object, 'response.compaction');
 });
 
 test('generate + flag on: runs inbound expansion but does not pivot', async () => {

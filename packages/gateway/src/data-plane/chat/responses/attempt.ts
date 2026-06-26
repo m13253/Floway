@@ -1,3 +1,4 @@
+import { containsCompactionTrigger } from './interceptors/compact-shim.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
@@ -41,9 +42,10 @@ export interface ResponsesAttemptInvokeArgs {
 // input still carries a `compaction_trigger` is Codex CLI's RemoteCompactionV2
 // path, semantically a compact even though the action stayed 'generate', so
 // the snapshot reduces to the compaction output alone — see
-// `containsCompactionTrigger` below). Where those writes actually land —
-// durable repo, WS session memory, or nowhere — is fully owned by the
-// store factory the caller supplied (see items/store.ts factories).
+// `containsCompactionTrigger` in interceptors/compact-shim.ts). Where those
+// writes actually land — durable repo, WS session memory, or nowhere — is
+// fully owned by the store factory the caller supplied (see
+// items/store.ts factories).
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers } = args;
@@ -150,18 +152,6 @@ export const responsesAttempt = {
 type RewriteOutcome =
   | RewrittenResponsesPayload
   | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
-
-// Codex CLI's RemoteCompactionV2 performs compaction through `/v1/responses`
-// itself by appending a `compaction_trigger` control item to the input;
-// semantically it is the same operation as `/responses/compact`, with the
-// upstream collapsing the prior history into a single `compaction` output
-// item that a later turn's `previous_response_id` should resolve to alone.
-// The native compact endpoint already routes through `action: 'compact'`,
-// but a direct `action: 'generate'` carrying the trigger reaches the same
-// upstream behavior — flip the snapshot to 'replace' so we do not prepend
-// the prior snapshot and the staged inputs to the compaction blob.
-const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
 
 const rewriteOrRenderFailure = async (
   payload: ResponsesPayload,

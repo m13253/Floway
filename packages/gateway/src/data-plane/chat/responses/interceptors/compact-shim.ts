@@ -1,20 +1,38 @@
 // Compact-shim — simulates a `response.compaction` envelope against upstreams
-// that have no native compaction wire. Gated by the per-upstream
-// `responses-compact-shim` flag.
+// that have no native compaction wire.
 //
-// Flow when the flag is on:
+// Engagement is the OR of two conditions:
+//   1. The per-upstream `responses-compact-shim` flag is on. This is the
+//      operator-controlled opt-in for Responses-target upstreams (codex /
+//      copilot / azure / custom) that natively support compaction but where
+//      we still want shim-synthesized envelopes.
+//   2. The candidate's `targetApi` is not `responses`. When the upstream is
+//      Messages or Chat Completions, the translation layer has no concept
+//      of a `compaction` output item or a `compaction_trigger` input item.
+//      The shim is structurally required regardless of the flag — without
+//      it, a `compaction_trigger` item would reach the translator and
+//      crash on the unknown variant.
+//
+// Inner compact-shape detection is also the OR of two conditions:
+//   - `invocation.action === 'compact'` (the native `/responses/compact`
+//     entry point), or
+//   - `invocation.payload.input` contains a `compaction_trigger` item
+//     (Codex CLI's RemoteCompactionV2 path: a `generate` call whose input
+//     ends in a control item that semantically requests compaction).
+//
+// Flow when engaged and compact-shaped:
 //   1. Inbound: walk `payload.input` for `compaction` items whose
 //      `encrypted_content` decodes as our base64url-JSON marker. Each match
 //      is replaced inline with the items it originally encoded — so a
 //      subsequent turn that echoes back the synthesized compaction sees the
 //      summarized history.
-//   2. Outbound: when `invocation.action === 'compact'`, flip the action to
-//      'generate', swap in the SUMMARIZATION_PROMPT (vendored from
-//      openai/codex), and force `store: false` so the ephemeral
-//      summarization turn does not pollute the upstream's conversation
-//      history. Call `run()` to drive the chain through the normal generate
-//      path; collect the resulting summary text; pack a single user-role
-//      message containing the summary into a synthetic
+//   2. Outbound: pivot the action to 'generate', swap in the
+//      SUMMARIZATION_PROMPT (vendored from openai/codex), strip any
+//      `compaction_trigger` items, and force `store: false` so the
+//      ephemeral summarization turn does not pollute the upstream's
+//      conversation history. Call `run()` to drive the chain through the
+//      normal generate path; collect the resulting summary text; pack a
+//      single user-role message containing the summary into a synthetic
 //      `response.compaction` envelope; re-tag `invocation.action` back to
 //      'compact' so the gateway's snapshot layer treats it correctly.
 //
@@ -133,6 +151,7 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
 
 const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
+  const originalAction = ctx.action;
 
   // Materialize the user-supplied input (string or array) into Responses items,
   // then strip compaction_trigger so the upstream sees a plain generate turn
@@ -161,9 +180,12 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     upstreamResult = await run();
   } finally {
     ctx.payload = originalPayload;
-    // Re-tag the action so the gateway's post-chain snapshot derivation
-    // picks 'replace'.
-    ctx.action = 'compact';
+    // Re-tag the action to what it was on entry so the gateway's post-chain
+    // snapshot derivation sees the right value. For the native
+    // `/responses/compact` path that is 'compact'; for the
+    // `compaction_trigger`-on-generate path it stays 'generate' and the
+    // attempt layer derives the snapshot mode from the trigger item itself.
+    ctx.action = originalAction;
   }
 
   if (upstreamResult.type !== 'events') {
@@ -183,14 +205,30 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   };
 };
 
+// True when the payload carries a `compaction_trigger` input item — Codex
+// CLI's RemoteCompactionV2 path that semantically requests compaction
+// through `action: 'generate'`. Exported so callers outside the shim
+// (attempt.ts's snapshot-mode derivation) can ask the same question.
+export const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
+  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
+
 export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('responses-compact-shim')) return await run();
+  // The shim is engaged when the operator turned it on for this upstream,
+  // OR when the upstream's targetApi is not Responses (Messages /
+  // Chat Completions have no compaction wire and would crash on the
+  // unknown `compaction_trigger` input variant).
+  const flagOn = ctx.candidate.binding.enabledFlags.has('responses-compact-shim');
+  const structurallyRequired = ctx.candidate.targetApi !== 'responses';
+  if (!flagOn && !structurallyRequired) return await run();
 
   // Inbound: expand any prior shim-encoded compactions back into their
   // original items so the upstream sees the summarized history.
   ctx.payload = expandShimCompactionItems(ctx.payload);
 
-  if (ctx.action !== 'compact') return await run();
+  // Compact-shaped requests are either the native `/responses/compact`
+  // action or a `generate` call whose input ends in a `compaction_trigger`.
+  const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
+  if (!isCompactShaped) return await run();
 
   return await simulateCompaction(ctx, run);
 };
