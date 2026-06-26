@@ -202,7 +202,6 @@ test('generate derives snapshotMode=replace when the upstream emits a compaction
     payload: makePayload({
       input: [
         { type: 'message', role: 'user', content: 'kept message' },
-        { type: 'compaction_trigger' },
       ],
     }),
     ctx: makeGatewayCtx(),
