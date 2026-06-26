@@ -11,7 +11,7 @@ import { computeShadowWarning, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { AliasKind, AliasSelection, AliasTarget, ChatAliasRules, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
-import { useModelsStore } from '../../composables/useModels.ts';
+import { useRawModelsStore } from '../../composables/useModels.ts';
 import { Button, Dialog, Input, Select, Switch } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open', { required: true });
@@ -27,7 +27,7 @@ const emit = defineEmits<{
 
 const api = useApi();
 const aliasesStore = useModelAliases();
-const modelsStore = useModelsStore();
+const modelsStore = useRawModelsStore();
 
 const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'));
 

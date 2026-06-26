@@ -15,7 +15,7 @@ import ProxiesSettingsCard from '../../components/settings/ProxiesSettingsCard.v
 import SearchConfigSection from '../../components/settings/SearchConfigSection.vue';
 import UpstreamsSettingsCard from '../../components/settings/UpstreamsSettingsCard.vue';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
-import { useModelsStore } from '../../composables/useModels.ts';
+import { useRawModelsStore } from '../../composables/useModels.ts';
 import { useProxiesStore } from '../../composables/useProxies.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
@@ -32,7 +32,7 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
     useUpstreamsStore().load(),
-    useModelsStore().load(),
+    useRawModelsStore().load(),
     useProxiesStore().load(),
     useModelAliases().load(),
     useRuntimeInfo().load(),
@@ -50,7 +50,7 @@ definePage({ meta: { requiresAdmin: true } });
 
 const router = useRouter();
 const { upstreams, loading: storeLoading, load } = useUpstreamsStore();
-const modelsStore = useModelsStore();
+const modelsStore = useRawModelsStore();
 const proxiesStore = useProxiesStore();
 const aliasesStore = useModelAliases();
 const { load: loadProxies } = proxiesStore;

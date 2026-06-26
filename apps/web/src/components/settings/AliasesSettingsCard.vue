@@ -7,7 +7,7 @@ import AliasRow from './AliasRow.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
-import { useModelsStore } from '../../composables/useModels.ts';
+import { useRawModelsStore } from '../../composables/useModels.ts';
 import { Spinner } from '@floway-dev/ui';
 
 const emit = defineEmits<{
@@ -18,7 +18,7 @@ const emit = defineEmits<{
 
 const api = useApi();
 const aliasesStore = useModelAliases();
-const modelsStore = useModelsStore();
+const modelsStore = useRawModelsStore();
 
 const aliases = computed<ModelAlias[]>(() => aliasesStore.aliases.value ?? []);
 

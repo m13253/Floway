@@ -13,7 +13,7 @@ vi.mock('../../composables/useModelAliases.ts', () => ({
   useModelAliases: () => ({ aliases: aliasesRef, loading: ref(false), error: aliasErrorRef, load: async () => {} }),
 }));
 vi.mock('../../composables/useModels.ts', () => ({
-  useModelsStore: () => ({ models: modelsRef, loading: ref(false), error: ref<string | null>(null), load: async () => {} }),
+  useRawModelsStore: () => ({ models: modelsRef, loading: ref(false), error: ref<string | null>(null), load: async () => {} }),
 }));
 vi.mock('../../api/client.ts', () => ({
   useApi: () => ({

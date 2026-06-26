@@ -706,6 +706,16 @@ const usageBaseQuery = {
 };
 
 export const tokenUsageQuery = z.object(usageBaseQuery);
+
+// Dashboard `/api/models` accepts an explicit `aliases=false` to skip the
+// alias-merge pass. Default behavior (omitted or `aliases=true`) keeps the
+// merged catalog the dashboard's Models tab renders; settings surfaces
+// that need the raw real-model set (alias edit dialog, shadow detection)
+// pass `aliases=false`.
+export const modelsQuery = z.object({
+  aliases: z.enum(['true', 'false']).optional(),
+});
+
 export const searchUsageQuery = z.object({
   ...usageBaseQuery,
   provider: z.string().optional(),

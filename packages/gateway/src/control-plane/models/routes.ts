@@ -35,6 +35,7 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
 
 export const controlPlaneModels = async (c: Context) => {
   try {
+    const includeAliases = c.req.query('aliases') !== 'false';
     // Scope the dashboard catalog to the caller's effective upstreams, exactly
     // like the data-plane /models endpoint. On a session request there is no
     // API key, so this resolves to the user's per-user upstream cap: a user who
@@ -46,14 +47,16 @@ export const controlPlaneModels = async (c: Context) => {
         fetcherForUpstream,
         backgroundSchedulerFromContext(c),
       ),
-      getRepo().modelAliases.list(),
+      includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
-    const data = mergeAliasesIntoModels({
-      realModels: models,
-      aliases,
-      mapReal: toControlPlaneModel,
-      wrapAlias: entry => ({ ...entry, upstreams: [] }),
-    });
+    const data = includeAliases
+      ? mergeAliasesIntoModels({
+          realModels: models,
+          aliases,
+          mapReal: toControlPlaneModel,
+          wrapAlias: entry => ({ ...entry, upstreams: [] }),
+        })
+      : models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,
