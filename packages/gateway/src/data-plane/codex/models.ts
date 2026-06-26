@@ -43,7 +43,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { InternalModel, Fetcher } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/provider';
 
 // Five minutes is short enough to pick up an upstream catalog change within
 // one or two codex sessions but long enough that an active user only ever
@@ -83,9 +83,7 @@ const computeCatalog = async (
     getRepo().modelAliases.list(),
   ]);
   const slugContextWindow = new Map<string, number>();
-  const slugInternalModel = new Map<string, InternalModel>();
   for (const m of internalModels) {
-    slugInternalModel.set(m.id, m);
     const limit = m.limits.max_context_window_tokens;
     if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
   }
