@@ -627,12 +627,14 @@ const aliasTargetSchema = z.object({
   rules: z.record(z.string(), z.unknown()),
 });
 
-// Operator override for an alias's announced /v1/models payload. Sparse —
-// both sub-fields are independently optional, and the alias-listing pipeline
-// falls back to the rule-aware automatic computation for any sub-field the
-// operator did not provide. `chatSchema` and `limitsSchema` are the same
-// shapes the upstream-model surface validates, so the override carries the
-// catalog's full vocabulary.
+// Operator override for an alias's announced /v1/models payload. Both
+// sub-fields are independently optional, and the alias-listing pipeline
+// falls back to the rule-aware automatic computation for any TOP-LEVEL
+// sub-block (`limits` / `chat`) the operator did not provide — a present
+// sub-block replaces the computed counterpart wholesale, not per-leaf.
+// `chatSchema` and `limitsSchema` are the same shapes the upstream-model
+// surface validates, so the override carries the catalog's full
+// vocabulary.
 const announcedMetadataSchema = z.object({
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),

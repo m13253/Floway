@@ -4,9 +4,10 @@
 // alias-of relationship without a second round trip.
 //
 // `limits` and `chat` come from the alias's announced metadata payload:
-// the operator's stored override when set (sparse — any sub-field they
-// did not provide falls back to the automatic computation), otherwise
-// the rule-aware intersection across the alias's available targets. The
+// the operator's stored override when set (with top-level sub-block
+// granularity — a present `limits` / `chat` replaces the computed
+// counterpart wholesale, not per-leaf), otherwise the rule-aware
+// intersection across the alias's available targets. The
 // intersection is the safe lower bound for the inbound request — every
 // reported capability survives no matter which target the resolver
 // picks at request time.
@@ -199,9 +200,11 @@ const computeAutomaticMetadata = (
   return { limits, chat };
 };
 
-// Merge the operator's override on top of the computed payload, per the
-// sparse-override contract: any sub-field the operator omitted falls
-// back to the computed value for that sub-field.
+// Merge the operator's override on top of the computed payload at the
+// top-level sub-block boundary: a present `limits` / `chat` on the
+// override replaces the computed counterpart wholesale; an omitted
+// sub-block falls back to the computed value. (Merge is intentionally
+// NOT per-leaf — that's the contract `AnnouncedMetadata` advertises.)
 const mergeWithOverride = (
   computed: { limits: PublicModelLimits; chat: ChatModelInfo | undefined },
   override: AnnouncedMetadata,

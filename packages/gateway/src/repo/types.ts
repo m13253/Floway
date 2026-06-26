@@ -278,9 +278,10 @@ export interface ModelAliasRecord {
   // ignored) for selection=random.
   targets: AliasTarget[];
   // null = compute the announced /v1/models payload automatically from
-  // targets + rules at listing time. A non-null payload is sparse — any
-  // sub-field the operator did not override falls back to the automatic
-  // computation.
+  // targets + rules at listing time. A non-null payload replaces the
+  // computed value at the top-level sub-block boundary (`limits` /
+  // `chat`); omitted sub-blocks fall back to the computation but a
+  // present sub-block wins wholesale (it does not merge per-leaf).
   announcedMetadata: AnnouncedMetadata | null;
   sortOrder: number;
   createdAt: string;
