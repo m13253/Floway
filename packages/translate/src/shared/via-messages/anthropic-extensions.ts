@@ -8,9 +8,8 @@ import type { MessagesPayload, MessagesThinkingDisplay } from '@floway-dev/proto
 // `omitted` is the canonical hide-everything spelling, and `auto` returns
 // `undefined` so Anthropic's account-default takes over. Operator-typed
 // values that match neither vocabulary pass through verbatim — Anthropic
-// rejects unknown values at the wire, which is the explicit-failure path we
-// want per the alias design's no-enum-gating contract.
-export const mapSummaryToAnthropicDisplay = (summary: string): MessagesThinkingDisplay | string | undefined => {
+// rejects unknown values at the wire, which is the explicit-failure path.
+const mapSummaryToAnthropicDisplay = (summary: string): MessagesThinkingDisplay | string | undefined => {
   switch (summary) {
   case 'concise':
   case 'detailed':

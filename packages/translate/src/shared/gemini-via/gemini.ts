@@ -117,9 +117,9 @@ export const geminiFunctionResponsePart = (part: GeminiPart, ids: GeminiToolCall
   return { response, id: unmatched?.shift() ?? id };
 };
 
-// Reasoning effort is freeform on the inbound IRs (per Goal 2: never gate
-// operator-typed values), but the gateway publishes a canonical closed set so
-// translate-side mappers can normalize without rewriting unknown values.
+// Reasoning effort is freeform on the inbound IRs, but the gateway
+// publishes a canonical closed set so translate-side mappers can normalize
+// without rewriting unknown values.
 export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): ReasoningEffort | undefined => {

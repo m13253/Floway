@@ -332,12 +332,11 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
-  // Extension-driven thinking (`thinking_budget`, `adaptive_thinking`) wins
-  // over the native `effort === 'none'` disable, so the alias write-side
-  // facets that target the structured thinking slot survive the legacy
-  // disable shortcut. Native `reasoning.summary` does not surface onto
-  // Messages — the Responses-native vocabulary keeps its pre-existing
-  // translation contract and rides the upstream sanitizer.
+  // Extension-driven thinking (`thinking_budget`, `adaptive_thinking`)
+  // takes precedence over the `effort === 'none'` disable shortcut, so the
+  // alias overlay's structured thinking write survives. Native
+  // `reasoning.summary` does not surface onto Messages — the Responses IR
+  // keeps its native translation contract and rides the upstream sanitizer.
   const extensionThinking = buildMessagesThinkingFromExtensions({
     thinkingBudget: payload.thinking_budget,
     adaptiveThinking: payload.adaptive_thinking,
