@@ -28,11 +28,13 @@
 //      summarized history.
 //   2. Outbound: pivot the action to 'generate', swap in the
 //      SUMMARIZATION_PROMPT (vendored from openai/codex), strip any
-//      `compaction_trigger` items, and force `store: false` so the
-//      ephemeral summarization turn does not pollute the upstream's
-//      conversation history. Call `run()` to drive the chain through the
-//      normal generate path; collect the resulting summary text; pack a
-//      single user-role message containing the summary into a synthetic
+//      `compaction_trigger` items, append a terminal user message if the
+//      history ends on a non-user item (Anthropic Messages rejects
+//      assistant prefill), and force `store: false` so the ephemeral
+//      summarization turn does not pollute the upstream's conversation
+//      history. Call `run()` to drive the chain through the normal generate
+//      path; collect the resulting summary text; pack a single user-role
+//      message containing the summary into a synthetic
 //      `response.compaction` envelope; re-tag `invocation.action` back to
 //      'compact' so the gateway's snapshot layer treats it correctly.
 //
@@ -163,9 +165,25 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     : originalPayload.input;
   const historyItems = originalInputItems.filter(item => item.type !== 'compaction_trigger');
 
+  // Anthropic Messages rejects assistant prefill — when the translated
+  // conversation ends on an assistant message, the upstream returns 400
+  // `This model does not support assistant message prefill. The conversation
+  // must end with a user message.`. The history we hand to the
+  // summarization turn ends on whatever the last real turn produced
+  // (frequently assistant after a normal user→assistant round-trip), so
+  // append a synthetic terminal user message that nudges the model into
+  // producing the summary. Harmless on OpenAI-style upstreams, which accept
+  // assistant-terminal conversations but happily honor a final user prompt.
+  const terminalUserMessage: ResponsesInputItem = {
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'Produce the handoff summary now per the instructions above.' }],
+  };
+  const inputForSummarization = [...historyItems, terminalUserMessage];
+
   ctx.payload = {
     ...originalPayload,
-    input: historyItems,
+    input: inputForSummarization,
     instructions: SUMMARIZATION_PROMPT,
     // Do not persist the ephemeral summarization turn in the upstream's
     // conversation history.

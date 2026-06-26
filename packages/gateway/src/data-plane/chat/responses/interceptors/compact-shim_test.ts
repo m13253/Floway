@@ -285,9 +285,10 @@ test('compact + flag on: string input is materialized into one user-message item
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   // Without materialization the original string would have been dropped on
   // the floor — the summarization turn would see an empty history and the
-  // synthesized envelope would condense nothing.
+  // synthesized envelope would condense nothing. The trailing item is the
+  // synthetic terminal-user nudge appended unconditionally (see Bug 2).
   const items = seenPayload.input as Array<{ type: string; role?: string; content?: unknown }>;
-  assertEquals(items.length, 1);
+  assertEquals(items.length, 2);
   assertEquals(items[0].type, 'message');
   assertEquals(items[0].role, 'user');
   const content = items[0].content as Array<{ type: string; text: string }>;
@@ -314,6 +315,37 @@ test('compact + flag on: compaction_trigger items are stripped before the upstre
   if (!seenPayload) throw new Error('expected the upstream call to fire');
   const items = seenPayload.input as Array<{ type: string }>;
   assertEquals(items.every(i => i.type !== 'compaction_trigger'), true);
+});
+
+test('compact + flag on: history ending on an assistant message gets a synthetic terminal user prompt appended', async () => {
+  // Anthropic Messages rejects assistant prefill: a conversation that
+  // ends on an assistant turn returns 400 `This model does not support
+  // assistant message prefill`. The shim normalizes by appending a
+  // synthetic user-role nudge so the summarization call always ends on
+  // a user message — harmless on OpenAI-style upstreams and load-bearing
+  // for translated Anthropic ones.
+  const inv = makeInvocation(
+    {
+      input: [
+        { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hello back' }] } as unknown as never,
+      ],
+    },
+    { action: 'compact' },
+  );
+
+  let seenPayload: ResponsesPayload | undefined;
+  await withResponsesCompactShim(inv, stubCtx, () => {
+    seenPayload = inv.payload;
+    return fakeUpstreamRun('s')();
+  });
+  if (!seenPayload) throw new Error('expected the upstream call to fire');
+  const items = seenPayload.input as Array<{ type: string; role?: string; content?: Array<{ type: string; text: string }> }>;
+  assertEquals(items.length, 3);
+  const tail = items[items.length - 1];
+  assertEquals(tail.type, 'message');
+  assertEquals(tail.role, 'user');
+  assertEquals(tail.content?.[0].type, 'input_text');
 });
 
 test('compact + flag off: passes through to run() unchanged', async () => {
