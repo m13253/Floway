@@ -25,7 +25,7 @@ const rulesInline = computed(() => formatAliasRulesInline(props.alias.rules));
         <span class="text-gray-600">&rarr;</span>
         <span class="text-gray-500 break-all">{{ alias.target_model_id }}</span>
       </p>
-      <p v-if="rulesInline" class="text-xs text-gray-500">{{ rulesInline }}</p>
+      <p v-if="rulesInline" class="text-sm text-gray-500">{{ rulesInline }}</p>
       <p
         v-if="!alias.visible_in_models_list"
         class="text-[10px] uppercase tracking-wide text-amber-300"
