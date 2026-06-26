@@ -7,11 +7,10 @@
 
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { ModelAliasesRepo, ModelAliasRecord } from '../../repo/types.ts';
-import type { ModelProviderInstance } from '../providers/registry.ts';
 import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { AliasKind, AliasRules, ModelEndpointKey } from '@floway-dev/protocols/common';
-import type { Fetcher } from '@floway-dev/provider';
+import type { Fetcher, ModelProviderInstance } from '@floway-dev/provider';
 
 // Endpoint family the inbound request belongs to. Mirrors `AliasKind` but
 // named in the data-plane vocabulary so the resolver argument site reads as

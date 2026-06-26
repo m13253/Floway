@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeModelWarnings, computeRuleWarnings, computeShadowWarning, findCatalogModel, realModelIds } from './warnings.ts';
-import type { ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ControlPlaneModel } from '../../api/types.ts';
 
 const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
