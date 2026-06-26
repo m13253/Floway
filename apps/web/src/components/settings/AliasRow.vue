@@ -1,14 +1,12 @@
 <script setup lang="ts">
 // One alias rendered as a two-line block in the Settings card. The action
-// cluster sits right-aligned and reserves the leftmost slot for the
-// alias-level warning icon — when no warning is firing the slot collapses
-// to zero width, so the edit and delete buttons keep the same on-screen
-// position whether or not a warning is present.
+// cluster sits right-aligned; the leftmost slot is reserved for the
+// alias-level warning icon when one fires.
 
 import { computed } from 'vue';
 
 import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
-import { aliasHasShadowWarning, computeShadowWarning } from '../alias-edit/warnings.ts';
+import { computeShadowWarning } from '../alias-edit/warnings.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import { Tooltip } from '@floway-dev/ui';
 
@@ -22,9 +20,8 @@ defineEmits<{
   delete: [];
 }>();
 
-// Title resolution mirrors the spec's derivation rule: an operator-set
-// `display_name` always wins; falling back to the single-target compose
-// helper or to the alias `name` when multi-target.
+// Operator-set `display_name` wins; single-target aliases fall through to
+// the compose helper; multi-target falls back to `name`.
 const title = computed(() => {
   if (props.alias.display_name !== null) return props.alias.display_name;
   if (props.alias.targets.length === 1) {
@@ -45,7 +42,6 @@ const caption = computed(() => {
 });
 
 const shadowWarning = computed(() => computeShadowWarning(props.alias.name, props.alias.targets, props.models));
-const hasShadow = computed(() => aliasHasShadowWarning(props.alias, props.models));
 const shadowTooltip = computed(() => {
   const w = shadowWarning.value;
   if (!w) return '';
@@ -63,7 +59,7 @@ const shadowTooltip = computed(() => {
       </div>
 
       <div class="flex shrink-0 items-center gap-1">
-        <Tooltip v-if="hasShadow" :content="shadowTooltip">
+        <Tooltip v-if="shadowWarning" :content="shadowTooltip">
           <span
             class="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-400"
             aria-label="Alias warning"

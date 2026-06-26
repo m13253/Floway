@@ -1,20 +1,13 @@
 // Shared catalog lookups + warning computation for the alias dashboard
 // surfaces (Settings row, edit dialog, target row). Centralising these
-// helpers means the Settings card and the dialog read the same view of the
-// live /api/models catalog — both the "is this id a real (non-alias) model"
-// and "does this target's chat capability advertise <X>" checks resolve
-// against one source of truth instead of two parallel implementations.
+// helpers keeps the Settings card and the dialog reading the same view of
+// the live /api/models catalog.
 
-import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+import type { ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
-// A target id matches a catalog model when either form (prefixed or
-// unprefixed) resolves to that public id. The /api/models catalog already
-// emits the public id directly, so equality is enough; future prefix-form
-// surfaces can wire their normalisation in here without touching the
-// callers. Alias entries are excluded — at runtime target ids never
-// re-enter the alias layer, so the rule-warning lookup must compare against
-// the same "real model" surface the suggestion list and shadow-detection
-// helpers already use.
+// Excludes alias rows — target ids never re-enter the alias layer, so the
+// rule-warning lookup must compare against the same real-model surface that
+// `realModelIds` and `computeShadowWarning` use.
 export const findCatalogModel = (
   models: readonly ControlPlaneModel[] | null | undefined,
   targetModelId: string,
@@ -74,16 +67,14 @@ export const computeRuleWarnings = (
     out.push({ field: 'reasoning.mandatory', message: 'Target does not advertise mandatory reasoning.' });
   }
 
-  // Summary, verbosity, and serviceTier have no advertised catalog metadata
-  // today; their values are forwarded verbatim and never warn here.
+  // Summary, verbosity, and serviceTier carry no catalog metadata; their
+  // values forward verbatim and never warn here.
 
   return out;
 };
 
 // One model-level warning attached to one target row. Today the only
-// trigger is the target id failing to resolve to any catalog model — the
-// dashboard surfaces it via a yellow `!` icon in the row's action cluster
-// with a tooltip listing every warning on that row.
+// trigger is the target id failing to resolve to any catalog model.
 export interface AliasModelWarning {
   message: string;
 }
@@ -101,8 +92,7 @@ export const computeModelWarnings = (
 
 // Alias-level shadow warning. Fires iff the alias name matches a real
 // (non-alias) catalog model id AND no target inside the alias references
-// that real id (the seed pattern — alias name = first target's id —
-// deliberately suppresses the warning).
+// that real id — a target referencing the shadowed id suppresses the warning.
 export interface AliasShadowWarning {
   shadowedId: string;
   shadowedDisplayName: string | null;
@@ -123,10 +113,3 @@ export const computeShadowWarning = (
     shadowedDisplayName: displayName !== null && displayName !== shadowed.id ? displayName : null,
   };
 };
-
-// Convenience wrapper for the Settings row: derive whether this alias
-// trips the shadow warning against the live catalog.
-export const aliasHasShadowWarning = (
-  alias: ModelAlias,
-  models: readonly ControlPlaneModel[] | null | undefined,
-): boolean => computeShadowWarning(alias.name, alias.targets, models) !== null;

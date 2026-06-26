@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { aliasHasShadowWarning, computeModelWarnings, computeRuleWarnings, computeShadowWarning, findCatalogModel, realModelIds } from './warnings.ts';
-import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+import { computeModelWarnings, computeRuleWarnings, computeShadowWarning, findCatalogModel, realModelIds } from './warnings.ts';
+import type { ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
@@ -11,18 +11,6 @@ const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPl
 const aliasModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   upstreams: [],
   aliasedFrom: { name: over.id, kind: 'chat', selection: 'first-available', targets: [] },
-  ...over,
-});
-
-const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
-  kind: 'chat',
-  selection: 'first-available',
-  display_name: null,
-  visible_in_models_list: true,
-  targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }],
-  sort_order: 0,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
   ...over,
 });
 
@@ -142,15 +130,5 @@ describe('computeShadowWarning', () => {
 
   it('returns null on an empty alias name (mid-edit)', () => {
     expect(computeShadowWarning('', [{ target_model_id: 'gpt-5' }], catalog)).toBeNull();
-  });
-});
-
-describe('aliasHasShadowWarning', () => {
-  const catalog: ControlPlaneModel[] = [realModel({ id: 'gpt-5' }), realModel({ id: 'plain' })];
-
-  it('mirrors computeShadowWarning', () => {
-    expect(aliasHasShadowWarning(alias({ name: 'gpt-5', targets: [{ target_model_id: 'plain', rules: {} as ChatAliasRules }] }), catalog)).toBe(true);
-    expect(aliasHasShadowWarning(alias({ name: 'gpt-5', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }), catalog)).toBe(false);
-    expect(aliasHasShadowWarning(alias({ name: 'free-name' }), catalog)).toBe(false);
   });
 });
