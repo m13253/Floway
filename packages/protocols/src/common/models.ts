@@ -1,3 +1,5 @@
+import type { AliasKind, AliasSelection, AliasTarget } from './aliases.ts';
+
 // Disjoint billing dimensions a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
 // one of `input`, `input_cache_read`, `input_cache_write`,
@@ -113,6 +115,19 @@ export interface ChatModelInfo {
   };
 }
 
+// Alias provenance attached to a `/v1/models` entry that the gateway
+// synthesized from an operator-defined alias rather than fetched from an
+// upstream catalog. `targets` carries every configured target — including
+// targets the live catalog currently can not serve — so the dashboard can
+// show the full configuration and warn about unavailable ones without a
+// second control-plane round trip.
+export interface PublicModelAliasedFrom {
+  name: string;
+  kind: AliasKind;
+  selection: AliasSelection;
+  targets: AliasTarget[];
+}
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -135,6 +150,9 @@ export interface PublicModel {
   kind: ModelKind;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
+  // Present only on entries the gateway synthesized from an operator-defined
+  // alias; absent for entries that came from an upstream catalog.
+  aliasedFrom?: PublicModelAliasedFrom;
 }
 
 export interface PublicModelsResponse {

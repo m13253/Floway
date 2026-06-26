@@ -586,3 +586,95 @@ test('/v1/models returns the last real error when every account model load fails
     },
   );
 });
+
+test('/v1/models appends visible aliases with their aliasedFrom block and folds alias-id collisions onto the alias entry', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  // Two aliases: one shadows a real id (`gpt-4o`) so the alias entry must
+  // replace the catalog entry; one points at a real id under a brand-new
+  // name (`gpt-fast`).
+  await repo.modelAliases.insert({
+    name: 'gpt-4o',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-4o', rules: { reasoning: { effort: 'low' } } }],
+    sortOrder: 1,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+  await repo.modelAliases.insert({
+    name: 'gpt-fast',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Operator Fast',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-4o-mini', rules: {} }],
+    sortOrder: 0,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+  await repo.modelAliases.insert({
+    name: 'hidden-alias',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: false,
+    targets: [{ target_model_id: 'gpt-4o', rules: {} }],
+    sortOrder: 2,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { name: string; selection: string } }> };
+      const ids = body.data.map(model => model.id);
+
+      // Real `gpt-4o` is replaced by the alias of the same name; the alias
+      // entry sits where the catalog ordering placed it. `gpt-4o-mini`
+      // (still a real id) stays first, and the two visible aliases land
+      // after the real-only entries.
+      assertEquals(ids.includes('gpt-4o-mini'), true);
+      assertEquals(ids.filter(id => id === 'gpt-4o').length, 1);
+      assertEquals(ids.includes('hidden-alias'), false);
+
+      const collided = body.data.find(model => model.id === 'gpt-4o')!;
+      assertEquals(collided.aliasedFrom?.name, 'gpt-4o');
+      assertEquals(collided.aliasedFrom?.selection, 'first-available');
+      assertEquals(collided.display_name, 'gpt-4o (low effort)');
+
+      const fast = body.data.find(model => model.id === 'gpt-fast')!;
+      assertEquals(fast.aliasedFrom?.name, 'gpt-fast');
+      assertEquals(fast.display_name, 'Operator Fast');
+    },
+  );
+});

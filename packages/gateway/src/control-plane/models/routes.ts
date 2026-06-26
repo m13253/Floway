@@ -1,10 +1,12 @@
 import type { Context } from 'hono';
 
+import { synthesizeListedAliases } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
@@ -15,7 +17,9 @@ import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
 // `upstreams` lists every provider binding for this model as { kind, id, name }
 // triples. A single model id can be served by mixed provider kinds (e.g. one
 // azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
-// `provider`/`upstream_ids` split would misrepresent that.
+// `provider`/`upstream_ids` split would misrepresent that. Alias-synthesized
+// rows carry an empty list — they do not bind to an upstream directly; their
+// targets live under `aliasedFrom`.
 interface ControlPlaneModel extends PublicModel {
   upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
 }
@@ -36,12 +40,20 @@ export const controlPlaneModels = async (c: Context) => {
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const models = await getModels(
-      effectiveUpstreamIdsFromContext(c),
-      fetcherForUpstream,
-      backgroundSchedulerFromContext(c),
-    );
-    const data = models.map(toControlPlaneModel);
+    const [models, aliases] = await Promise.all([
+      getModels(
+        effectiveUpstreamIdsFromContext(c),
+        fetcherForUpstream,
+        backgroundSchedulerFromContext(c),
+      ),
+      getRepo().modelAliases.list(),
+    ]);
+    const aliasEntries = synthesizeListedAliases({ aliases, realModels: models });
+    const aliasIds = new Set(aliasEntries.map(entry => entry.id));
+    const data: ControlPlaneModel[] = [
+      ...models.filter(model => !aliasIds.has(model.id)).map(toControlPlaneModel),
+      ...aliasEntries.map(entry => ({ ...entry, upstreams: [] })),
+    ];
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,

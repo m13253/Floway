@@ -77,3 +77,52 @@ export interface ModelAlias {
   created_at: string;
   updated_at: string;
 }
+
+// Inline-prose parts for an alias's rules, in the canonical field order. The
+// same builder backs `formatAliasRulesInline` (joins with `, ` for a single
+// summary string) and `formatAliasRuleBadges` (one badge per part). Keeping
+// every surface — inline copy, badge sequence, parenthesized suffix in the
+// derived display name — on a single ordered walk means an operator who
+// configures `effort + verbosity` sees them in the same order whether the
+// dashboard renders badges or a comma-joined caption.
+const aliasRulePartLabels = (rules: AliasRules): string[] => {
+  const chat = rules as ChatAliasRules;
+  const parts: string[] = [];
+  if (chat.reasoning?.effort !== undefined) parts.push(`${chat.reasoning.effort} effort`);
+  if (chat.reasoning?.budget_tokens !== undefined) parts.push(`${chat.reasoning.budget_tokens}tok budget`);
+  if (chat.reasoning?.adaptive === true) parts.push('adaptive');
+  else if (chat.reasoning?.adaptive === false) parts.push('non-adaptive');
+  if (chat.reasoning?.mandatory === true) parts.push('mandatory reasoning');
+  if (chat.reasoning?.summary !== undefined) parts.push(`summary: ${chat.reasoning.summary}`);
+  if (chat.verbosity !== undefined) parts.push(`${chat.verbosity} verbosity`);
+  if (chat.serviceTier !== undefined) parts.push(`${chat.serviceTier} tier`);
+  return parts;
+};
+
+// One badge per configured rule field, in the canonical order. `value` is
+// reserved for callers that want to render a separate value pill alongside
+// the label; today every part already self-describes through `label`, so
+// `value` stays undefined.
+export interface AliasRuleBadge {
+  label: string;
+  value?: string;
+}
+
+export const formatAliasRuleBadges = (rules: AliasRules): AliasRuleBadge[] =>
+  aliasRulePartLabels(rules).map(label => ({ label }));
+
+// Comma-joined version of the same ordered parts. Empty string when no
+// rule applies — callers should drop the line entirely rather than render
+// blank.
+export const formatAliasRulesInline = (rules: AliasRules): string =>
+  aliasRulePartLabels(rules).join(', ');
+
+// Derived display name for a single-target alias whose operator did not set
+// `display_name`. Bare `target_model_id` when no rule is configured; with
+// rules, the inline summary is parenthesized. Multi-target aliases skip
+// this helper entirely — the listing falls back to the alias's own name
+// because no single target represents the alias.
+export const composeAliasDisplayName = (targetModelId: string, rules: AliasRules): string => {
+  const inline = formatAliasRulesInline(rules);
+  return inline === '' ? targetModelId : `${targetModelId} (${inline})`;
+};

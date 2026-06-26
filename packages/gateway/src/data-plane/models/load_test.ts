@@ -22,3 +22,8 @@ describe('toPublicModel', () => {
     expect(toPublicModel({ ...base, chat }).chat).toEqual(chat);
   });
 });
+
+// The alias merge step inside `loadModels` (alias entries follow real
+// entries, alias names winning id collisions) is exercised through the
+// integration suite in `serve_test.ts` so the assertion observes the same
+// `/v1/models` payload a real client would see.
