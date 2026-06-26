@@ -6,7 +6,6 @@
 import { SYNTHESIZED_BASE_INSTRUCTIONS } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
-const BASELINE_TRUNCATION = { mode: 'tokens', limit: 10000 } as const;
 const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
 
 export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unknown> => {
@@ -32,7 +31,7 @@ export const synthesizeCatalogEntry = (model: InternalModel): Record<string, unk
     slug: model.id,
     display_name: model.display_name ?? model.id,
     description: '',
-    truncation_policy: BASELINE_TRUNCATION,
+    truncation_policy: { mode: 'tokens', limit: 10000 },
     input_modalities: [...inputModalities],
     supports_image_detail_original: hasImage,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
