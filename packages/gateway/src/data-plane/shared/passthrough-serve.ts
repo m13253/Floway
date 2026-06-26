@@ -28,7 +28,7 @@ import { ALIAS_RESPONSE_HEADER } from '../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpointKey, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -104,7 +104,13 @@ interface PassthroughServeContext {
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
   readonly model: string;
-  readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
+  // The single ModelEndpoints key this passthrough call needs the
+  // upstream binding to advertise. Used to filter the resolver's
+  // candidate matches AND to narrow the alias resolver's first-
+  // available / random pool to targets whose binding actually serves
+  // this endpoint, so an alias with mixed endpoint coverage never
+  // routes to a target that 404s downstream.
+  readonly endpointKey: ModelEndpointKey;
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —
   // exceptions thrown from the actual fetch must not be silently swallowed.
@@ -120,7 +126,7 @@ export const passthroughApiError = (c: Context, message: string, status: Content
   c.json({ error: { message, type: 'api_error' } }, status);
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling } = input;
+  const { c, ctx, sourceApi, model, endpointKey, call, response: responseHandling } = input;
   const requestStartedAt = performance.now();
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
@@ -137,7 +143,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // target id; `AliasNoTargetAvailableError` propagates as the 404 below.
     let resolution;
     try {
-      resolution = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
+      resolution = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler, endpoints => endpoints[endpointKey] !== undefined);
     } catch (e) {
       if (e instanceof AliasNoTargetAvailableError) {
         ctx.dump?.error('gateway');
@@ -153,7 +159,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     for (const match of matches) {
-      if (!bindingServesEndpoint(match.binding)) continue;
+      if (match.binding.upstreamModel.endpoints[endpointKey] === undefined) continue;
 
       const recorder = createUpstreamLatencyRecorder();
       const { response, modelKey } = await call(match.binding, {

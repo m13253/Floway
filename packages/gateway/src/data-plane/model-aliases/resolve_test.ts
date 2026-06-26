@@ -1,20 +1,23 @@
 // Behavioral coverage for the alias resolver. Mocks the lower-layer
 // catalog seam (`enumerateModelInterpretations` + `collectInterpretationOutcomes`
 // out of `providers/registry.ts`) so each test can hand-script which
-// target model ids look routable; the resolver itself runs unmocked, so
-// its filter logic (availability, selection strategy) is the thing under
-// test. The resolver is endpoint-blind — a target is routable iff it
-// resolves to ANY enabled binding — so the mock no longer differentiates
-// endpoints.
+// target model ids look routable AND what endpoint map their binding
+// advertises; the resolver itself runs unmocked, so its filter logic
+// (availability via the endpointAccepts predicate, selection strategy)
+// is the thing under test.
 
 import { test, vi } from 'vitest';
 
 import type { ModelAliasRecord, ModelAliasesRepo } from '../../repo/types.ts';
 import type { ModelInterpretation, ProviderModelResolution } from '../providers/registry.ts';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const routableModels = new Set<string>();
+// id → endpoint map. Absent ids look unroutable; present ids return
+// resolutions whose binding advertises the given endpoints, so the
+// resolver's `endpointAccepts` predicate can filter them.
+const routableModels = new Map<string, ModelEndpoints>();
 
 vi.mock('../providers/registry.ts', () => ({
   enumerateModelInterpretations: vi.fn((modelId: string, providers: readonly { upstream: string }[]): ModelInterpretation[] =>
@@ -26,8 +29,8 @@ vi.mock('../providers/registry.ts', () => ({
         provider: i.provider,
         resolved: {
           id: i.lookupId,
-          model: { id: i.lookupId, endpoints: {} },
-          binding: { upstream: i.provider.upstream, upstreamModel: { id: i.lookupId, endpoints: {} } },
+          model: { id: i.lookupId, endpoints: routableModels.get(i.lookupId) },
+          binding: { upstream: i.provider.upstream, upstreamModel: { id: i.lookupId, endpoints: routableModels.get(i.lookupId) } },
         } as unknown as ProviderModelResolution,
       })),
     failedUpstreams: [],
@@ -68,14 +71,27 @@ const RESOLVE_DEFAULTS = {
   scheduler: () => {},
 };
 
+// Mark these ids routable with the full chat-three endpoint set — most
+// tests only care about availability, not which endpoint surface the
+// binding advertises. Endpoint-aware tests use `setRoutableWith` below.
 const setRoutable = (...ids: string[]): void => {
   routableModels.clear();
-  for (const id of ids) routableModels.add(id);
+  for (const id of ids) routableModels.set(id, { chatCompletions: {}, messages: {}, responses: {} });
+};
+
+// Endpoint-aware variant: each id carries the exact endpoint map its
+// binding advertises. Lets a test pin "target A serves /chat/completions,
+// target B only serves /messages" so the resolver's pool-narrowing can
+// be verified.
+const setRoutableWith = (entries: Record<string, ModelEndpoints>): void => {
+  routableModels.clear();
+  for (const [id, endpoints] of Object.entries(entries)) routableModels.set(id, endpoints);
 };
 
 test('returns null when no alias matches the inbound name', async () => {
   setRoutable('gpt-5.4');
   const result = await resolveAlias({
+    endpointAccepts: () => true,
     ...RESOLVE_DEFAULTS,
     modelName: 'not-an-alias',
     repo: stubRepoFor(null),
@@ -86,6 +102,7 @@ test('returns null when no alias matches the inbound name', async () => {
 test('returns the target and rules when a single target is available', async () => {
   setRoutable('gpt-5.4');
   const result = await resolveAlias({
+    endpointAccepts: () => true,
     ...RESOLVE_DEFAULTS,
     modelName: 'gpt-fast',
     repo: stubRepoFor(aliasRecord()),
@@ -100,6 +117,7 @@ test('throws AliasNoTargetAvailableError when the alias exists but no target is 
   setRoutable(); // catalog empty
   await assertRejects(
     () => resolveAlias({
+      endpointAccepts: () => true,
       ...RESOLVE_DEFAULTS,
       modelName: 'gpt-fast',
       repo: stubRepoFor(aliasRecord({
@@ -117,6 +135,7 @@ test('throws AliasNoTargetAvailableError when the alias exists but no target is 
 test('first-available skips unroutable rows and picks the first available, not the first listed', async () => {
   setRoutable('gpt-5.5'); // `gpt-5.4` is not in the catalog
   const result = await resolveAlias({
+    endpointAccepts: () => true,
     ...RESOLVE_DEFAULTS,
     modelName: 'gpt-fast',
     repo: stubRepoFor(aliasRecord({
@@ -137,6 +156,7 @@ test('random selection picks every available target across enough iterations', a
   const seen = new Set<string>();
   for (let i = 0; i < 100; i += 1) {
     const result = await resolveAlias({
+      endpointAccepts: () => true,
       ...RESOLVE_DEFAULTS,
       modelName: 'gpt-fast',
       repo: stubRepoFor(aliasRecord({
@@ -160,6 +180,7 @@ test('random selection picks every available target across enough iterations', a
 test('shadow pattern: alias whose first target equals its own name picks the real model when present', async () => {
   setRoutable('codex-auto-review'); // the real model IS in the catalog
   const result = await resolveAlias({
+    endpointAccepts: () => true,
     ...RESOLVE_DEFAULTS,
     modelName: 'codex-auto-review',
     repo: stubRepoFor(aliasRecord({
@@ -178,6 +199,7 @@ test('shadow pattern: alias whose first target equals its own name picks the rea
 test('shadow pattern: alias falls back to the second target when the real model is not in the catalog', async () => {
   setRoutable('gpt-5.4'); // only the fallback is routable
   const result = await resolveAlias({
+    endpointAccepts: () => true,
     ...RESOLVE_DEFAULTS,
     modelName: 'codex-auto-review',
     repo: stubRepoFor(aliasRecord({
@@ -191,4 +213,83 @@ test('shadow pattern: alias falls back to the second target when the real model 
   assert(result !== null);
   assertEquals(result.targetModelId, 'gpt-5.4');
   assertEquals(result.rules, { reasoning: { effort: 'low' } });
+});
+
+test('endpoint-aware pool: random selection picks ONLY from targets whose binding serves the inbound endpoint', async () => {
+  // Two targets: A serves /chat/completions; B only serves /messages.
+  // Inbound endpoint = /chat/completions (predicate keeps only A). Run 50
+  // iterations of `random` selection and assert B is never picked — if
+  // the resolver were endpoint-blind, B would surface ~half the time and
+  // the downstream prefix router would 404.
+  setRoutableWith({
+    'serves-cc': { chatCompletions: {} },
+    'serves-messages-only': { messages: {} },
+  });
+  const repo = stubRepoFor(aliasRecord({
+    selection: 'random',
+    targets: [
+      { target_model_id: 'serves-cc', rules: {} },
+      { target_model_id: 'serves-messages-only', rules: {} },
+    ],
+  }));
+  const picks = new Set<string>();
+  for (let i = 0; i < 50; i++) {
+    const result = await resolveAlias({
+      modelName: 'gpt-fast',
+      ...RESOLVE_DEFAULTS,
+      endpointAccepts: endpoints => endpoints.chatCompletions !== undefined,
+      repo,
+    });
+    assert(result !== null);
+    picks.add(result.targetModelId);
+  }
+  assertEquals([...picks], ['serves-cc']);
+});
+
+test('endpoint-aware pool: first-available skips targets whose binding does not serve the inbound endpoint', async () => {
+  // Configured order [A, B]: A only serves /messages, B serves /chat/completions.
+  // Inbound endpoint = /chat/completions. first-available without endpoint
+  // narrowing would pick A and downstream 404. With narrowing the pool
+  // becomes [B], and first-available returns B.
+  setRoutableWith({
+    'messages-only': { messages: {} },
+    'serves-cc': { chatCompletions: {} },
+  });
+  const repo = stubRepoFor(aliasRecord({
+    selection: 'first-available',
+    targets: [
+      { target_model_id: 'messages-only', rules: {} },
+      { target_model_id: 'serves-cc', rules: {} },
+    ],
+  }));
+  const result = await resolveAlias({
+    modelName: 'gpt-fast',
+    ...RESOLVE_DEFAULTS,
+    endpointAccepts: endpoints => endpoints.chatCompletions !== undefined,
+    repo,
+  });
+  assert(result !== null);
+  assertEquals(result.targetModelId, 'serves-cc');
+});
+
+test('endpoint-aware pool: alias with NO target serving the inbound endpoint throws AliasNoTargetAvailableError', async () => {
+  setRoutableWith({
+    'a': { messages: {} },
+    'b': { messages: {} },
+  });
+  const repo = stubRepoFor(aliasRecord({
+    targets: [
+      { target_model_id: 'a', rules: {} },
+      { target_model_id: 'b', rules: {} },
+    ],
+  }));
+  await assertRejects(
+    () => resolveAlias({
+      modelName: 'gpt-fast',
+      ...RESOLVE_DEFAULTS,
+      endpointAccepts: endpoints => endpoints.chatCompletions !== undefined,
+      repo,
+    }),
+    AliasNoTargetAvailableError,
+  );
 });

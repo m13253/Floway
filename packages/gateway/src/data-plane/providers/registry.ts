@@ -370,6 +370,14 @@ export const resolveModelForRequest = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  // Predicate the alias resolver uses to narrow its target pool to
+  // bindings whose endpoint map serves the inbound endpoint. Passthrough
+  // callers pass `endpoints => endpoints[targetEndpointKey] !== undefined`
+  // so first-available / random alias selection picks a target the prefix
+  // router can serve end-to-end. The default accepts any binding — used
+  // by call sites whose own endpoint targeting happens downstream (e.g.
+  // the Responses image-generation tool's internal model resolve).
+  endpointAccepts: (endpoints: ModelEndpoints) => boolean = () => true,
 ): Promise<ModelResolution> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
@@ -386,6 +394,7 @@ export const resolveModelForRequest = async (
     providers,
     fetcherForUpstream,
     scheduler,
+    endpointAccepts,
     repo: getRepo().modelAliases,
   });
   const effectiveModelId = aliasResolution?.targetModelId ?? modelId;

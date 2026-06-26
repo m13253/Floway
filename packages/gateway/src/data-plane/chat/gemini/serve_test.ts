@@ -30,6 +30,7 @@ vi.mock('../shared/candidates.ts', async importOriginal => {
         providers: [],
         fetcherForUpstream: () => directFetcher,
         scheduler: args.scheduler,
+        endpointAccepts: () => true,
         repo: { getByName: () => Promise.resolve(null) } as never,
       });
       const effectiveModel = aliasResolution?.targetModelId ?? args.model;

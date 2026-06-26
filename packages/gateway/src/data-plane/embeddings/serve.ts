@@ -58,7 +58,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/embeddings',
     model: request.model,
-    bindingServesEndpoint: binding => binding.upstreamModel.endpoints.embeddings !== undefined,
+    endpointKey: 'embeddings',
     call: async (binding, opts) => {
       const { model: _model, ...body } = request.body;
       return await binding.provider.callEmbeddings(binding.upstreamModel, body, undefined, opts);

@@ -47,12 +47,17 @@ export const enumerateProviderCandidates = async ({
   // sees the same alias surface. The target id is fed verbatim into prefix
   // routing; alias names never re-enter the alias layer.
   // `AliasNoTargetAvailableError` propagates so the chat serve's catch maps
-  // it to its protocol-native 404.
+  // it to its protocol-native 404. The endpoint predicate piggybacks on
+  // `pickTarget` so the resolver's pool narrows to targets whose binding
+  // exposes one of the chat surfaces the source serve actually wants —
+  // first-available / random pick from a set the prefix router can serve
+  // end-to-end.
   const aliasResolution = await resolveAlias({
     modelName: model,
     providers,
     fetcherForUpstream,
     scheduler,
+    endpointAccepts: endpoints => pickTarget(endpoints) !== null,
     repo: getRepo().modelAliases,
   });
   const effectiveModel = aliasResolution?.targetModelId ?? model;

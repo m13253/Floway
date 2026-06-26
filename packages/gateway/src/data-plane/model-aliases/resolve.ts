@@ -5,18 +5,20 @@
 // construction and the shadow-the-real-model pattern (an alias whose first
 // target is its own name) Just Works.
 //
-// The resolver is endpoint-blind: alias names are opaque global mappings
-// and the routability filter only checks whether a target id resolves to
-// any enabled upstream binding. A kind-mismatched call (e.g. a chat alias
-// hit from /embeddings) gets the resolved target id back; if that target
-// does not expose the inbound endpoint, prefix routing surfaces the natural
-// "endpoint not supported" 404. The `AliasKind` on the row only governs UI
-// rule forms and the `/v1/models` listing block.
+// The resolver is endpoint-aware on the pool-narrowing axis but
+// kind-blind on the alias-rejection axis. The caller hands in an
+// `endpointAccepts` predicate that decides whether a candidate target's
+// resolved binding actually serves the inbound endpoint; the pool only
+// keeps targets that satisfy it, so first-available / random pick from a
+// set that the prefix router can serve end-to-end. The resolver does NOT
+// reject an alias just because its kind disagrees with the inbound
+// endpoint — that responsibility stays with the predicate, and a
+// kind-mismatched alias surfaces the natural "no target available" 404.
 
 import type { ModelAliasesRepo, ModelAliasRecord } from '../../repo/types.ts';
 import { collectInterpretationOutcomes, enumerateModelInterpretations } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { AliasRules } from '@floway-dev/protocols/common';
+import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelProviderInstance } from '@floway-dev/provider';
 
 export interface AliasResolution {
@@ -34,8 +36,9 @@ const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }
   `alias '${params.aliasName}' has ${params.targetCount} target(s); none currently map to an enabled upstream binding`;
 
 // Thrown when the alias name was found but no target currently resolves to
-// an enabled upstream binding. Caught at each protocol's serve seam and
-// surfaced as a 404 in the protocol-specific error envelope.
+// an enabled upstream binding that serves the inbound endpoint. Caught at
+// each protocol's serve seam and surfaced as a 404 in the protocol-specific
+// error envelope.
 export class AliasNoTargetAvailableError extends Error {
   readonly aliasName: string;
 
@@ -54,25 +57,34 @@ interface ResolveAliasArgs {
   // factory cost paid once per request rather than twice.
   readonly providers: readonly ModelProviderInstance[];
   readonly fetcherForUpstream: (upstreamId: string) => Fetcher;
+  // Predicate the caller supplies to narrow the pool to targets whose
+  // resolved binding serves the inbound endpoint. Chat callers wrap
+  // `pickTarget`; passthrough callers check the specific endpoint key.
+  // A target enters the pool iff at least one of its resolved bindings
+  // returns true here.
+  readonly endpointAccepts: (endpoints: ModelEndpoints) => boolean;
   // Injected so tests can hand in a stub; the per-request ctx already owns
   // a concrete one via `getRepo().modelAliases`.
   readonly repo: ModelAliasesRepo;
 }
 
 // Reports true when the target id resolves to at least one enabled upstream
-// binding, irrespective of which endpoint that binding exposes. Endpoint
-// suitability is the prefix-routing layer's job; the resolver only proves
-// the target is reachable somewhere in the catalog.
+// binding whose endpoint map satisfies the inbound endpoint predicate.
+// `random` selection in particular depends on this — without endpoint
+// awareness, a randomly-picked target may not serve the inbound endpoint
+// and the request would 404 at prefix routing even though another target
+// would have worked.
 const candidateIsRoutable = async (
   targetModelId: string,
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  endpointAccepts: (endpoints: ModelEndpoints) => boolean,
 ): Promise<boolean> => {
   if (providers.length === 0) return false;
   const interpretations = enumerateModelInterpretations(targetModelId, providers);
   const { resolutions } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  return resolutions.length > 0;
+  return resolutions.some(r => endpointAccepts(r.resolved.binding.upstreamModel.endpoints));
 };
 
 // Pre-pick the available pool ONCE. Order is preserved so
@@ -83,18 +95,19 @@ const buildAvailablePool = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  endpointAccepts: (endpoints: ModelEndpoints) => boolean,
 ): Promise<ModelAliasRecord['targets']> => {
   const availability = await Promise.all(record.targets.map(target =>
-    candidateIsRoutable(target.target_model_id, providers, fetcherForUpstream, scheduler)));
+    candidateIsRoutable(target.target_model_id, providers, fetcherForUpstream, scheduler, endpointAccepts)));
   return record.targets.filter((_, index) => availability[index]);
 };
 
 export const resolveAlias = async (args: ResolveAliasArgs): Promise<AliasResolution | null> => {
-  const { modelName, providers, fetcherForUpstream, scheduler, repo } = args;
+  const { modelName, providers, fetcherForUpstream, scheduler, endpointAccepts, repo } = args;
   const record = await repo.getByName(modelName);
   if (!record) return null;
 
-  const pool = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler);
+  const pool = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler, endpointAccepts);
   if (pool.length === 0) throw new AliasNoTargetAvailableError(record.name, record.targets.length);
 
   const picked = record.selection === 'first-available'
