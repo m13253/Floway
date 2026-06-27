@@ -3,8 +3,8 @@ import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
 import { ALIAS_RESPONSE_HEADER, applyChatRulesToGemini } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
+import { resolveModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -35,9 +35,9 @@ export const geminiServe = {
     const { payload, ctx, store, headers } = args;
     let enumerated;
     try {
-      enumerated = await enumerateProviderCandidates({
+      enumerated = await resolveModelCandidates({
         upstreamIds: ctx.upstreamIds,
-        model: args.model,
+        modelName: args.model,
         // Gemini has no native upstream target in the provider API; prefer
         // Chat Completions, then Messages, then Responses.
         pickTarget: endpoints => endpoints.chatCompletions ? 'chat-completions' : endpoints.messages ? 'messages' : endpoints.responses ? 'responses' : null,
@@ -77,9 +77,9 @@ export const geminiServe = {
     const { payload, ctx, store, headers } = args;
     let enumerated;
     try {
-      enumerated = await enumerateProviderCandidates({
+      enumerated = await resolveModelCandidates({
         upstreamIds: ctx.upstreamIds,
-        model: args.model,
+        modelName: args.model,
         // Gemini countTokens has no native upstream support; only providers
         // exposing the Messages endpoint qualify because we translate Gemini
         // → Messages and call Messages count_tokens upstream.

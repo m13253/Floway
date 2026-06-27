@@ -3,8 +3,8 @@ import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
 import { ALIAS_RESPONSE_HEADER, applyChatRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
+import { resolveModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -23,9 +23,9 @@ export const chatCompletionsServe = {
     const { payload, ctx, store, headers } = args;
     let enumerated;
     try {
-      enumerated = await enumerateProviderCandidates({
+      enumerated = await resolveModelCandidates({
         upstreamIds: ctx.upstreamIds,
-        model: payload.model,
+        modelName: payload.model,
         pickTarget: endpoints =>
           endpoints.chatCompletions ? 'chat-completions'
             : endpoints.messages ? 'messages'

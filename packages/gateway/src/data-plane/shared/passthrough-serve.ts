@@ -19,14 +19,13 @@ import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, recordRequestPerformance, requireRecordedDurationMs } from './telemetry/performance.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { ALIAS_RESPONSE_HEADER } from '../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
-import { resolveModelForRequest } from '../providers/registry.ts';
+import { resolveModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelEndpointKey, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -131,17 +130,23 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(ctx.currentColo);
-    // Each match is one (upstream, upstream-catalog id) pair that interprets
-    // the inbound public id. Iteration order follows configured sort_order
-    // across upstreams, with the unprefixed interpretation pushed before the
-    // prefixed one within a single upstream. The first match whose binding
-    // satisfies the endpoint capability wins. See resolve.ts for the
-    // alias-resolves-once-above-prefix-routing contract; `resolveModelForRequest`
-    // runs it and surfaces the result on `aliasResolution`.
+    // Each candidate is one (upstream, upstream-catalog id) pair that
+    // interprets the inbound public id AND advertises this passthrough's
+    // endpoint. Iteration order follows configured sort_order across
+    // upstreams, with the unprefixed interpretation pushed before the
+    // prefixed one within a single upstream. The first candidate wins.
+    // See resolve.ts for the alias-resolves-once-above-prefix-routing
+    // contract; `resolveModelCandidates` runs it and surfaces the result
+    // on `aliasResolution`.
     let resolution;
     try {
-      resolution = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler, endpoints => endpoints[endpointKey] !== undefined);
+      resolution = await resolveModelCandidates({
+        modelName: model,
+        upstreamIds: ctx.upstreamIds,
+        scheduler: ctx.backgroundScheduler,
+        currentColo: ctx.currentColo,
+        pickTarget: endpoints => endpoints[endpointKey] !== undefined ? endpointKey : null,
+      });
     } catch (e) {
       if (e instanceof AliasNoTargetAvailableError) {
         ctx.dump?.error('gateway');
@@ -149,133 +154,131 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }
       throw e;
     }
-    const { matches, failedUpstreams, aliasResolution } = resolution;
+    const { candidates, sawModel, failedUpstreams, aliasResolution } = resolution;
     if (aliasResolution !== null) ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
-    if (matches.length === 0) {
+    if (!sawModel) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
+    const [candidate] = candidates;
+    if (candidate === undefined) {
+      ctx.dump?.error('gateway');
+      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+    }
 
-    for (const match of matches) {
-      if (match.binding.upstreamModel.endpoints[endpointKey] === undefined) continue;
+    const recorder = createUpstreamLatencyRecorder();
+    const { response, modelKey } = await call(candidate.binding, {
+      fetcher: candidate.fetcher,
+      recordUpstreamLatency: recorder.record,
+      waitUntil: ctx.backgroundScheduler,
+      headers: inboundHeadersForUpstream(c),
+    });
+    const upstreamDurationMs = requireRecordedDurationMs(recorder, 'passthrough upstream call');
+    // Telemetry keys on the upstream's bare catalog id; user-facing
+    // error bodies echo the inbound `model`.
+    const identity = {
+      model: candidate.binding.upstreamModel.id,
+      upstream: candidate.binding.upstream,
+      modelKey,
+      cost: candidate.binding.provider.getPricingForModelKey(modelKey),
+    };
+    const performanceContext: PerformanceTelemetryContext = {
+      keyId: ctx.apiKeyId,
+      ...identity,
+      stream: responseHandling.format === 'sse',
+      runtimeLocation: ctx.runtimeLocation,
+    };
+    lastPerformance = performanceContext;
 
-      const recorder = createUpstreamLatencyRecorder();
-      const { response, modelKey } = await call(match.binding, {
-        fetcher: fetcherForUpstream(match.binding.upstream),
-        recordUpstreamLatency: recorder.record,
-        waitUntil: ctx.backgroundScheduler,
-        headers: inboundHeadersForUpstream(c),
-      });
-      const upstreamDurationMs = requireRecordedDurationMs(recorder, 'passthrough upstream call');
-      // Telemetry keys on `match.id` (the upstream's bare catalog id);
-      // user-facing error bodies echo the inbound `model`.
-      const identity = {
-        model: match.id,
-        upstream: match.binding.upstream,
-        modelKey,
-        cost: match.binding.provider.getPricingForModelKey(modelKey),
-      };
-      const performanceContext: PerformanceTelemetryContext = {
-        keyId: ctx.apiKeyId,
-        ...identity,
-        stream: responseHandling.format === 'sse',
-        runtimeLocation: ctx.runtimeLocation,
-      };
-      lastPerformance = performanceContext;
+    if (!response.ok) {
+      recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
+      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+      ctx.dump?.error('upstream', candidate.binding.upstream);
+      return forwardUpstreamResponse(response);
+    }
 
-      if (!response.ok) {
-        recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
-        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.error('upstream', match.binding.upstream);
-        return forwardUpstreamResponse(response);
+    recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
+
+    if (responseHandling.format === 'json') {
+      // A 2xx body that fails to parse must not 502 a client whose
+      // upstream call already succeeded; we skip usage extraction and
+      // log so missing rows stay traceable.
+      let parsed: unknown;
+      try {
+        parsed = await response.clone().json();
+      } catch (e) {
+        console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
+        parsed = undefined;
       }
+      const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
+      ctx.dump?.success(identity, usage);
+      if (usage) {
+        scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
+      }
+      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
+      return forwardUpstreamResponse(response);
+    }
 
-      recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
-
-      if (responseHandling.format === 'json') {
-        // A 2xx body that fails to parse must not 502 a client whose
-        // upstream call already succeeded; we skip usage extraction and
-        // log so missing rows stay traceable.
-        let parsed: unknown;
-        try {
-          parsed = await response.clone().json();
-        } catch (e) {
-          console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
-          parsed = undefined;
+    // Hono's streamSSE owns the response — forwardable upstream
+    // headers must be staged on `c` *before* the streamSSE call so
+    // they survive its internal newResponse.
+    const upstreamBody = response.body;
+    if (!upstreamBody) {
+      ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
+      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+      // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
+      // on the synthesized 502 so this rare edge case is still traceable.
+      stageForwardedResponseHeaders(c, response);
+      return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
+    }
+    stageForwardedResponseHeaders(c, response);
+    return streamSSE(c, async stream => {
+      let completion: StreamCompletion = 'error';
+      let streamError: unknown;
+      // Tracks whether the upstream's terminal (`done`) frame arrived
+      // before the writer settled. A client cancel after the terminal
+      // frame is graceful (upstream already finished its work); a
+      // mid-stream cancel or EOF without terminal is a real failure.
+      // Mirrors SourceStreamState.failedAfter on the chat endpoints.
+      let terminalFrameSeen = false;
+      try {
+        const frames = (async function* () {
+          const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
+          for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
+            const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+            // Dump pre-transform, so forensics see upstream truth even
+            // when the caller drops a frame from the client-facing stream.
+            ctx.dump?.frame(inputFrame);
+            if (inputFrame.type === 'done') terminalFrameSeen = true;
+            const outputFrame = responseHandling.transformFrame(inputFrame);
+            if (outputFrame === null) continue;
+            yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+          }
+        })();
+        completion = await writeSSEFrames(stream, frames, {
+          keepAlive: { frame: sseCommentFrame('keepalive') },
+          downstreamAbortController: ctx.downstreamAbortController,
+        });
+      } catch (e) {
+        streamError = e;
+      } finally {
+        const usage = responseHandling.settleUsage();
+        const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
+        if (failed) {
+          ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
+        } else {
+          ctx.dump?.success(identity, usage);
         }
-        const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
-        ctx.dump?.success(identity, usage);
+        // Record any accumulated usage regardless of the failed flag —
+        // tokens already metered upstream should bill even when the
+        // downstream half of the round-trip turned out badly. The chat
+        // streaming endpoints follow the same rule.
         if (usage) {
           scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
         }
-        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
-        return forwardUpstreamResponse(response);
+        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
       }
-
-      // Hono's streamSSE owns the response — forwardable upstream
-      // headers must be staged on `c` *before* the streamSSE call so
-      // they survive its internal newResponse.
-      const upstreamBody = response.body;
-      if (!upstreamBody) {
-        ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
-        // on the synthesized 502 so this rare edge case is still traceable.
-        stageForwardedResponseHeaders(c, response);
-        return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
-      }
-      stageForwardedResponseHeaders(c, response);
-      return streamSSE(c, async stream => {
-        let completion: StreamCompletion = 'error';
-        let streamError: unknown;
-        // Tracks whether the upstream's terminal (`done`) frame arrived
-        // before the writer settled. A client cancel after the terminal
-        // frame is graceful (upstream already finished its work); a
-        // mid-stream cancel or EOF without terminal is a real failure.
-        // Mirrors SourceStreamState.failedAfter on the chat endpoints.
-        let terminalFrameSeen = false;
-        try {
-          const frames = (async function* () {
-            const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
-            for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
-              const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
-              // Dump pre-transform, so forensics see upstream truth even
-              // when the caller drops a frame from the client-facing stream.
-              ctx.dump?.frame(inputFrame);
-              if (inputFrame.type === 'done') terminalFrameSeen = true;
-              const outputFrame = responseHandling.transformFrame(inputFrame);
-              if (outputFrame === null) continue;
-              yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
-            }
-          })();
-          completion = await writeSSEFrames(stream, frames, {
-            keepAlive: { frame: sseCommentFrame('keepalive') },
-            downstreamAbortController: ctx.downstreamAbortController,
-          });
-        } catch (e) {
-          streamError = e;
-        } finally {
-          const usage = responseHandling.settleUsage();
-          const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
-          if (failed) {
-            ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
-          } else {
-            ctx.dump?.success(identity, usage);
-          }
-          // Record any accumulated usage regardless of the failed flag —
-          // tokens already metered upstream should bill even when the
-          // downstream half of the round-trip turned out badly. The chat
-          // streaming endpoints follow the same rule.
-          if (usage) {
-            scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
-          }
-          recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
-        }
-      });
-    }
-
-    ctx.dump?.error('gateway');
-    return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+    });
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);

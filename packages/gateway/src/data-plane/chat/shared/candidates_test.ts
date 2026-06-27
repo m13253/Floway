@@ -1,8 +1,8 @@
 import { describe, test } from 'vitest';
 
-import { enumerateProviderCandidates } from './candidates.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
+import { resolveModelCandidates } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -46,15 +46,15 @@ const pickResponses = (e: ModelEndpoints): ChatTargetApi | null =>
 const pickAny = (e: ModelEndpoints): ChatTargetApi | null =>
   e.messages ? 'messages' : e.responses ? 'responses' : e.chatCompletions ? 'chat-completions' : null;
 
-describe('enumerateProviderCandidates', () => {
+describe('resolveModelCandidates', () => {
   test('single provider with a matching binding yields one candidate', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_a', 10, ['test-model'], { messages: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -72,9 +72,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -92,9 +92,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_a', 10, ['other-model'], { messages: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -111,9 +111,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_second', 20, ['other-model'], { messages: {} }));
     await repo.upstreams.save(azureUpstream('up_third', 30, ['test-model'], { messages: {} }));
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -131,9 +131,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_b', 20, ['test-model'], { messages: {} }));
     await repo.upstreams.save(azureUpstream('up_c', 30, ['test-model'], { messages: {} }));
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await resolveModelCandidates({
       upstreamIds: ['up_c', 'up_a'],
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -153,9 +153,9 @@ describe('enumerateProviderCandidates', () => {
       enabled: false,
     });
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -170,9 +170,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
 
-    const { candidates: msgCandidates } = await enumerateProviderCandidates({
+    const { candidates: msgCandidates } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessagesOrResponses,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -180,9 +180,9 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(msgCandidates.length, 1);
     assertEquals(msgCandidates[0].targetApi, 'messages');
 
-    const { candidates: resCandidates } = await enumerateProviderCandidates({
+    const { candidates: resCandidates } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickResponses,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -196,9 +196,9 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
-    const { candidates: anyCandidates } = await enumerateProviderCandidates({
+    const { candidates: anyCandidates } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickAny,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -206,9 +206,9 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(anyCandidates.length, 1);
     assertEquals(anyCandidates[0].targetApi, 'chat-completions');
 
-    const { candidates: msgCandidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates: msgCandidates, sawModel } = await resolveModelCandidates({
       upstreamIds: null,
-      model: 'test-model',
+      modelName: 'test-model',
       pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
@@ -243,9 +243,9 @@ describe('enumerateProviderCandidates', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+        const { candidates, sawModel, failedUpstreams } = await resolveModelCandidates({
           upstreamIds: null,
-          model: 'test-model',
+          modelName: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,
           currentColo: 'TEST',
@@ -286,9 +286,9 @@ describe('enumerateProviderCandidates', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+        const { candidates, sawModel, failedUpstreams } = await resolveModelCandidates({
           upstreamIds: null,
-          model: 'test-model',
+          modelName: 'test-model',
           pickTarget: pickMessages,
           scheduler: testScheduler,
           currentColo: 'TEST',

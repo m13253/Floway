@@ -24,21 +24,21 @@ const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; read
 // — the alias rewrite (if any) applied. Tests assert against this to confirm
 // the alias mechanism drove the rewrite.
 const lastSeenModel: { value: string | null } = { value: null };
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async (args: { model: string; scheduler: () => void }) => {
+    resolveModelCandidates: vi.fn(async (args: { modelName: string; scheduler: () => void }) => {
       const aliasResolution = await resolveAlias({
-        modelName: args.model,
+        modelName: args.modelName,
         providers: [],
         fetcherForUpstream: () => directFetcher,
         scheduler: args.scheduler,
         endpointAccepts: () => true,
         repo: { getByName: () => Promise.resolve(null) } as never,
       });
-      lastSeenModel.value = aliasResolution?.targetModelId ?? args.model;
+      lastSeenModel.value = aliasResolution?.targetModelId ?? args.modelName;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return { ...next, failedUpstreams: [], aliasResolution };

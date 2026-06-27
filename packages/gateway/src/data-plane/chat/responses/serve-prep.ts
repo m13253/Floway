@@ -3,7 +3,8 @@ import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
 import { ALIAS_RESPONSE_HEADER, applyChatRulesToResponses } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-import { enumerateProviderCandidates, type ChatCandidate } from '../shared/candidates.ts';
+import { resolveModelCandidates } from '../../providers/registry.ts';
+import { type ChatCandidate } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -94,9 +95,9 @@ export const prepareResponsesServePlan = async (args: {
   const prepared = await expandPreviousResponseId(payload, store);
   let enumerated;
   try {
-    enumerated = await enumerateProviderCandidates({
+    enumerated = await resolveModelCandidates({
       upstreamIds: ctx.upstreamIds,
-      model: prepared.model,
+      modelName: prepared.model,
       pickTarget,
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,

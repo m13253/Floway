@@ -3,8 +3,8 @@ import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
 import { ALIAS_RESPONSE_HEADER, applyChatRulesToMessages } from '../../model-aliases/apply.ts';
 import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
+import { resolveModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates } from '../shared/candidates.ts';
 import { aliasFailureFromError } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,9 +30,9 @@ export const messagesServe = {
     const { payload, ctx, store, headers } = args;
     let enumerated;
     try {
-      enumerated = await enumerateProviderCandidates({
+      enumerated = await resolveModelCandidates({
         upstreamIds: ctx.upstreamIds,
-        model: payload.model,
+        modelName: payload.model,
         pickTarget: endpoints =>
           endpoints.messages ? 'messages'
             : endpoints.responses ? 'responses'
@@ -74,9 +74,9 @@ export const messagesServe = {
     const { payload, ctx, store, headers } = args;
     let enumerated;
     try {
-      enumerated = await enumerateProviderCandidates({
+      enumerated = await resolveModelCandidates({
         upstreamIds: ctx.upstreamIds,
-        model: payload.model,
+        modelName: payload.model,
         pickTarget: endpoints => endpoints.messages ? 'messages' : null,
         scheduler: ctx.backgroundScheduler,
         currentColo: ctx.currentColo,

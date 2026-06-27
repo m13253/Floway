@@ -14,7 +14,7 @@ import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@f
 import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-// `enumerateProviderCandidates` is the only seam between serve and the
+// `resolveModelCandidates` is the only seam between serve and the
 // provider registry — mocking it directly keeps the serve tests narrow
 // (no fake fetch, no repo upstream rows for provider catalogs) and lets
 // each test hand the serve exactly the candidates it wants to exercise.
@@ -23,25 +23,25 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // false` so the serve renders 404 rather than 400.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 const lastCandidatesCall: { model?: string } = {};
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async (args: { model: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
+    resolveModelCandidates: vi.fn(async (args: { modelName: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
       // Drain a queued resolution from `aliasResolutionQueue` so the rule-overlay test
       // sees the resolved target id reach the candidates layer and the
       // serve overlays rules from the returned `aliasResolution`. Tests
       // queue the resolution via `aliasResolutionQueue`.
       const aliasResolution = await resolveAlias({
-        modelName: args.model,
+        modelName: args.modelName,
         providers: [],
         fetcherForUpstream: () => directFetcher,
         scheduler: args.scheduler,
         endpointAccepts: () => true,
         repo: { getByName: () => Promise.resolve(null) } as never,
       });
-      const effectiveModel = aliasResolution?.targetModelId ?? args.model;
+      const effectiveModel = aliasResolution?.targetModelId ?? args.modelName;
       lastCandidatesCall.model = effectiveModel;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');

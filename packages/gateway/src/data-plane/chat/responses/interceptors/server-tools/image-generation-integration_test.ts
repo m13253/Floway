@@ -30,13 +30,8 @@ interface BackendStub {
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [] }));
 
 vi.mock('../../../../providers/registry.ts', () => ({
-  resolveModelForRequest: vi.fn(async () => ({
-    matches: [{
-      id: 'gpt-image-2',
-      model: {
-        id: 'gpt-image-2',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
-      },
+  resolveModelCandidates: vi.fn(async () => ({
+    candidates: [{
       binding: {
         upstream: 'u',
         upstreamModel: { id: 'gpt-image-2', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
@@ -56,8 +51,11 @@ vi.mock('../../../../providers/registry.ts', () => ({
           },
         },
       },
+      fetcher: directFetcher,
     }],
+    sawModel: true,
     failedUpstreams: [],
+    aliasResolution: null,
   })),
 }));
 

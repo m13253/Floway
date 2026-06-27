@@ -1,5 +1,6 @@
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { type AliasResolution, resolveAlias } from '../model-aliases/resolve.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -259,20 +260,31 @@ export const getInternalModels = async (
 ): Promise<InternalModel[]> =>
   (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
-interface ModelResolution {
-  matches: readonly ProviderModelResolution[];
+interface ResolveCandidatesResult<TTarget> {
+  readonly candidates: ReadonlyArray<{
+    readonly provider: ModelProviderInstance;
+    readonly binding: ProviderModelRecord;
+    readonly targetApi: TTarget;
+    readonly fetcher: Fetcher;
+  }>;
+  // True when at least one interpretation resolved against an upstream
+  // catalog — independent of whether `pickTarget` accepted any of them.
+  // Lets a caller distinguish "model is unknown to every configured
+  // upstream" (sawModel=false) from "model exists but no binding serves
+  // this endpoint" (sawModel=true, candidates=[]).
+  readonly sawModel: boolean;
   // Upstream names whose catalog fetch rejected during this resolution.
   // Threaded out so the caller's failure renderer can mention them
   // parenthetically — same data the dashboard's `modelsCache.lastError`
   // surfaces, but inlined into the per-request 404/400 so a client sees
   // why their model might be temporarily missing.
-  failedUpstreams: readonly string[];
+  readonly failedUpstreams: readonly string[];
   // Set when the inbound id resolved through the alias layer. Callers
   // stage the `x-floway-alias` response header from this and ignore it
   // otherwise. `AliasNoTargetAvailableError` is thrown out of
-  // `resolveModelForRequest` itself when the alias exists but has no
+  // `resolveModelCandidates` itself when the alias exists but has no
   // routable target, and is caught at each protocol's serve seam.
-  aliasResolution: AliasResolution | null;
+  readonly aliasResolution: AliasResolution | null;
 }
 
 export interface ProviderModelResolution {
@@ -313,10 +325,11 @@ export const enumerateModelInterpretations = (
 
 // Fan out per-interpretation against the SWR cache and collect the resolved
 // matches plus a deduped list of upstreams whose catalog fetch rejected.
-// Shared by `resolveModelForRequest` and `enumerateProviderCandidates`; the
-// per-caller divergence (passthrough vs LLM-candidate shape) happens after
-// this returns. Cancellation (`AbortError`) propagates so the per-request
-// abort signal cannot be masked by a slow upstream's rejection.
+// `resolveModelCandidates` consumes this directly; the per-caller divergence
+// (chat-shape `ChatTargetApi` vs passthrough-shape `ModelEndpointKey`) is
+// handled at the `pickTarget` boundary. Cancellation (`AbortError`)
+// propagates so the per-request abort signal cannot be masked by a slow
+// upstream's rejection.
 export const collectInterpretationOutcomes = async (
   interpretations: readonly ModelInterpretation[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -354,40 +367,65 @@ export const collectInterpretationOutcomes = async (
   return { resolutions, failedUpstreams };
 };
 
-export const resolveModelForRequest = async (
-  modelId: string,
-  upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-  // Predicate the alias resolver uses to narrow its target pool to
-  // bindings whose endpoint map serves the inbound endpoint. Passthrough
-  // callers pass `endpoints => endpoints[targetEndpointKey] !== undefined`
-  // so first-available / random alias selection picks a target the prefix
-  // router can serve end-to-end. The default accepts any binding — used
-  // by call sites whose own endpoint targeting happens downstream (e.g.
-  // the Responses image-generation tool's internal model resolve).
-  endpointAccepts: (endpoints: ModelEndpoints) => boolean = () => true,
-): Promise<ModelResolution> => {
-  const providers = await listModelProviders(upstreamFilter);
+// One resolver wrapper above the shared `resolveAlias` + interpretation +
+// outcome-collection pipeline, generic on the caller's target descriptor.
+// Chat surfaces pass a `pickTarget` returning `ChatTargetApi | null`;
+// passthrough surfaces (embeddings, image generation, /v1/completions) pass
+// one returning `ModelEndpointKey | null`. The endpoint-narrowing predicate
+// the alias resolver needs piggybacks on `pickTarget` — a target whose
+// binding does not serve any acceptable surface is dropped from the alias's
+// first-available / random pool so selection can never pick a binding the
+// downstream serve cannot dispatch on.
+//
+// See resolve.ts for the alias-resolves-once-above-prefix-routing contract.
+// `AliasNoTargetAvailableError` is the alias-only failure mode and surfaces
+// out of this function for the caller to render as a 404.
+export const resolveModelCandidates = async <TTarget>(args: {
+  readonly modelName: string;
+  // null = unrestricted; empty list = no providers visible.
+  readonly upstreamIds: readonly string[] | null;
+  readonly scheduler: BackgroundScheduler;
+  // Current colo for this request — see GatewayCtx.currentColo. Threaded
+  // into the per-request fetcher so colo-scoped fallback entries can be
+  // honoured at dial time.
+  readonly currentColo: string;
+  readonly pickTarget: (endpoints: ModelEndpoints) => TTarget | null;
+}): Promise<ResolveCandidatesResult<TTarget>> => {
+  const { modelName, upstreamIds, scheduler, currentColo, pickTarget } = args;
+  const fetcherForUpstream = await createPerRequestFetcher(currentColo);
+  const providers = await listModelProviders(upstreamIds);
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  // See resolve.ts for the alias-resolves-once-above-prefix-routing contract.
   const aliasResolution = await resolveAlias({
-    modelName: modelId,
+    modelName,
     providers,
     fetcherForUpstream,
     scheduler,
-    endpointAccepts,
+    endpointAccepts: endpoints => pickTarget(endpoints) !== null,
     repo: getRepo().modelAliases,
   });
-  const effectiveModelId = aliasResolution?.targetModelId ?? modelId;
+  const effectiveModelId = aliasResolution?.targetModelId ?? modelName;
 
   const interpretations = enumerateModelInterpretations(effectiveModelId, providers);
   const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
+
+  const candidates: Array<{
+    provider: ModelProviderInstance;
+    binding: ProviderModelRecord;
+    targetApi: TTarget;
+    fetcher: Fetcher;
+  }> = [];
+  for (const { provider, resolved } of resolutions) {
+    const targetApi = pickTarget(resolved.binding.upstreamModel.endpoints);
+    if (targetApi === null) continue;
+    candidates.push({ provider, binding: resolved.binding, targetApi, fetcher: fetcherForUpstream(provider.upstream) });
+  }
+
   return {
-    matches: resolutions.map(r => r.resolved),
+    candidates,
+    sawModel: resolutions.length > 0,
     failedUpstreams,
     aliasResolution,
   };

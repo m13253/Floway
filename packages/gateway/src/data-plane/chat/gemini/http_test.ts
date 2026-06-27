@@ -13,11 +13,11 @@ import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    resolveModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return { ...next, failedUpstreams: [], aliasResolution: null };

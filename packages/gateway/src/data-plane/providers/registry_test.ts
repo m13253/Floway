@@ -1,13 +1,20 @@
 import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
-import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
+import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelCandidates, resolveModelForProvider } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
+
+// `resolveModelCandidates` requires a target descriptor; tests that just want
+// to verify routing wiring (not endpoint filtering) accept any binding by
+// returning a fixed sentinel string. Every test fixture below declares at
+// least one endpoint on its bindings, so the pick is never asked to reason
+// about an empty `endpoints` map.
+const acceptAnyBinding = () => 'any' as const;
 
 // Drains the background revalidate promise so its rejection surfaces in the
 // test runner instead of being swallowed.
@@ -189,16 +196,22 @@ test('getInternalModels returns the catalog projection without execution binding
       assertEquals(Object.hasOwn(model!, 'providers'), false);
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
 
-      const resolved = await resolveModelForRequest('shared-model', null, () => directFetcher, testScheduler);
-      assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_copilot', 'up_custom']);
-      // Each match carries its own per-provider endpoints — no merge.
-      assertEquals(resolved.matches[0]?.model.endpoints, { messages: {} });
-      assertEquals(resolved.matches[1]?.model.endpoints, { chatCompletions: {} });
+      const resolved = await resolveModelCandidates({
+        modelName: 'shared-model',
+        upstreamIds: null,
+        scheduler: testScheduler,
+        currentColo: 'TEST',
+        pickTarget: acceptAnyBinding,
+      });
+      assertEquals(resolved.candidates.map(c => c.binding.upstream), ['up_copilot', 'up_custom']);
+      // Each candidate carries its own per-provider endpoints — no merge.
+      assertEquals(resolved.candidates[0]?.binding.upstreamModel.endpoints, { messages: {} });
+      assertEquals(resolved.candidates[1]?.binding.upstreamModel.endpoints, { chatCompletions: {} });
     },
   );
 });
 
-test('resolveModelForRequest applies provider-owned aliases only to that provider', async () => {
+test('resolveModelCandidates applies provider-owned aliases only to that provider', async () => {
   const { repo } = await setupAppTest();
 
   await repo.upstreams.save(
@@ -240,14 +253,20 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForRequest('claude-opus-4-7-20300101', null, () => directFetcher, testScheduler);
+      const resolved = await resolveModelCandidates({
+        modelName: 'claude-opus-4-7-20300101',
+        upstreamIds: null,
+        scheduler: testScheduler,
+        currentColo: 'TEST',
+        pickTarget: acceptAnyBinding,
+      });
 
       // Only the Copilot upstream's `resolveRequestedModelId` aliases the
       // dated id back to `claude-opus-4-7`; the custom upstream resolves
       // nothing for the dated id, so only one match emerges.
-      assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_copilot']);
-      assertEquals(resolved.matches[0]?.id, 'claude-opus-4-7');
-      assertEquals(resolved.matches[0]?.model.endpoints, { messages: {} });
+      assertEquals(resolved.candidates.map(c => c.binding.upstream), ['up_copilot']);
+      assertEquals(resolved.candidates[0]?.binding.upstreamModel.id, 'claude-opus-4-7');
+      assertEquals(resolved.candidates[0]?.binding.upstreamModel.endpoints, { messages: {} });
     },
   );
 });
@@ -364,16 +383,16 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
-  assertEquals((await resolveModelForRequest('gpt-solo', null, () => directFetcher, testScheduler)).matches.length, 0);
-  assertEquals((await resolveModelForRequest('gpt-override', null, () => directFetcher, testScheduler)).matches.length, 0);
+  assertEquals((await resolveModelCandidates({ modelName: 'gpt-solo', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding })).candidates.length, 0);
+  assertEquals((await resolveModelCandidates({ modelName: 'gpt-override', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding })).candidates.length, 0);
 
   // The shared id survives because up_b allows it; only up_b binds it.
-  const shared = await resolveModelForRequest('gpt-shared', null, () => directFetcher, testScheduler);
-  assertEquals(shared.matches.map(m => m.binding.upstream), ['up_b']);
+  const shared = await resolveModelCandidates({ modelName: 'gpt-shared', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+  assertEquals(shared.candidates.map(c => c.binding.upstream), ['up_b']);
 
   // The untouched model still routes from up_a.
-  const keep = await resolveModelForRequest('gpt-keep', null, () => directFetcher, testScheduler);
-  assertEquals(keep.matches.map(m => m.binding.upstream), ['up_a']);
+  const keep = await resolveModelCandidates({ modelName: 'gpt-keep', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+  assertEquals(keep.candidates.map(c => c.binding.upstream), ['up_a']);
 });
 
 test('resolveModelForProvider rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
@@ -532,7 +551,7 @@ test('getInternalModels: a rejected provider does not block other providers', as
 // site asking for a model belonging to one of the *healthy* upstreams must
 // still resolve. The broken upstream's display name flows back via
 // `failedUpstreams` so the eventual error renderer can mention it.
-test('resolveModelForRequest: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
+test('resolveModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -562,17 +581,17 @@ test('resolveModelForRequest: healthy upstream still resolves alongside a reject
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await resolveModelForRequest('ok-model', null, () => directFetcher, testScheduler);
-      assertEquals(resolvedExisting.matches.map(m => m.binding.upstream), ['up_ok']);
-      assertEquals(resolvedExisting.matches[0]?.id, 'ok-model');
+      const resolvedExisting = await resolveModelCandidates({ modelName: 'ok-model', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+      assertEquals(resolvedExisting.candidates.map(c => c.binding.upstream), ['up_ok']);
+      assertEquals(resolvedExisting.candidates[0]?.binding.upstreamModel.id, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
 
       // A model nobody currently knows about must NOT rethrow the broken
       // upstream's catalog error — the caller's failure renderer is the right
       // place to surface that, parenthetically, alongside the model-missing
       // body.
-      const resolvedMissing = await resolveModelForRequest('unknown-model', null, () => directFetcher, testScheduler);
-      assertEquals(resolvedMissing.matches.length, 0);
+      const resolvedMissing = await resolveModelCandidates({ modelName: 'unknown-model', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+      assertEquals(resolvedMissing.candidates.length, 0);
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
   );
@@ -719,14 +738,14 @@ describe('catalog listing under modelPrefix', () => {
         // the prefixed surface, so a byId-based routing lookup against the
         // stripped bare id would miss. Routing must instead consult each
         // scoped upstream's own catalog, where the bare id is always present.
-        const resolved = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_prefixed']);
-        assertEquals(resolved.matches[0]?.id, 'gpt-4o');
+        const resolved = await resolveModelCandidates({ modelName: 'or/gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(resolved.candidates.map(c => c.binding.upstream), ['up_prefixed']);
+        assertEquals(resolved.candidates[0]?.binding.upstreamModel.id, 'gpt-4o');
 
         // The bare-id request must NOT route to a prefix-only-addressable
         // upstream, regardless of routing path.
-        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(bare.matches.length, 0);
+        const bare = await resolveModelCandidates({ modelName: 'gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(bare.candidates.length, 0);
       },
     );
   });
@@ -758,16 +777,16 @@ describe('catalog listing under modelPrefix', () => {
         const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
 
-        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(bare.matches.map(m => m.binding.upstream), ['up_dual_addressable']);
-        assertEquals(bare.matches[0]?.id, 'gpt-4o');
+        const bare = await resolveModelCandidates({ modelName: 'gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(bare.candidates.map(c => c.binding.upstream), ['up_dual_addressable']);
+        assertEquals(bare.candidates[0]?.binding.upstreamModel.id, 'gpt-4o');
 
         // The prefixed request enumerates both forms against `up_dual_addressable`:
         // the unprefixed lookup (`or/gpt-4o`) misses the upstream catalog, and
         // the prefix-stripped lookup (`gpt-4o`) hits — yielding a single match.
-        const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(prefixed.matches.map(m => m.binding.upstream), ['up_dual_addressable']);
-        assertEquals(prefixed.matches[0]?.id, 'gpt-4o');
+        const prefixed = await resolveModelCandidates({ modelName: 'or/gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(prefixed.candidates.map(c => c.binding.upstream), ['up_dual_addressable']);
+        assertEquals(prefixed.candidates[0]?.binding.upstreamModel.id, 'gpt-4o');
       },
     );
   });
@@ -809,14 +828,14 @@ describe('catalog listing under modelPrefix', () => {
         // Both upstreams enumerate against the bare id: up_plain via its only
         // form, up_dual via the unprefixed interpretation. Order follows the
         // configured sort_order across providers, then FORM_ORDER within one.
-        const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(bare.matches.map(m => m.binding.upstream), ['up_plain', 'up_dual']);
+        const bare = await resolveModelCandidates({ modelName: 'gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(bare.candidates.map(c => c.binding.upstream), ['up_plain', 'up_dual']);
 
         // The prefixed id resolves only against up_dual: up_plain's catalog
         // does not contain `or/gpt-4o`, and up_dual's prefix-stripped lookup
         // hits its catalog's bare `gpt-4o`.
-        const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(prefixed.matches.map(m => m.binding.upstream), ['up_dual']);
+        const prefixed = await resolveModelCandidates({ modelName: 'or/gpt-4o', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(prefixed.candidates.map(c => c.binding.upstream), ['up_dual']);
       },
     );
   });
@@ -899,9 +918,9 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const resolved = await resolveModelForRequest('aa/bb/gpt-5', null, () => directFetcher, testScheduler);
-        assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
-        assertEquals(resolved.matches.map(m => m.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
+        const resolved = await resolveModelCandidates({ modelName: 'aa/bb/gpt-5', upstreamIds: null, scheduler: testScheduler, currentColo: 'TEST', pickTarget: acceptAnyBinding });
+        assertEquals(resolved.candidates.map(c => c.binding.upstream), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
+        assertEquals(resolved.candidates.map(c => c.binding.upstreamModel.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
       },
     );
   });
