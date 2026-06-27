@@ -65,11 +65,6 @@ export const controlPlaneModels = async (c: Context) => {
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
     const realModels = listedRealModels(addressable);
-    const unlistedRows = includeUnlisted
-      ? addressable
-          .filter(entry => entry.unlisted === true)
-          .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
-      : [];
     const listedRows = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
@@ -79,6 +74,17 @@ export const controlPlaneModels = async (c: Context) => {
           wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
       : realModels.map(toControlPlaneModel);
+    // Dedupe the unlisted half against the listed half on `id` — an alias
+    // whose name coincides with an addressable-but-not-listed id (e.g. a
+    // Copilot variant) would otherwise emit two rows with the same id but
+    // different `unlisted` flags. /v1/models already collapses this kind
+    // of collision; the dashboard must agree.
+    const listedIds = new Set(listedRows.map(row => row.id));
+    const unlistedRows = includeUnlisted
+      ? addressable
+          .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
+          .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
+      : [];
     const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {
       object: 'list',

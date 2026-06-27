@@ -174,3 +174,50 @@ test('/api/models?include_unlisted=true appends addressable-but-not-listed rows 
     },
   );
 });
+
+test('/api/models?include_unlisted=true: alias whose name collides with an unlisted addressable id emits only the listed row', async () => {
+  // Operator-side trap: an alias name accidentally matching a Copilot
+  // variant id (e.g. `claude-opus-4.7`). Both the listed alias row and
+  // the unlisted addressable row carry the same `id`, so emitting both
+  // would break OpenAI-client deduplication and contradict /v1/models's
+  // alias-vs-real collision rule (alias wins, real is dropped).
+  const { apiKey, repo } = await setupAppTest();
+  await repo.modelAliases.insert({
+    name: 'claude-opus-4.7',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Alias colliding with the unlisted Copilot variant',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'claude-opus-4-7', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'claude-opus-4.7', display_name: 'Claude Opus 4.7', supported_endpoints: ['/v1/messages'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const full = await requestApp('/api/models?include_unlisted=true', { headers: { 'x-api-key': apiKey.key } });
+      const fullBody = (await full.json()) as { data: Array<{ id: string; unlisted?: true; aliasedFrom?: unknown }> };
+      const collisions = fullBody.data.filter(m => m.id === 'claude-opus-4.7');
+      assertEquals(collisions.length, 1);
+      // The surviving row is the alias-side one (aliasedFrom set, no
+      // `unlisted` tag), matching /v1/models's alias-wins rule.
+      assertEquals(collisions[0].aliasedFrom !== undefined, true);
+      assertEquals(collisions[0].unlisted, undefined);
+    },
+  );
+});
