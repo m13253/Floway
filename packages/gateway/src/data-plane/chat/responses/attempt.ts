@@ -46,6 +46,17 @@ export interface ResponsesAttemptInvokeArgs {
 // `invocation.action === 'compact'`. That position is structurally correct:
 // the throw fires pre-upstream-call, lives inside the chain (not after the
 // interceptor finally blocks), and stays independent of the shim's presence.
+//
+// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
+// which derives the snapshot mode by observing the output stream — `'replace'`
+// when any output item is a compaction (the three convergence cases:
+// native `/v1/responses/compact`, a `compaction_trigger` input on
+// `/v1/responses` reshaped by the upstream, and the server-side
+// `context_management` `compact_threshold` mode), `'append'` otherwise.
+// "Don't write" is expressed by the store itself: cross-protocol translation
+// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
+// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
+// no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers } = args;
