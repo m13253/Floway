@@ -233,14 +233,16 @@ export const compareModelIds = (a: string, b: string): number => {
     || cmp(a, b, -1);
 };
 
-// `fetcherForUpstream` routes each upstream's catalog fetch through its
-// per-upstream proxy chain.
-export const getModels = async (
-  upstreamFilter: readonly string[] | null,
+// Catalog assembly against an already-resolved provider list. Callers that
+// already paid the `listModelProviders` round-trip — `enumerateAddressableModelIds`
+// fans the same list twice, once into the catalog walk and once into the
+// addressable-only loop — pass providers through to avoid the duplicate
+// upstreams.list() DB query.
+export const getModelsFromProviders = async (
+  providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ResolvedModel[]> => {
-  const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
@@ -251,6 +253,15 @@ export const getModels = async (
   if (lastError) throw lastError;
   return [];
 };
+
+// `fetcherForUpstream` routes each upstream's catalog fetch through its
+// per-upstream proxy chain.
+export const getModels = async (
+  upstreamFilter: readonly string[] | null,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<ResolvedModel[]> =>
+  await getModelsFromProviders(await listModelProviders(upstreamFilter), fetcherForUpstream, scheduler);
 
 interface ResolveCandidatesResult<TTarget> {
   readonly candidates: ReadonlyArray<{

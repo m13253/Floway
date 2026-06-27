@@ -13,7 +13,7 @@
 // registry round trip.
 
 import { fetchUpstreamModelsCached } from './models-cache.ts';
-import { compareModelIds, getModels, listModelProviders } from './registry.ts';
+import { compareModelIds, getModelsFromProviders, listModelProviders } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
 
@@ -49,11 +49,14 @@ export const enumerateAddressableModelIds = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<readonly AddressableIdEntry[]> => {
-  // `getModels` throws the actionable "no upstream provider configured"
-  // message when the provider list is empty; surface it the same way here
-  // so /v1/models keeps its 502 + hint behavior on a brand-new gateway.
-  const realModels = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
+  // Resolve providers once and thread them into the catalog assembly so
+  // the upstreams.list() round-trip and provider-instantiation cost is
+  // paid once per call. `getModelsFromProviders` throws the actionable
+  // "no upstream provider configured" message when the provider list is
+  // empty; surface it the same way here so /v1/models keeps its 502 +
+  // hint behavior on a brand-new gateway.
   const providers = await listModelProviders(upstreamFilter);
+  const realModels = await getModelsFromProviders(providers, fetcherForUpstream, scheduler);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
