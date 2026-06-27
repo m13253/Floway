@@ -263,8 +263,10 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[]
 // it preserves intent. `mapReal` shapes each real model into the caller's
 // row type; `wrapAlias` lifts a synthesized `PublicModel` alias entry into
 // the same row type (the dashboard, for example, adds an empty `upstreams`
-// array since alias rows do not bind to an upstream directly).
-export const mergeAliasesIntoModels = <T extends PublicModel>(input: {
+// array since alias rows do not bind to an upstream directly; the Gemini
+// `/v1beta/models` route maps into the upstream's `InternalModel` shape
+// before projecting to Gemini's wire form).
+export const mergeAliasesIntoModels = <T>(input: {
   readonly realModels: readonly ResolvedModel[];
   readonly aliases: readonly ModelAliasRecord[];
   readonly mapReal: (model: ResolvedModel) => T;

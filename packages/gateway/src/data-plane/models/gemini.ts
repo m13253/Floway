@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { synthesizeListedAliases } from './alias-listing.ts';
+import { mergeAliasesIntoModels } from './alias-listing.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -65,8 +65,9 @@ const geminiModelLoadError = (error: unknown): Response => {
   return geminiError(502, error instanceof Error ? error.message : String(error));
 };
 
-// Real chat models plus chat-kind alias entries; see `loadModels` for the
-// collision rationale.
+// Real chat models plus chat-kind alias entries; collision and dedupe ride
+// on the shared `mergeAliasesIntoModels` helper so /v1beta/models stays in
+// step with /v1/models and the dashboard's /api/models.
 const loadGeminiModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
@@ -77,21 +78,22 @@ const loadGeminiModels = async (
     getModels(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const chatModels = models.filter(model => model.kind === 'chat');
-  const aliasEntries = synthesizeListedAliases({ aliases, realModels: models })
-    .filter(entry => entry.kind === 'chat');
-  const aliasIds = new Set(aliasEntries.map(entry => entry.id));
-  const merged: InternalModel[] = [
-    ...chatModels.filter(model => !aliasIds.has(model.id)),
-    ...aliasEntries.map<InternalModel>(entry => ({
+  // Gemini surfaces chat-kind models only; filter both the real catalog and
+  // the synthesized alias entries before the merge so the alias collision
+  // step only ever weighs chat-on-chat.
+  const merged = mergeAliasesIntoModels<InternalModel>({
+    realModels: models.filter(model => model.kind === 'chat'),
+    aliases: aliases.filter(alias => alias.kind === 'chat'),
+    mapReal: model => model,
+    wrapAlias: entry => ({
       id: entry.id,
       display_name: entry.display_name,
       limits: entry.limits,
       kind: entry.kind,
       ...(entry.cost !== undefined ? { cost: entry.cost } : {}),
       ...(entry.chat !== undefined ? { chat: entry.chat } : {}),
-    })),
-  ];
+    }),
+  });
   return merged.map(toGeminiModel);
 };
 
