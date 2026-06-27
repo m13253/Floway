@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { mergeAliasesIntoModels } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { enumerateAddressableModelIds } from '../../data-plane/providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../../data-plane/providers/addressable.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -64,9 +64,7 @@ export const controlPlaneModels = async (c: Context) => {
       ),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
-    const realModels = addressable.entries
-      .filter(entry => entry.unlisted === undefined)
-      .map(entry => entry.model);
+    const realModels = listedRealModels(addressable.entries);
     const unlistedRows = includeUnlisted
       ? addressable.entries
           .filter(entry => entry.unlisted === true)

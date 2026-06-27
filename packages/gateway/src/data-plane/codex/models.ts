@@ -41,7 +41,7 @@ import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { synthesizeListedAliases } from '../models/alias-listing.ts';
-import { enumerateAddressableModelIds } from '../providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -70,9 +70,7 @@ const computeCatalog = async (
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
     getRepo().modelAliases.list(),
   ]);
-  const realModels = addressable.entries
-    .filter(entry => entry.unlisted === undefined)
-    .map(entry => entry.model);
+  const realModels = listedRealModels(addressable.entries);
   const slugContextWindow = new Map<string, number>();
   for (const m of realModels) {
     const limit = m.limits.max_context_window_tokens;

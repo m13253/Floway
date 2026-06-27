@@ -1,6 +1,6 @@
 import { mergeAliasesIntoModels } from './alias-listing.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
-import { enumerateAddressableModelIds } from '../providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
@@ -39,9 +39,7 @@ export const loadModels = async (
     enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const realModels = addressable.entries
-    .filter(entry => entry.unlisted === undefined)
-    .map(entry => entry.model);
+  const realModels = listedRealModels(addressable.entries);
   const data = mergeAliasesIntoModels({
     realModels,
     addressableModelIds: addressable.entries,

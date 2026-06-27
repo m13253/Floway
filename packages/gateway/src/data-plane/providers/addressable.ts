@@ -41,6 +41,12 @@ export interface AddressableSurface {
   readonly entries: readonly AddressableIdEntry[];
 }
 
+// Project the listed (real-catalog) `ResolvedModel`s out of an addressable
+// surface — every listing caller wants this same slice to feed
+// `mergeAliasesIntoModels`'s `realModels` arg.
+export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly ResolvedModel[] =>
+  entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
+
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
 // tagged with whether the id participates in the default `/v1/models`
 // listing. Fans out per upstream the same way `collectProviderModels` does,
