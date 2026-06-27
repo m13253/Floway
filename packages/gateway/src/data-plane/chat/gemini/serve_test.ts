@@ -378,3 +378,27 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(payload.generationConfig?.thinkingConfig?.thinkingBudget, 1024);
   assertEquals(payload.generationConfig?.verbosity, 'low');
 });
+
+test('alias resolves to no routable target — renders the Gemini 404 envelope + stages x-floway-alias on the failure', async () => {
+  installRepo();
+  const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
+  aliasResolutionQueue.push(new AliasNoTargetAvailableError({
+    aliasName: 'gemini-fast', targetCount: 2, allEndpointMismatch: false,
+  }));
+
+  const ctx = makeGatewayCtx();
+  const result = await geminiServe.generate({
+    payload: makePayload(),
+    ctx,
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    model: 'gemini-fast',
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assert(body.error.message.includes("alias 'gemini-fast'"));
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gemini-fast');
+});

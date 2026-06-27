@@ -345,3 +345,29 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.reasoning_effort, 'low');
   assertEquals(observed.verbosity, 'low');
 });
+
+test('alias resolves to no routable target — renders the protocol 404 envelope + stages x-floway-alias on the failure', async () => {
+  installRepo();
+  const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
+  aliasResolutionQueue.push(new AliasNoTargetAvailableError({
+    aliasName: 'gpt-fast', targetCount: 2, allEndpointMismatch: false,
+  }));
+  // No candidates are consumed on this path; the alias error short-circuits
+  // the routing pipeline before the candidate queue is even read.
+
+  const ctx = makeGatewayCtx();
+  const result = await chatCompletionsServe.generate({
+    payload: makePayload({ model: 'gpt-fast' }),
+    ctx,
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes("alias 'gpt-fast'"));
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gpt-fast');
+});
