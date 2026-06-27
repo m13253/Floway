@@ -69,7 +69,7 @@ export const computeCatalog = (
 
   const models: CatalogModel[] = [];
   const slugContextWindow = new Map<string, number>();
-  let aliasActive = false;
+  let aliasTarget: InternalModel | null = null;
   for (const im of internalModels) {
     if (im.kind !== 'chat') continue;
     const limit = im.limits.max_context_window_tokens;
@@ -89,17 +89,20 @@ export const computeCatalog = (
       // the Codex CLI's auto-review hook only fires when it can send the bare
       // `codex-auto-review` slug, so the bare target must appear in the
       // registry.
-      if (im.id.toLowerCase() === CODEX_AUTO_REVIEW_TARGET) aliasActive = true;
+      if (im.id.toLowerCase() === CODEX_AUTO_REVIEW_TARGET) aliasTarget = im;
     } else {
       models.push(synthesizeCatalogEntry(im));
     }
   }
-  if (aliasActive) {
+  if (aliasTarget !== null) {
     const aliasEntry = bundledBySlug.get(CODEX_AUTO_REVIEW_ALIAS);
     if (aliasEntry === undefined) {
       throw new Error(`Bundled Codex catalog missing required alias entry for slug "${CODEX_AUTO_REVIEW_ALIAS}"`);
     }
-    models.push({ ...aliasEntry });
+    // The alias points at the same upstream model as its target — bill via
+    // the same registry tiers, not the bundled ones (which may advertise
+    // OpenAI 1p tiers Floway cannot bill).
+    models.push({ ...aliasEntry, service_tiers: deriveServiceTiers(aliasTarget) });
   }
   const contextWindowOf: ContextWindowResolver = slug =>
     slugContextWindow.get(slug === CODEX_AUTO_REVIEW_ALIAS ? CODEX_AUTO_REVIEW_TARGET : slug) ?? null;

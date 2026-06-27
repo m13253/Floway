@@ -87,6 +87,29 @@ describe('computeCatalog', () => {
     expect(() => computeCatalog(bundledWithoutAlias, [chat('gpt-5.4')])).toThrow(/codex-auto-review/);
   });
 
+  test('alias service_tiers derive from the target registry entry, not the bundled fixture', () => {
+    // The alias points at the same upstream model as its target, so it must
+    // be billed via the target's registry pricing — not the bundled
+    // service_tiers (which may be OpenAI 1p tiers Floway cannot bill).
+    const target: InternalModel = {
+      ...chat('gpt-5.4'),
+      cost: { tiers: { fast: { input: 1 }, priority: { input: 2 } } },
+    };
+    const out = computeCatalog(bundled, [target]);
+    const alias = out.models.find(m => m.slug === 'codex-auto-review');
+    expect(alias).toBeDefined();
+    expect(alias!.service_tiers).toEqual([
+      { id: 'fast', name: 'fast', description: '' },
+      { id: 'priority', name: 'priority', description: '' },
+    ]);
+  });
+
+  test('alias service_tiers default to [] when the target has no cost.tiers', () => {
+    const out = computeCatalog(bundled, [chat('gpt-5.4')]);
+    const alias = out.models.find(m => m.slug === 'codex-auto-review');
+    expect(alias?.service_tiers).toEqual([]);
+  });
+
   test('bundled reuse: registry cost.tiers replaces bundled service_tiers', () => {
     const im: InternalModel = {
       ...chat('openrouter/gpt-5.5:nitro'),
