@@ -15,11 +15,12 @@
 //
 // Operator-defined aliases participate in the same filter: a bundled
 // catalog slug that matches a visible alias survives whenever the alias
-// has at least one currently-routable target, and the context window the
-// alias advertises follows the alias's announced metadata (when the
-// operator overrode it) or the first available target (single-target
-// aliases collapse to "the target's window"; multi-target aliases pick
-// first-available for determinism — `random` doesn't fit a catalog).
+// has at least one currently-routable target. The context window the alias
+// advertises follows its announced metadata (when the operator overrode
+// it) or the min across every routable target's window — the safe lower
+// bound `/v1/models`'s rule-aware intersection already applies, so
+// whichever target the resolver picks at request time the catalog's
+// published window is one the gateway can actually serve.
 //
 // Latency: codex aborts the catalog fetch after 5 s
 // (`MODELS_REFRESH_TIMEOUT` in codex-rs/model-provider/src/models_endpoint.rs)
@@ -71,31 +72,22 @@ const computeCatalog = async (
     getRepo().modelAliases.list(),
   ]);
   const realModels = listedRealModels(addressable);
-  // Keyed on every addressable id (not just the listed surface): an alias can
-  // legitimately target an unlisted addressable form — `gpt-5.4` when the
-  // listed canonical id is `cust/gpt-5.4`, or a Copilot variant `claude-opus-4.7`
-  // when the listed canonical is `claude-opus-4-7`. Each entry's `.model`
-  // points to the same canonical `ResolvedModel`, so storing the limit under
-  // both the listed id and any unlisted alias of it stays consistent.
-  const slugContextWindow = new Map<string, number>();
-  for (const entry of addressable) {
-    const limit = entry.model.limits.max_context_window_tokens;
-    if (typeof limit === 'number') slugContextWindow.set(entry.id, limit);
-  }
   // `registrySlugs` mirrors the listed catalog surface — the slugs codex
-  // would have seen in a regular /v1/models call. `addressableSet` is the
-  // broader set the resolver actually accepts (prefix alternates, Copilot
-  // variants), used only for alias-target availability.
+  // would have seen in a regular /v1/models call. `addressableById` is the
+  // broader map the resolver actually accepts (prefix alternates, Copilot
+  // variants) — same surface the listing-side synthesizer narrowed against,
+  // so the kind-filtered lookup below stays consistent with the entries
+  // it emitted.
   const registrySlugs = new Set(realModels.map(m => m.id));
-  const addressableSet = new Set(addressable.map(entry => entry.id));
+  const addressableById = new Map(addressable.map(entry => [entry.id, entry] as const));
 
   // Each alias entry survives in the codex catalog when at least one of
-  // its configured targets is currently addressable. The fallback window
-  // — used when the operator did not override `announcedMetadata` —
-  // is the min across every routable target's window, matching the
-  // safe-lower-bound rule `/v1/models` already applies via the rule-aware
-  // intersection. Selection mode is irrelevant here because the catalog
-  // must publish a single stable window.
+  // its configured targets is currently addressable AND kind-matches the
+  // alias — the same predicate `synthesizeListedAliases` already applied to
+  // emit the entry, re-derived here per-target so we can pull the min
+  // window across every routable target. Selection mode is irrelevant
+  // because the catalog must publish a single stable window; the operator
+  // override still wins when announced metadata supplies one.
   interface AliasCatalogInfo {
     readonly routableWindowsMin: number | null;
     readonly announcedContextWindow: number | undefined;
@@ -104,12 +96,12 @@ const computeCatalog = async (
   for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
-    const routableIds = aliasedFrom.targets
-      .map(t => t.target_model_id)
-      .filter(id => addressableSet.has(id));
-    if (routableIds.length === 0) continue;
-    const windows = routableIds
-      .map(id => slugContextWindow.get(id))
+    const routable = aliasedFrom.targets
+      .map(t => addressableById.get(t.target_model_id))
+      .filter((a): a is NonNullable<typeof a> => a !== undefined && a.model.kind === entry.kind);
+    if (routable.length === 0) continue;
+    const windows = routable
+      .map(a => a.model.limits.max_context_window_tokens)
       .filter((w): w is number => w !== undefined);
     aliasCatalogInfo.set(entry.id, {
       routableWindowsMin: windows.length > 0 ? Math.min(...windows) : null,
@@ -130,7 +122,7 @@ const computeCatalog = async (
   const contextWindowOf: ContextWindowResolver = slug => {
     const info = aliasCatalogInfo.get(slug);
     if (info !== undefined) return info.announcedContextWindow ?? info.routableWindowsMin;
-    return slugContextWindow.get(slug) ?? null;
+    return addressableById.get(slug)?.model.limits.max_context_window_tokens ?? null;
   };
   return applyContextWindowFromRegistry(filtered, contextWindowOf);
 };
