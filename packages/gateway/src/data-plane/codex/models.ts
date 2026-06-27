@@ -13,14 +13,6 @@
 // registry public id and their context_window / max_context_window rewritten
 // from the registry (see context-window.ts) so the codex client sees the
 // same limits the data plane will actually enforce.
-//
-// Each request runs the registry leg directly — there is no per-colo cache.
-// The slow path is the registry fetch, which can cost ~4 s when the
-// upstream's `/models` endpoint is cold; codex aborts its catalog refresh
-// after 5 s (`MODELS_REFRESH_TIMEOUT` in
-// codex-rs/model-provider/src/models_endpoint.rs) and silently falls back
-// to its binary-bundled catalog on miss. Operators who add or change
-// upstreams see the new catalog on the next CLI session start.
 
 import type { Context } from 'hono';
 
