@@ -94,7 +94,7 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
     { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
-      tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' } }],
+      tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],
       reasoning: { effort: 'medium' },
       temperature: 0.7,
       max_output_tokens: 64,
