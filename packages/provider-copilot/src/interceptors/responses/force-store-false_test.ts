@@ -17,6 +17,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  action: 'generate',
 });
 
 test('forces store:false when the caller requested store:true', async () => {

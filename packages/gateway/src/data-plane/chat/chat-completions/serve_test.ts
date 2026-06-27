@@ -9,7 +9,7 @@ import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the serve exactly the
@@ -111,7 +111,7 @@ const makeCandidate = (overrides: {
   targetApi?: ProviderCandidate['targetApi'];
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
@@ -187,8 +187,8 @@ test('generate translates through the Messages target when only that endpoint is
 
 test('generate translates through the Responses target when only that endpoint is exposed', async () => {
   installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'responses-model-key', headers: new Headers(),
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'responses-model-key', headers: new Headers(),
   }));
   queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
 

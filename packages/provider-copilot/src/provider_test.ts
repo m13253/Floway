@@ -319,7 +319,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
       await provider.callResponses(model, {
         input: [],
         reasoning: { effort: 'xhigh' },
-      }, undefined, noopUpstreamCallOptions());
+      }, 'generate', undefined, noopUpstreamCallOptions());
     },
   );
 
@@ -329,11 +329,11 @@ test('Copilot provider selects raw variants that support the target endpoint', a
 test('Copilot provider runs the Responses boundary chain on the compact path', async () => {
   // The compact-path boundary registers payload mutators (force-store-false,
   // strip-service-tier, strip-image-generation, ...) plus header derivers
-  // (set-vision-header, set-initiator-header). Driving callResponsesCompact
-  // through a real upstream stub exercises the integration end-to-end: the
-  // payload mutators reach the wire body, the header derivers reach the wire
-  // request headers, and the compact-shaped envelope still comes back through
-  // `compactionResponse`.
+  // (set-vision-header, set-initiator-header). Driving callResponses with
+  // action='compact' through a real upstream stub exercises the integration
+  // end-to-end: the payload mutators reach the wire body, the header
+  // derivers reach the wire request headers, and the compact-shaped envelope
+  // still comes back through `compactionResponse`.
   const { copilotUpstream } = await setupCopilotTest();
   const instance = await createCopilotProvider(copilotUpstream);
   const provider = instance.provider;
@@ -374,7 +374,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
       // service_tier is set so withServiceTierStripped has something to strip;
       // an input_image is included so withVisionHeaderSet fires; the last
       // input item is a user message so withInitiatorHeaderSet picks 'user'.
-      const result = await provider.callResponsesCompact(model, {
+      const result = await provider.callResponses(model, {
         input: [
           {
             type: 'message',
@@ -386,9 +386,10 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
           },
         ],
         service_tier: 'priority',
-      }, undefined, noopUpstreamCallOptions());
+      }, 'compact', undefined, noopUpstreamCallOptions());
 
       if (!result.ok) throw new Error('expected ok compaction result');
+      if (result.action !== 'compact') throw new Error(`expected compact action tag, got ${result.action}`);
       assertEquals(result.result.object, 'response.compaction');
     },
   );
@@ -493,7 +494,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const byId = new Map(models.map(model => [model.id, model]));
 
       await provider.callChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callResponses(byId.get('gpt-resp')!, { input: [] }, undefined, noopUpstreamCallOptions());
+      await provider.callResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, noopUpstreamCallOptions());
       await provider.callMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       await provider.callMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       await provider.callEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, noopUpstreamCallOptions());

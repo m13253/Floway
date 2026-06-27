@@ -5,7 +5,7 @@ import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
-import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: UpstreamModel): string => model.providerData as string;
@@ -180,18 +180,30 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
-    callResponses: (model, body, signal, opts) => callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
-    callResponsesCompact: async (model, body, signal, opts) => {
-      rememberPricingForModel(model);
-      const rawModelId = rawModelIdOf(model);
-      const response = await customFetchResponsesCompact(
-        config,
-        { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
-      );
-      return response.ok
-        ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-        : { ok: false, response, modelKey: rawModelId };
+    callResponses: async (model, body, action, signal, opts) => {
+      switch (action) {
+      case 'generate': {
+        const stream = await callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
+      case 'compact': {
+        rememberPricingForModel(model);
+        const rawModelId = rawModelIdOf(model);
+        const response = await customFetchResponsesCompact(
+          config,
+          { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        );
+        return response.ok
+          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+      }
+      default:
+        action satisfies never;
+        throw new Error(`Unhandled ResponsesAction: ${action as string}`);
+      }
     },
     callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),

@@ -6,7 +6,7 @@ import { COPILOT_CHATCOMPLETIONS_BOUNDARY } from './interceptors/chat-completion
 import type { ChatCompletionsBoundaryCtx } from './interceptors/chat-completions/types.ts';
 import { COPILOT_MESSAGES_BOUNDARY, COPILOT_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/messages/index.ts';
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './interceptors/messages/types.ts';
-import { COPILOT_RESPONSES_BOUNDARY, COPILOT_RESPONSES_COMPACT_BOUNDARY } from './interceptors/responses/index.ts';
+import { COPILOT_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
@@ -19,8 +19,8 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -316,48 +316,52 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       );
       return lowerToStream(result, rawModel.id);
     },
-    callResponses: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
       const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: new Headers(opts.headers),
         model,
+        action,
       };
-      const result = await runInterceptors<ResponsesBoundaryCtx, object, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>(
+      // Single chain wraps both branches; the terminal dispatches on
+      // `ctx.action` (the post-chain value), so a mid-chain interceptor can
+      // flip it and steer dispatch end-to-end. Copilot has no native
+      // /v1/responses/compact, so the compact branch drives the same
+      // /responses upstream with stream:false + a compaction_trigger input
+      // item and reshapes the envelope via `compactionResponse`. Every
+      // payload/header workaround in the chain — force-store-false,
+      // strip-service-tier, strip-image-generation, inline-image
+      // compression, vision/initiator headers — applies to both branches
+      // identically; the two event-stream mutators
+      // (`withOutputItemIdsSynchronized`, `withToolArgumentWhitespaceAborted`)
+      // inspect the result variant and no-op on the compact value envelope.
+      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
         ctx, {}, COPILOT_RESPONSES_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await liftStream(callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream, opts));
-        },
-      );
-      return lowerToStream(result, rawModel.id);
-    },
-    callResponsesCompact: async (model, body, signal, opts) => {
-      const rawModel = rawModelFor(model, 'responses', { reasoningEffort: responsesReasoningEffort(body) });
-      const ctx: ResponsesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-      };
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
-        ctx, {}, COPILOT_RESPONSES_COMPACT_BOUNDARY, async () => {
-          // Compaction is non-streaming — a single encrypted blob, not a token
-          // stream — so we drive `/responses` with `stream:false` (bypassing
-          // the SSE-forcing callStreaming helper) and reshape the response
-          // into the canonical `response.compaction` envelope. Build the wire
-          // body from the post-interceptor `ctx.payload` so mutations from
-          // `withStoreForcedFalse`, `withServiceTierStripped`, etc. survive
-          // the trigger-item insertion.
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
-          const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-          const response = await copilotFetchResponses(
-            upstreamConfig,
-            { method: 'POST', body: JSON.stringify(triggered), signal },
-            { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
-          );
-          if (!response.ok) return { ok: false, response, modelKey: rawModel.id };
-          const generated = (await response.json()) as ResponsesResult;
-          return { ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+          switch (ctx.action) {
+          case 'generate': {
+            const stream = await callStreaming(copilotFetchResponses, wireBody, signal, rawModel, ctx.headers, parseResponsesStream, opts);
+            return stream.ok
+              ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+              : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+          }
+          case 'compact': {
+            const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
+            const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
+            const response = await copilotFetchResponses(
+              upstreamConfig,
+              { method: 'POST', body: JSON.stringify(triggered), signal },
+              { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+            );
+            if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
+            const generated = (await response.json()) as ResponsesResult;
+            return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+          }
+          default:
+            ctx.action satisfies never;
+            throw new Error(`Unhandled ResponsesAction: ${ctx.action as string}`);
+          }
         },
       );
     },

@@ -9,8 +9,8 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import { directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_messages_attempt_test';
@@ -63,7 +63,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
@@ -143,8 +143,8 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
     headers: new Headers(),

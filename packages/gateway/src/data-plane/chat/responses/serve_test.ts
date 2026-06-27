@@ -11,7 +11,7 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // `enumerateProviderCandidates` is the only seam between serve and the
@@ -91,15 +91,13 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
-    ...(overrides.callResponsesCompact !== undefined ? { callResponsesCompact: overrides.callResponsesCompact as never } : {}),
   });
   return {
     provider: {
@@ -140,8 +138,8 @@ test('generate routes a native Responses candidate end to end', async () => {
     sequence_number: 0,
     response: makeResponsesResult(),
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProtocolFrames([completed]),
     modelKey: 'test-model-key',
     headers: new Headers(),
@@ -171,12 +169,11 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponsesCompact = vi.fn(async () => ({
-    ok: true as const,
-    result: compactionResult,
-    modelKey: 'test-model-key',
-  }));
-  const candidate = makeCandidate({ upstream: 'up_a', callResponsesCompact });
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
   queueCandidates([candidate]);
 
   const result = await responsesServe.compact({
@@ -189,7 +186,8 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   assertEquals(result.type, 'result');
   if (result.type !== 'result') throw new Error('unreachable');
   assertEquals(result.result.object, 'response.compaction');
-  assertEquals(callResponsesCompact.mock.calls.length, 1);
+  assertEquals(callResponses.mock.calls.length, 1);
+  assertEquals(callResponses.mock.calls[0][2], 'compact');
 });
 
 test('generate stops at the first candidate even when it yields an upstream error', async () => {
@@ -197,16 +195,16 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+  const firstCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
   }));
   const completed: ResponsesStreamEvent = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeResponsesResult('resp_second'),
   };
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
+  const secondCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
   }));
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
@@ -521,10 +519,10 @@ test('generate falls through translate-out to chat-completions target', async ()
 test('generate reuses an existing input row when a later turn echoes the same user message', async () => {
   const repo = installRepo();
   let turn = 0;
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => {
     turn += 1;
     return {
-      ok: true,
+      action: 'generate', ok: true,
       events: makeProtocolFrames([{
         type: 'response.completed',
         sequence_number: 0,
@@ -594,10 +592,10 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
   });
 
   let receivedInput: unknown = null;
-  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
     receivedInput = (body as { input: unknown }).input;
     return {
-      ok: true,
+      action: 'generate', ok: true,
       events: makeProtocolFrames([{
         type: 'response.completed',
         sequence_number: 0,

@@ -9,7 +9,7 @@ import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/pro
 // (multimodal tool results, e.g. a screenshot tool). Remote https image
 // references are left untouched. Generic in the run-result type so the same
 // definition feeds both the streaming `/responses` chain and the
-// non-streaming `/responses/compact` chain.
+// non-streaming compaction chain.
 export const withInlineImagesCompressed = async <TResult>(
   ctx: ResponsesBoundaryCtx,
   _request: object,

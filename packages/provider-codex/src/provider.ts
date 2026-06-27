@@ -2,14 +2,14 @@ import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cac
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
-import { codexResponsesChain } from './interceptors/responses/index.ts';
+import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderCompactionResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
+import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
   assertCodexUpstreamRecord(record);
@@ -101,50 +101,31 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // public API rates. The table lives in ./pricing.ts.
     getPricingForModelKey: pricingForCodexModelKey,
 
-    callResponses: async (model, body, signal, opts) => {
+    callResponses: async (model, body, action, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {
         payload: { ...body, model: model.id },
         headers: new Headers(opts.headers),
         model,
+        action,
       };
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderStreamResult<ResponsesStreamEvent>>(
-        ctx, {}, codexResponsesChain<ProviderStreamResult<ResponsesStreamEvent>>(), async () => {
+      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderResponsesResult>(
+        ctx, {}, CODEX_RESPONSES_BOUNDARY, async () => {
           const { account } = await readActiveAccount();
           const { model: _ignored, ...wireBody } = ctx.payload;
-          return await callCodexResponses({
-            upstreamId: record.id,
-            account,
-            model,
-            body: wireBody,
-            headers: ctx.headers,
-            signal,
-            effects,
-            call: opts,
-          });
-        },
-      );
-    },
-
-    callResponsesCompact: async (model, body, signal, opts) => {
-      const ctx: ResponsesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-      };
-      return await runInterceptors<ResponsesBoundaryCtx, object, ProviderCompactionResult>(
-        ctx, {}, codexResponsesChain<ProviderCompactionResult>(), async () => {
-          const { account } = await readActiveAccount();
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          return await callCodexResponsesCompact({
-            upstreamId: record.id,
-            account,
-            model,
-            body: wireBody,
-            headers: ctx.headers,
-            signal,
-            effects,
-            call: opts,
-          });
+          const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };
+          switch (ctx.action) {
+          case 'compact':
+            // Narrow to the compact wire shape — defends against a future
+            // interceptor that flips `ctx.action` from 'generate' to 'compact'
+            // mid-chain and leaves the generate-shaped body (tools, reasoning,
+            // etc.) in place.
+            return { action: 'compact', ...(await callCodexResponsesCompact({ ...backendCallBase, body: toCompactPayloadShape(wireBody) })) };
+          case 'generate':
+            return { action: 'generate', ...(await callCodexResponses({ ...backendCallBase, body: wireBody })) };
+          default:
+            ctx.action satisfies never;
+            throw new Error(`Unhandled ResponsesAction: ${ctx.action as string}`);
+          }
         },
       );
     },

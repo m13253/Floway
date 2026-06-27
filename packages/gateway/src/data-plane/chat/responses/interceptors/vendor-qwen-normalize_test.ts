@@ -41,6 +41,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
     stageInputs: false,
   }),
   headers: new Headers(),
+  action: 'generate',
 });
 
 test("vendor-qwen translates canonical reasoning.effort: 'none' into top-level enable_thinking:false", async () => {

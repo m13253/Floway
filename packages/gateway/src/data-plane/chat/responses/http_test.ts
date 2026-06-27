@@ -9,7 +9,7 @@ import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
@@ -106,15 +106,13 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: ProviderCandidate['targetApi'];
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
-  callResponsesCompact?: (...args: unknown[]) => Promise<unknown>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'responses';
   const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
-    ...(overrides.callResponsesCompact !== undefined ? { callResponsesCompact: overrides.callResponsesCompact as never } : {}),
   });
   return {
     provider: {
@@ -148,8 +146,8 @@ const completedEvent = (id = 'resp_test'): ResponsesStreamEvent => ({
 
 test('POST /v1/responses streams a successful SSE body', async () => {
   installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent()]),
     modelKey: 'test-model-key',
     headers: new Headers(),
@@ -175,8 +173,8 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 
 test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
   installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent('resp_nonstream')]),
     modelKey: 'test-model-key',
     headers: new Headers(),
@@ -204,12 +202,11 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponsesCompact = vi.fn(async () => ({
-    ok: true as const,
-    result: compactionResult,
-    modelKey: 'test-model-key',
-  }));
-  queueCandidates([makeCandidate({ callResponsesCompact })]);
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+  queueCandidates([makeCandidate({ callResponses })]);
 
   const response = await makeApp().request('/v1/responses/compact', {
     method: 'POST',
@@ -289,10 +286,10 @@ test('POST /v1/responses rewrites the codex-auto-review alias before routing', a
   installRepo();
   seenModels.length = 0;
   const observedBodies: { reasoning?: { effort?: string } }[] = [];
-  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
     observedBodies.push(body as { reasoning?: { effort?: string } });
     return {
-      ok: true,
+      action: 'generate', ok: true,
       events: makeProviderEvents([completedEvent()]),
       modelKey: 'test-model-key',
       headers: new Headers(),
@@ -323,11 +320,12 @@ test('POST /v1/responses/compact rewrites the codex-auto-review alias to gpt-5.4
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponsesCompact = vi.fn(async (_model: unknown, body: unknown) => {
+  const callResponses = vi.fn(async (_model: unknown, body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
     observedBodies.push(body as { reasoning?: unknown });
-    return { ok: true as const, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
-  queueCandidates([makeCandidate({ callResponsesCompact })]);
+  queueCandidates([makeCandidate({ callResponses })]);
 
   const response = await makeApp().request('/v1/responses/compact', {
     method: 'POST',
@@ -341,6 +339,6 @@ test('POST /v1/responses/compact rewrites the codex-auto-review alias to gpt-5.4
   assertEquals(response.status, 200);
   assertEquals(seenModels, ['gpt-5.4']);
   const observed = observedBodies[0];
-  if (observed === undefined) throw new Error('expected callResponsesCompact to receive a body');
+  if (observed === undefined) throw new Error('expected callResponses to receive a body');
   assertEquals(observed.reasoning, undefined);
 });

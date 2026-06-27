@@ -4,7 +4,7 @@ import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
-import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
@@ -19,32 +19,58 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamApiError, type ExecuteResult } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
-export interface ResponsesAttemptGenerateArgs {
+export interface ResponsesAttemptInvokeArgs {
   readonly payload: ResponsesPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
-  // Native HTTP/WS entry passes 'append'; the cross-protocol translation-in
-  // path (another protocol's attempt translating into Responses) passes
-  // 'none' so the outer source owns snapshot persistence.
-  readonly snapshotMode: ResponsesSnapshotMode;
-  readonly headers: Headers;
-}
-
-export interface ResponsesAttemptCompactArgs {
-  readonly payload: ResponsesPayload;
+  readonly action: ResponsesAction;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 
+// Single entry point for both `action: 'generate'` and `action: 'compact'`.
+// Envelope-drain branches on the caller's intent (`action` passed by value),
+// not on `invocation.action`. Interceptors are free to mutate `ctx.action`
+// to steer inner dispatch — and, by the project's interceptor convention,
+// they do not restore on the way out — so post-chain `invocation.action`
+// reflects whatever the last writer left it at. The shape of the result we
+// hand back is the caller's contract; keying off the caller's value is the
+// only place that contract lives.
+//
+// The module-boundary invariant `compact-shaped ⇒ targetApi='responses'`
+// at dispatch time is enforced in two places, each at the layer that owns
+// the corresponding piece of state:
+//
+//   - `invocation.action === 'compact'` is caught inside `dispatchResponses`'s
+//     `case 'messages'` / `case 'chat-completions'` arms — action is a
+//     Responses-level metadata field that the translators never see.
+//   - A `compaction_trigger` (or any other compact-shaped) item in input is
+//     caught by the translator itself — the `responses-via-messages` and
+//     `responses-via-chat-completions` translators reject any input-item
+//     variant they do not handle, so a compaction_trigger that slipped past
+//     the shim surfaces as a translator-level error rather than a silent
+//     drop.
+//
+// Both safety nets fire pre-upstream-call, live inside the chain (not after
+// the interceptor finally blocks), and stay independent of the shim's
+// presence.
+//
+// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
+// which derives the snapshot mode by observing the output stream — `'replace'`
+// when any output item is a compaction (the three convergence cases:
+// native `/v1/responses/compact`, a `compaction_trigger` input on
+// `/v1/responses` reshaped by the upstream, and the server-side
+// `context_management` `compact_threshold` mode), `'append'` otherwise.
+// "Don't write" is expressed by the store itself: cross-protocol translation
+// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
+// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
+// no-op at the store-write layer.
 export const responsesAttempt = {
-  generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, snapshotMode, headers } = args;
+  invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
+    const { payload, action, ctx, store, candidate, headers } = args;
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
@@ -66,14 +92,40 @@ export const responsesAttempt = {
 
     const invocation: ResponsesInvocation = {
       payload: normalized,
+      action,
       candidate,
       store,
       headers,
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
-      await dispatchResponses(invocation.payload, ctx, store, candidate, invocation.headers));
+      await dispatchResponses(invocation, ctx));
 
     if (chainResult.type !== 'events') return chainResult;
+
+    const responseId = createStoredResponseId();
+    if (action === 'compact') {
+      // The caller entered through /v1/responses/compact (or serve.compact).
+      // Drain the chain's events — whether they came from a native /compact
+      // wire or from the responses-compact-shim's synthesized envelope —
+      // into a single result envelope so the http layer can JSON-encode it
+      // directly. Storage still runs over the synthesized event stream so
+      // the snapshot is committed under the same id the client will see —
+      // wrap detects the `compaction` output item and writes a `'replace'`
+      // snapshot.
+      const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
+      await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
+        store,
+        upstream: candidate.binding.upstream,
+        targetApi: 'responses',
+        responseId,
+      }));
+      return {
+        type: 'result',
+        result: { ...upstreamCompacted, id: responseId },
+        modelIdentity: chainResult.modelIdentity,
+        usage: tokenUsageFromResponsesResult(upstreamCompacted),
+      };
+    }
 
     // Persistence and id rewriting wrap the *outermost* stream — after every
     // interceptor (including the server-tool shim) has emitted its final
@@ -83,12 +135,10 @@ export const responsesAttempt = {
     // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
     // is committed under the same id so the next turn's
     // `previous_response_id` lookup is guaranteed to hit.
-    const responseId = createStoredResponseId();
     return eventResult(
       wrapResponsesOutputForStorage(chainResult.events, {
         store,
         upstream: candidate.binding.upstream,
-        snapshotMode,
         targetApi: candidate.targetApi,
         responseId,
       }),
@@ -101,43 +151,18 @@ export const responsesAttempt = {
     );
   },
 
-  compact: async (args: ResponsesAttemptCompactArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, ctx, store, candidate, headers } = args;
-    if (candidate.targetApi !== 'responses') {
-      throw new Error(`responsesAttempt.compact requires targetApi='responses', got '${candidate.targetApi}'`);
+  // Narrowing wrapper for cross-protocol translation callers
+  // (Messages/Gemini/ChatCompletions translating into Responses) and the
+  // native HTTP/WS generate entry — both always run in generate mode and
+  // want the ExecuteResult branch. The compact branch is a contract
+  // violation here; an interceptor that pivoted generate→compact would
+  // surface as a throw, not a silent shape mismatch.
+  generate: async (args: Omit<ResponsesAttemptInvokeArgs, 'action'>): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+    const result = await responsesAttempt.invoke({ ...args, action: 'generate' });
+    if (result.type === 'result') {
+      throw new Error('responsesAttempt.generate received a compact result; an interceptor pivoted generate→compact unexpectedly');
     }
-    // Mirrors generate: rewrite + seed + normalize before interceptors so
-    // shims see fully expanded input with privatePayload primed.
-    const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
-    if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.references);
-    const normalized: ResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
-
-    const invocation: ResponsesInvocation = { payload: normalized, candidate, store, headers };
-    const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
-      await callResponsesCompactAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers));
-
-    if (chainResult.type !== 'events') return chainResult;
-
-    const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
-    // Drive storage and snapshot via the same wrapper generate uses; the
-    // events here are synthesized from the compaction envelope so item
-    // persistence and the snapshot key are produced under the same id the
-    // client will see.
-    const responseId = createStoredResponseId();
-    await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
-      store,
-      upstream: candidate.binding.upstream,
-      snapshotMode: 'replace',
-      targetApi: 'responses',
-      responseId,
-    }));
-    return {
-      type: 'result',
-      result: { ...upstreamCompacted, id: responseId },
-      modelIdentity: chainResult.modelIdentity,
-      usage: tokenUsageFromResponsesResult(upstreamCompacted),
-    };
+    return result;
   },
 };
 
@@ -182,41 +207,69 @@ const rewriteOrRenderFailure = async (
 };
 
 const dispatchResponses = async (
-  payload: ResponsesPayload,
+  invocation: ResponsesInvocation,
   ctx: GatewayCtx,
-  store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
-  headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  const { candidate, store } = invocation;
   switch (candidate.targetApi) {
   case 'responses': {
-    const { model: _model, ...body } = payload;
     const recorder = createUpstreamLatencyRecorder();
+    if (invocation.action === 'compact') {
+      // The compact wire body drops `stream` and `store` — `store` is a
+      // gateway-only snapshot-persistence hint that the upstream compact
+      // endpoint rejects, and `stream` is irrelevant on a non-streaming
+      // call. The generate branch leaves both fields on the body so the
+      // provider can decide for itself (every provider's streaming call
+      // forces stream=true anyway).
+      const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
+      const providerResult = await candidate.binding.provider.callResponses(
+        candidate.binding.upstreamModel,
+        body,
+        invocation.action,
+        ctx.abortSignal,
+        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+      );
+      return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
+    }
+    const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.binding.provider.callResponses(
       candidate.binding.upstreamModel,
       body,
+      invocation.action,
       ctx.abortSignal,
-      buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
+      buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
+    return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
   }
   case 'messages':
+    if (invocation.action === 'compact') {
+      // The responses-compact-shim is structurally required on non-responses
+      // targets and pivots ctx.action to 'generate' before reaching here;
+      // landing inside this case with action='compact' means the shim
+      // disengaged or was wired out of the chain. A compaction_trigger in
+      // input is caught one layer down by the translator's
+      // unexpected-input-item guard.
+      throw new Error(`responsesAttempt: action='compact' reached dispatch on targetApi='messages' — the responses-compact-shim must engage and pivot the action`);
+    }
     return await traverseTranslation(
-      payload,
+      invocation.payload,
       p => translateResponsesViaMessages(p, {
         model: candidate.binding.upstreamModel.id,
         fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
       }),
       translated => messagesAttempt.generate({
-        payload: translated, ctx, store, candidate, headers,
+        payload: translated, ctx, store, candidate, headers: invocation.headers,
       }),
     );
   case 'chat-completions':
+    if (invocation.action === 'compact') {
+      throw new Error(`responsesAttempt: action='compact' reached dispatch on targetApi='chat-completions' — the responses-compact-shim must engage and pivot the action`);
+    }
     return await traverseTranslation(
-      payload,
+      invocation.payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
       translated => chatCompletionsAttempt.generate({
-        payload: translated, ctx, store, candidate, headers,
+        payload: translated, ctx, store, candidate, headers: invocation.headers,
       }),
     );
   default: {
@@ -226,34 +279,35 @@ const dispatchResponses = async (
   }
 };
 
-// `/responses/compact` is non-streaming: the provider returns the compaction
-// envelope as a value (Azure, Codex, and custom upstreams call native
-// `/responses/compact`; Copilot rebuilds it from a `compaction_trigger`
-// turn), so we synthesize the canonical event frames here instead of
-// pretending the result came from an SSE body. `model` is positional,
-// `stream` and `store` are gateway-only and must not reach the wire —
-// `store` is a snapshot-persistence hint, the upstream compact endpoint
-// rejects it.
-const callResponsesCompactAsExecuteResult = async (
-  payload: ResponsesPayload,
-  ctx: GatewayCtx,
+// Lowers a `ProviderResponsesResult` into the chain's
+// ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> currency. The compact
+// branch synthesizes SSE frames from the envelope so every downstream
+// interceptor sees the same event-stream contract regardless of which action
+// the provider executed.
+const providerResponsesResultToExecuteResult = async (
+  providerResult: ProviderResponsesResult,
   candidate: ProviderCandidate,
-  headers: Headers,
+  ctx: GatewayCtx,
+  recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const { model: _model, stream: _stream, store: _store, ...body } = payload;
-  const recorder = createUpstreamLatencyRecorder();
-  const providerResult = await candidate.binding.provider.callResponsesCompact(
-    candidate.binding.upstreamModel,
-    body,
-    ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
-  );
+  if (providerResult.action === 'generate') {
+    return await providerStreamResultToExecuteResult(
+      providerResult.ok
+        ? { ok: true, events: providerResult.events, modelKey: providerResult.modelKey, ...(providerResult.headers ? { headers: providerResult.headers } : {}) }
+        : { ok: false, response: providerResult.response, modelKey: providerResult.modelKey },
+      candidate,
+      ctx,
+      recorder,
+    );
+  }
+  // action === 'compact'. The non-streaming envelope expands into the same
+  // event stream wrap-output-storage consumes for the streaming path.
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
   }
-  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponsesCompact')));
+  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponses(action=compact)')));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

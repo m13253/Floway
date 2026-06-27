@@ -26,7 +26,7 @@ import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
-import { parseResponsesStream, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
@@ -150,17 +150,29 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
     callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
-    callResponses: (model, body, signal, opts) => callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts),
-    callResponsesCompact: async (model, body, signal, opts) => {
-      const rawModelId = rawModelIdOf(model);
-      const response = await ollamaFetchResponsesCompact(
-        config,
-        { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
-      );
-      return response.ok
-        ? { ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
-        : { ok: false, response, modelKey: rawModelId };
+    callResponses: async (model, body, action, signal, opts) => {
+      switch (action) {
+      case 'generate': {
+        const stream = await callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts);
+        return stream.ok
+          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
+          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+      }
+      case 'compact': {
+        const rawModelId = rawModelIdOf(model);
+        const response = await ollamaFetchResponsesCompact(
+          config,
+          { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        );
+        return response.ok
+          ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
+          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+      }
+      default:
+        action satisfies never;
+        throw new Error(`Unhandled ResponsesAction: ${action as string}`);
+      }
     },
     callMessages: (model, body, signal, opts) => callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchMessagesCountTokens, model, body, signal, opts),

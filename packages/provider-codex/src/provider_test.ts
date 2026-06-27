@@ -153,10 +153,12 @@ describe('createCodexProvider', () => {
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
+      'generate',
       undefined,
       noopUpstreamCallOptions(),
     );
     expect(result.ok).toBe(true);
+    expect(result.action).toBe('generate');
   });
 
   test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
@@ -165,6 +167,7 @@ describe('createCodexProvider', () => {
     const result = await instance.provider.callResponses(
       { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
       { input: [], stream: true },
+      'generate',
       undefined,
       noopUpstreamCallOptions(),
     );

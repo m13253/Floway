@@ -51,15 +51,21 @@ export interface LayeredStatefulResponsesStoreOptions {
 }
 
 // How a Responses turn should commit its snapshot:
-//   - 'none'    : do not write a snapshot at all
 //   - 'append'  : conversation continuation — previous snapshot + this turn's
-//                 input + this turn's output. Default for /responses generate.
+//                 input + this turn's output. Default for a normal generate.
 //   - 'replace' : the turn's output IS the new conversation — drop prior
-//                 history and the stitched-in input. Used by /responses/compact
-//                 so that referencing the compact response via
-//                 previous_response_id replays only the retained messages +
-//                 the encrypted compaction blob, not the original full history.
-export type ResponsesSnapshotMode = 'none' | 'append' | 'replace';
+//                 history and the stitched-in input. Used when the output is
+//                 a self-contained compaction envelope so referencing this
+//                 response via `previous_response_id` replays only the
+//                 retained messages + the encrypted compaction blob, not the
+//                 original full history.
+//
+// The mode is derived inside `wrapResponsesOutputForStorage` by observing the
+// output stream, so callers do not pass it. Skipping the snapshot entirely is
+// expressed at the store layer via an empty `snapshotWrites` configuration
+// (see `createNonResponsesSourceStore` and the `store=false` branch of
+// `createResponsesHttpStore`).
+export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string | null;
@@ -85,7 +91,7 @@ export interface StatefulResponsesStore {
   getPrivatePayload(id: string): unknown;
   stageOutputItem(row: StoredResponsesItem): void;
   commitOutputItems(): Promise<void>;
-  commitSnapshot(responseId: string, mode: 'append' | 'replace'): Promise<void>;
+  commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
   refreshTouchedItems(): Promise<void>;
 }
 
@@ -224,7 +230,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     await this.commitItems([...this.stagedOutputItems.values()]);
   }
 
-  async commitSnapshot(responseId: string, mode: 'append' | 'replace'): Promise<void> {
+  async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.snapshotWrites.length === 0 || this.committedSnapshotIds.has(responseId)) return;
     await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
     const itemIds = mode === 'replace'
@@ -270,11 +276,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
     // `compaction_trigger` is a per-request control signal, not content:
     // payload-free, idless, never persisted in codex's own rollout/history,
-    // and never re-sent on subsequent turns. A trigger-bearing generate is
-    // treated as a compaction (serve forces snapshotMode='replace') so the
-    // next snapshot is the resulting `compaction` blob alone; this row
-    // would have no reader. Skipping it also keeps `createStoredResponsesItemId`
-    // from minting a prefix for a type that never needs one.
+    // and never re-sent on subsequent turns. The output of such a turn is a
+    // self-contained `compaction` envelope which wrap detects and commits as
+    // snapshot mode 'replace', so this row would have no reader. Skipping it
+    // also keeps `createStoredResponsesItemId` from minting a prefix for a
+    // type that never needs one.
     if (item.type === 'compaction_trigger') return;
 
     if (item.type === 'item_reference') {

@@ -7,18 +7,18 @@ import { injectSessionId } from './inject-session-id.ts';
 import { stripUnsupportedFields } from './strip-unsupported-fields.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
+import type { ProviderResponsesResult } from '@floway-dev/provider';
 
 // Order rationale: none of the three interceptors below read or write a field
 // the others touch, so order is positional only. inject-session-id last is
 // conventional but not load-bearing — it hashes only `instructions + first
 // user-message text`, neither of which is mutated by the other two.
 //
-// Each interceptor is generic over the terminal result type: the streaming
-// `/responses` chain runs to ProviderStreamResult, the compaction chain runs
-// to ProviderCompactionResult, and both feed the same boundary ctx. Codex
-// interceptors are pure payload/header mutators, so the streaming variant
-// returns ProviderStreamResult directly (no per-frame lift/lower).
-export const codexResponsesChain = <TResult>(): readonly Interceptor<ResponsesBoundaryCtx, object, TResult>[] => [
+// Codex interceptors are pure payload/header mutators, so the chain's only
+// terminal — the streaming `generate` + non-streaming `compact` dispatch —
+// returns its `ProviderResponsesResult` directly without any per-frame
+// lift/lower step.
+export const CODEX_RESPONSES_BOUNDARY: readonly Interceptor<ResponsesBoundaryCtx, object, ProviderResponsesResult>[] = [
   injectDefaultInstructions,
   stripUnsupportedFields,
   injectSessionId,

@@ -9,8 +9,8 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
@@ -73,7 +73,7 @@ const makeCandidate = (overrides: {
   targetApi?: ProviderCandidate['targetApi'];
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
-  callResponses?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ResponsesStreamEvent>>;
+  callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
@@ -160,8 +160,8 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };
-  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
-    ok: true,
+  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
     headers: new Headers(),
@@ -211,10 +211,10 @@ test('generate inherits invocation headers across translation to Responses', asy
     }],
     output_text: 'hi', error: null, incomplete_details: null,
   };
-  const callResponses = vi.fn(async (_model: unknown, _body: unknown, _signal?: AbortSignal, opts?: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const callResponses = vi.fn(async (_model: unknown, _body: unknown, _action: ResponsesAction, _signal?: AbortSignal, opts?: UpstreamCallOptions): Promise<ProviderResponsesResult> => {
     observedHeaders = opts?.headers;
     return {
-      ok: true,
+      action: 'generate', ok: true,
       events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
       modelKey: 'k',
       headers: new Headers(),
