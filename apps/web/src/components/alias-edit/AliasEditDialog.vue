@@ -325,8 +325,7 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
           <p class="mb-3 text-xs text-gray-500">
             Defaults to the intersection across every currently-available
             target (rule-pinned sub-fields are not modifiable on client
-            side so treated as unsupported). Switch to Manual any time to
-            publish your own payload to <code class="font-mono">/v1/models</code>.
+            side so treated as unsupported).
           </p>
           <ChatMetadataEditor
             :model-value="announcedEditorValue"
