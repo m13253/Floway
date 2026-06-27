@@ -71,10 +71,16 @@ const computeCatalog = async (
     getRepo().modelAliases.list(),
   ]);
   const realModels = listedRealModels(addressable);
+  // Keyed on every addressable id (not just the listed surface): an alias can
+  // legitimately target an unlisted addressable form — `gpt-5.4` when the
+  // listed canonical id is `cust/gpt-5.4`, or a Copilot variant `claude-opus-4.7`
+  // when the listed canonical is `claude-opus-4-7`. Each entry's `.model`
+  // points to the same canonical `ResolvedModel`, so storing the limit under
+  // both the listed id and any unlisted alias of it stays consistent.
   const slugContextWindow = new Map<string, number>();
-  for (const m of realModels) {
-    const limit = m.limits.max_context_window_tokens;
-    if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
+  for (const entry of addressable) {
+    const limit = entry.model.limits.max_context_window_tokens;
+    if (typeof limit === 'number') slugContextWindow.set(entry.id, limit);
   }
   // Listed-surface filter for the codex catalog itself: the codex client
   // expects the surface it would have published in a regular /v1/models

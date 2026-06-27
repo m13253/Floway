@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { mountCodexRoutes } from './routes.ts';
 import { app as gatewayApp } from '../../app.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
+import { copilotModels, buildCustomUpstreamRecord, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
 import { isStoredResponseId } from '../chat/responses/items/format.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -512,6 +512,76 @@ describe('codex 1p namespace', () => {
       // the target's true 272000 ceiling is irrelevant to the catalog.
       expect(autoReview?.context_window).toBe(64000);
       expect(autoReview?.max_context_window).toBe(64000);
+    });
+
+    it('reports the target window when the alias falls back to slugContextWindow on an unlisted addressable form', async () => {
+      // Trigger path: a multi-target alias whose targets disagree on
+      // `max_context_window_tokens` (one target omits it) — the
+      // automatic intersection drops the field, so the codex catalog has
+      // to fall back to the first routable target's own window via
+      // `slugContextWindow`. The first target is the bare unlisted form
+      // `gpt-5.4` (the listed canonical is `cust/gpt-5.4`), so the
+      // lookup must succeed against the addressable surface — keyed by
+      // listed-only ids it would miss and the catalog would publish a
+      // null window, defaulting back to the bundled tier the gateway
+      // cannot actually serve.
+      const { apiKey, repo } = await setupAppTest();
+      await repo.upstreams.deleteAll();
+      await repo.upstreams.save(buildCustomUpstreamRecord({
+        modelPrefix: { prefix: 'cust/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+      }));
+      await repo.modelAliases.insert({
+        name: 'codex-auto-review',
+        kind: 'chat',
+        selection: 'first-available',
+        displayName: 'Codex Auto Review',
+        visibleInModelsList: true,
+        targets: [
+          { target_model_id: 'gpt-5.4', rules: {} },
+          { target_model_id: 'gpt-5.5', rules: {} },
+        ],
+        announcedMetadata: null,
+        sortOrder: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const app = buildCodexApp();
+      const body = await withMockedFetch(
+        request => {
+          const url = new URL(request.url);
+          if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+            return jsonResponse({
+              object: 'list',
+              data: [
+                {
+                  id: 'gpt-5.4',
+                  supported_endpoints: ['/chat/completions'],
+                  limits: { max_context_window_tokens: 272000 },
+                },
+                {
+                  // No window — intersection drops the field, exposing
+                  // the slugContextWindow fallback path.
+                  id: 'gpt-5.5',
+                  supported_endpoints: ['/chat/completions'],
+                },
+              ],
+            });
+          }
+          throw new Error(`Unhandled fetch ${request.url}`);
+        },
+        async () => {
+          const response = await app.request('/azure-api.codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
+      const autoReview = body.models.find(m => m.slug === 'codex-auto-review');
+      // Bundled `codex-auto-review` ships with max_context_window=1000000;
+      // a successful resolver lookup pulls it down to gpt-5.4's 272000.
+      expect(autoReview?.max_context_window).toBe(272000);
+      expect(autoReview?.context_window).toBe(272000);
     });
 
     it('returns an empty catalog when the registry has no overlapping slugs', async () => {
