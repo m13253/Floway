@@ -1,9 +1,8 @@
 <script setup lang="ts">
-// Single-select combobox with free-form input. Operator can type a value
+// Single-select combobox with free-form input. The operator can type a value
 // the suggestion list does not contain and the typed string becomes the
-// model value verbatim — alias rule fields (effort, summary, service
-// tier, ...) pass through to the upstream and the gateway intentionally
-// does not enum-gate them, so unknown values must round-trip.
+// model value verbatim — useful for fields the gateway forwards verbatim and
+// does not enum-gate.
 //
 // Visual contract matches Select.vue / TagCombobox.vue (dark popover,
 // surface-700 trigger). HTML5 `<input list>` + `<datalist>` would have
@@ -43,14 +42,14 @@ const props = withDefaults(defineProps<{
   emptyText?: string;
   /**
    * Drop the bordered surface-700 shell so the input blends into its parent
-   * row — used by the alias-target row, where the combobox is the row title
-   * inside an already-bordered Card and a second border would double up.
+   * row. Used when the combobox is embedded in an already-bordered container
+   * (e.g. a Card row title) where a second border would double up.
    */
   borderless?: boolean;
   /**
    * Hide the right-edge chevron that toggles the dropdown. The popover still
    * opens on focus / click because the input itself owns `open-on-focus`;
-   * removing the chevron just keeps the title visually clean when the row
+   * removing the chevron keeps the title visually clean when the parent row
    * already carries its own action cluster on the right.
    */
   hideDropdownTrigger?: boolean;
