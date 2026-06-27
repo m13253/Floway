@@ -74,13 +74,25 @@ export const enumerateAddressableModelIds = async (
   // chose not to publish, then (b) the provider's redirect enumeration. The
   // catalog round-trip is the same SWR cache the listed surface just
   // consumed, so this loop never pays a second upstream hit.
-  for (const provider of providers) {
+  //
+  // `getModels` already tolerated a per-upstream catalog miss via
+  // `Promise.allSettled`, so the listed surface for this same call survived
+  // any single upstream that rejected the catalog refresh. Mirror that
+  // contract here: a rejected `fetchUpstreamModelsCached` collapses to no
+  // addressable-only contribution from THAT upstream — its listed rows
+  // already came through `getModels` (or were dropped there for the same
+  // reason). Without this, a cold-start gateway with one transiently-down
+  // upstream would tank /v1/models entirely.
+  const perUpstream = await Promise.allSettled(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
-    if (addressableOnly.length === 0 && provider.enumerateAddressableRedirects === undefined) continue;
+    if (addressableOnly.length === 0 && provider.enumerateAddressableRedirects === undefined) {
+      return [] as AddressableIdEntry[];
+    }
 
     const upstreamModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstream) });
     const disabled = new Set(provider.disabledPublicModelIds);
+    const out: AddressableIdEntry[] = [];
 
     if (cfg !== null && addressableOnly.length > 0) {
       // The canonical listed form for this upstream — the row the listing
@@ -97,7 +109,7 @@ export const enumerateAddressableModelIds = async (
         if (canonical === undefined) continue;
         for (const form of addressableOnly) {
           const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          push({ id, unlisted: true, model: canonical });
+          out.push({ id, unlisted: true, model: canonical });
         }
       }
     }
@@ -106,8 +118,14 @@ export const enumerateAddressableModelIds = async (
     for (const redirect of redirects) {
       const target = byId.get(redirect.resolvesTo);
       if (target === undefined) continue;
-      push({ id: redirect.addressable, unlisted: true, model: target });
+      out.push({ id: redirect.addressable, unlisted: true, model: target });
     }
+    return out;
+  }));
+
+  for (const result of perUpstream) {
+    if (result.status !== 'fulfilled') continue;
+    for (const entry of result.value) push(entry);
   }
 
   // Stable id ordering matches the listed surface so consumers can rely on
