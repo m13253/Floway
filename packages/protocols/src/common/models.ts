@@ -165,14 +165,24 @@ export interface PublicModel {
   // currently-available target's endpoint map — at request time the
   // resolver narrows the pool to targets that serve the inbound endpoint,
   // so any endpoint advertised here is reachable through at least one
-  // target. The map is empty (`{}`) when an alias has no currently-available
-  // target; never absent.
+  // target.
   endpoints: ModelEndpoints;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
   // Present only on entries the gateway synthesized from an operator-defined
   // alias; absent for entries that came from an upstream catalog.
   aliasedFrom?: PublicModelAliasedFrom;
+  // Sidecar flag carried only on entries that are addressable-but-not-
+  // listed: ids the data plane accepts (via `modelPrefix.addressable`
+  // alternates or per-provider `resolveRequestedModelId` redirects) but
+  // that do NOT appear in the default `/v1/models` payload. Absent on
+  // every default-listed row and on alias rows — both are part of the
+  // public catalog. The field surfaces only on
+  // `/api/models?include_unlisted=true` rows that the dashboard's alias
+  // edit combobox shows alongside the listed catalog. Wire shape is
+  // intentionally `unlisted?: true` — boolean would add a wire byte to
+  // every listed row for no caller benefit.
+  unlisted?: true;
 }
 
 export interface PublicModelsResponse {

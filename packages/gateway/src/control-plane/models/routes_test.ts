@@ -125,3 +125,52 @@ test('/api/models appends visible alias entries with aliasedFrom alongside real 
     assertEquals(body.data.some(model => model.id === 'custom-model'), true);
   });
 });
+
+test('/api/models?include_unlisted=true appends addressable-but-not-listed rows marked with `unlisted: true`', async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
+        // Two variants of one model — Copilot publishes the dotted-version
+        // ids as raw upstream entries, but the public id collapses the
+        // dots and any `-high`/`-xhigh` suffix. The raw forms become
+        // addressable-but-not-listed entries.
+        return jsonResponse(copilotModels([
+          { id: 'claude-opus-4.7', display_name: 'Claude Opus 4.7', supported_endpoints: ['/v1/messages'] },
+          { id: 'claude-opus-4.7-high', supported_endpoints: ['/v1/messages'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const listed = await requestApp('/api/models?aliases=false', { headers: { 'x-api-key': apiKey.key } });
+      const listedBody = (await listed.json()) as { data: Array<{ id: string; unlisted?: true }> };
+      assertEquals(listedBody.data.map(m => m.id), ['claude-opus-4-7']);
+      // The default response carries no `unlisted` field on any row.
+      assertEquals(listedBody.data.every(m => m.unlisted === undefined), true);
+
+      const full = await requestApp('/api/models?aliases=false&include_unlisted=true', { headers: { 'x-api-key': apiKey.key } });
+      const fullBody = (await full.json()) as { data: Array<{ id: string; unlisted?: true; upstreams: unknown[] }> };
+      const ids = fullBody.data.map(m => m.id);
+      assertEquals(ids.includes('claude-opus-4-7'), true);
+      assertEquals(ids.includes('claude-opus-4.7'), true);
+      assertEquals(ids.includes('claude-opus-4.7-high'), true);
+      // Only the addressable-but-not-listed rows carry the sidecar tag.
+      const tagged = new Set(fullBody.data.filter(m => m.unlisted === true).map(m => m.id));
+      assertEquals(tagged.has('claude-opus-4-7'), false);
+      assertEquals(tagged.has('claude-opus-4.7'), true);
+      assertEquals(tagged.has('claude-opus-4.7-high'), true);
+      // Each addressable row keeps the canonical model's upstreams metadata
+      // verbatim so the dashboard renders the real binding without a second
+      // call.
+      const variant = fullBody.data.find(m => m.id === 'claude-opus-4.7')!;
+      assertEquals(variant.upstreams.length > 0, true);
+    },
+  );
+});

@@ -372,6 +372,13 @@ export interface PublicModel {
     selection: AliasSelection;
     targets: AliasTarget[];
   };
+  // Sidecar flag carried only on entries surfaced via
+  // `/api/models?include_unlisted=true`: ids the data plane accepts via a
+  // `modelPrefix.addressable` alternate or a provider-side redirect but
+  // that do not appear in the default catalog. Default rows omit the
+  // field; the alias dialog reads this surface so its target-id combobox
+  // suggests every id the resolver would accept.
+  unlisted?: true;
 }
 
 export interface ControlPlaneModel extends PublicModel {

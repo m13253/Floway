@@ -33,9 +33,24 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
   upstreams: model.providers.map(binding => ({ kind: binding.providerKind, id: binding.upstream, name: binding.upstreamName })),
 });
 
+// Wrap an addressable-but-not-listed entry as a control-plane row. The
+// canonical metadata (`limits`, `chat`, `endpoints`, `upstreams`) reads
+// off the real model the addressable id resolves to; only `id` and
+// `display_name` swap in the addressable form so the alias dialog
+// combobox renders the actual id the operator can type. `unlisted: true`
+// carries the addressability tag through to the dashboard so a future UI
+// badge does not need a second registry call.
+const toUnlistedControlPlaneModel = (id: string, model: ResolvedModel): ControlPlaneModel => ({
+  ...toControlPlaneModel(model),
+  id,
+  display_name: model.display_name ?? id,
+  unlisted: true,
+});
+
 export const controlPlaneModels = async (c: Context) => {
   try {
     const includeAliases = c.req.query('aliases') !== 'false';
+    const includeUnlisted = c.req.query('include_unlisted') === 'true';
     // Scope the dashboard catalog to the caller's effective upstreams, exactly
     // like the data-plane /models endpoint. On a session request there is no
     // API key, so this resolves to the user's per-user upstream cap: a user who
@@ -52,7 +67,12 @@ export const controlPlaneModels = async (c: Context) => {
     const realModels = addressable.entries
       .filter(entry => entry.unlisted === undefined)
       .map(entry => entry.model);
-    const data = includeAliases
+    const unlistedRows = includeUnlisted
+      ? addressable.entries
+          .filter(entry => entry.unlisted === true)
+          .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
+      : [];
+    const listedRows = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
           addressableModelIds: addressable.entries,
@@ -61,6 +81,7 @@ export const controlPlaneModels = async (c: Context) => {
           wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
       : realModels.map(toControlPlaneModel);
+    const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,

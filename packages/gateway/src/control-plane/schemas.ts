@@ -725,13 +725,15 @@ const usageBaseQuery = {
 
 export const tokenUsageQuery = z.object(usageBaseQuery);
 
-// Dashboard `/api/models` accepts an explicit `aliases=false` to skip the
-// alias-merge pass. Default behavior (omitted or `aliases=true`) keeps the
-// merged catalog the dashboard's Models tab renders; settings surfaces
-// that need the raw real-model set (alias edit dialog, shadow detection)
-// pass `aliases=false`.
+// Dashboard `/api/models` accepts two query knobs. `aliases=false` skips the
+// alias-merge pass — the alias edit dialog and shadow detection need the
+// raw real-model set. `include_unlisted=true` extends the payload with the
+// addressable-but-not-listed surface (prefix-form alternates, Copilot
+// variant ids, provider-side redirects), so the alias dialog combobox sees
+// every id the data-plane resolver would accept.
 export const modelsQuery = z.object({
   aliases: z.enum(['true', 'false']).optional(),
+  include_unlisted: z.enum(['true', 'false']).optional(),
 });
 
 export const searchUsageQuery = z.object({
