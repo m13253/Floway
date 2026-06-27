@@ -1,10 +1,8 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { ALIAS_RESPONSE_HEADER, applyChatRulesToResponses } from '../../model-aliases/apply.ts';
-import { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-import { resolveModelCandidates } from '../../providers/registry.ts';
-import { aliasFailureFromError } from '../shared/errors.ts';
+import { applyChatRulesToResponses } from '../../model-aliases/apply.ts';
+import { resolveCandidatesAndApplyAlias } from '../shared/alias-prelude.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -89,25 +87,18 @@ export const prepareResponsesServePlan = async (args: {
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx, store, pickTarget } = args;
   const prepared = await expandPreviousResponseId(payload, store);
-  let enumerated;
-  try {
-    enumerated = await resolveModelCandidates({
-      upstreamIds: ctx.upstreamIds,
-      modelName: prepared.model,
-      pickTarget,
-      scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
-    });
-  } catch (error) {
-    if (error instanceof AliasNoTargetAvailableError) return { kind: 'failure', result: renderResponsesFailure(aliasFailureFromError(error)) };
-    throw error;
-  }
-  const { candidates, sawModel, failedUpstreams, aliasResolution } = enumerated;
-  if (aliasResolution !== null) {
-    prepared.model = aliasResolution.targetModelId;
-    applyChatRulesToResponses(prepared, aliasResolution.rules);
-    ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
-  }
+  const resolved = await resolveCandidatesAndApplyAlias({
+    ctx,
+    modelName: prepared.model,
+    pickTarget,
+    applyAlias: resolution => {
+      prepared.model = resolution.targetModelId;
+      applyChatRulesToResponses(prepared, resolution.rules);
+    },
+    renderAliasFailure: failure => renderResponsesFailure(failure),
+  });
+  if (resolved.kind === 'failure') return { kind: 'failure', result: resolved.result };
+  const { candidates, sawModel, failedUpstreams } = resolved;
   const decision = await planResponsesRouting({ payload: prepared, candidates, store });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
