@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
+import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({
@@ -11,12 +12,8 @@ const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({
   ...over,
 });
 
-const realModel = (id: string, chat?: ControlPlaneModel['chat']): ControlPlaneModel => ({
-  id,
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
-  kind: 'chat',
-  ...(chat ? { chat } : {}),
-});
+const realModel = (id: string, chat?: ControlPlaneModel['chat']): ControlPlaneModel =>
+  buildRealModel(chat ? { id, chat } : { id });
 
 const mountRow = (props: Partial<InstanceType<typeof AliasTargetRow>['$props']>) => mount(AliasTargetRow, {
   props: {

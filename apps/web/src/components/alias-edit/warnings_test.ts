@@ -1,27 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeAliasLevelWarnings, computeModelWarnings, computeRuleWarnings, findCatalogModel, type AliasView } from './warnings.ts';
+import { buildAliasModel as aliasModel, buildRealModel as realModel, buildUnlistedModel as unlistedModel } from '../../api/test-fixtures.ts';
 import type { ControlPlaneModel } from '../../api/types.ts';
-
-const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
-  kind: 'chat',
-  ...over,
-});
-
-const aliasModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
-  upstreams: [],
-  kind: 'chat',
-  aliasedFrom: { name: over.id, kind: 'chat', selection: 'first-available', targets: [] },
-  ...over,
-});
-
-const unlistedModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
-  kind: 'chat',
-  unlisted: true,
-  ...over,
-});
 
 const view = (name: string, ids: readonly string[]): AliasView => ({
   name,

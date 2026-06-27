@@ -14,12 +14,17 @@ import type {
   ModelEndpoints,
   ModelKind,
   ModelPricing,
+  PublicModel,
+  PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
-export type { AliasKind, AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias };
+export type {
+  AliasKind, AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
+  PublicModel, PublicModelLimits,
+};
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
@@ -47,7 +52,7 @@ export interface UpstreamModelConfig {
   kind: ModelKind;
   endpoints: ModelEndpoints;
   display_name?: string;
-  limits?: ModelLimits;
+  limits?: PublicModelLimits;
   cost?: ModelPricing;
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
   chat?: UpstreamChatConfig;
@@ -66,7 +71,7 @@ export interface CustomRawModel {
   name?: string;
   created?: number;
   owned_by?: string;
-  limits?: ModelLimits;
+  limits?: PublicModelLimits;
   cost?: ModelPricing;
   kind?: ModelKind;
 }
@@ -329,56 +334,6 @@ export interface ApiKey {
   last_used_at: string | null;
   upstream_ids: string[] | null;
   dump_retention_seconds: number | null;
-}
-
-export interface ModelEndpointInfo {
-  url: string;
-  doc?: string;
-}
-
-export interface ModelLimits {
-  max_context_window_tokens?: number;
-  max_prompt_tokens?: number;
-  max_output_tokens?: number;
-}
-
-export interface PublicModel {
-  id: string;
-  display_name?: string;
-  limits?: ModelLimits;
-  endpoints?: Record<string, ModelEndpointInfo>;
-  cost?: ModelPricing;
-  kind?: ModelKind;
-  // Chat-only capability metadata sourced from the upstream model config.
-  // Mirrored from `@floway-dev/protocols/common`'s ChatModelInfo so the
-  // dashboard can render rule warnings against the live catalog without
-  // pulling the full protocol shape.
-  chat?: {
-    modalities?: { input: readonly ('text' | 'image')[]; output: readonly ('text' | 'image')[] };
-    reasoning?: {
-      effort?: { supported: readonly string[]; default: string };
-      budget_tokens?: { min?: number; max?: number };
-      adaptive?: boolean;
-      mandatory?: boolean;
-    };
-  };
-  // Alias provenance — present only on `/api/models` entries the gateway
-  // synthesized from an operator-defined alias. The dashboard uses this
-  // both to render alias-of badges on the Models page and to identify
-  // alias rows when computing the target-id suggestion list.
-  aliasedFrom?: {
-    name: string;
-    kind: AliasKind;
-    selection: AliasSelection;
-    targets: AliasTarget[];
-  };
-  // Sidecar flag carried only on entries surfaced via
-  // `/api/models?include_unlisted=true`: ids the data plane accepts via a
-  // `modelPrefix.addressable` alternate or a provider-side redirect but
-  // that do not appear in the default catalog. Default rows omit the
-  // field; the alias dialog reads this surface so its target-id combobox
-  // suggests every id the resolver would accept.
-  unlisted?: true;
 }
 
 export interface ControlPlaneModel extends PublicModel {

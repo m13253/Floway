@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
+import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 
 const aliasesRef = ref<ModelAlias[]>([]);
@@ -52,7 +53,7 @@ beforeEach(() => {
   // no-target alias-level warning stays quiet by default — every test
   // that wants the warning sets `modelsRef.value = []` itself.
   modelsRef.value = [
-    { id: 'gpt-5', kind: 'chat', upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }] },
+    buildRealModel({ id: 'gpt-5' }),
   ];
   aliasErrorRef.value = null;
   deleteSpy.mockClear();

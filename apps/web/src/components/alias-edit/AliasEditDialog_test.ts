@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
+import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 
 // Mock the API client + composables so the dialog mounts without hitting the
@@ -39,11 +40,8 @@ vi.mock('../../api/client.ts', () => ({
 // Import after mocks are registered.
 const { default: AliasEditDialog } = await import('./AliasEditDialog.vue');
 
-const realModel = (id: string, display?: string): ControlPlaneModel => ({
-  id,
-  display_name: display,
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
-});
+const realModel = (id: string, display?: string): ControlPlaneModel =>
+  buildRealModel(display !== undefined ? { id, display_name: display } : { id });
 
 const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
   kind: 'chat',
@@ -215,13 +213,11 @@ describe('AliasEditDialog', () => {
 
   it('announced metadata: toggling override on switches the editor into manual (enabled) mode and seeds it from the computed view', async () => {
     modelsRef.value = [
-      {
+      buildRealModel({
         id: 'gpt-5',
         display_name: 'GPT 5',
-        kind: 'chat',
-        upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
         chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } },
-      },
+      }),
     ];
     const w = mount(AliasEditDialog, {
       props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },

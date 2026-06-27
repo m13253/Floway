@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 
 import AliasRow from './AliasRow.vue';
+import { buildAliasModel, buildRealModel } from '../../api/test-fixtures.ts';
 import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 
 const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
@@ -17,17 +18,10 @@ const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
   ...over,
 });
 
-const realModel = (id: string, display?: string): ControlPlaneModel => ({
-  id,
-  display_name: display,
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
-});
+const realModel = (id: string, display?: string): ControlPlaneModel =>
+  buildRealModel(display !== undefined ? { id, display_name: display } : { id });
 
-const aliasModel = (id: string): ControlPlaneModel => ({
-  id,
-  upstreams: [],
-  aliasedFrom: { name: id, kind: 'chat', selection: 'first-available', targets: [] },
-});
+const aliasModel = (id: string): ControlPlaneModel => buildAliasModel({ id });
 
 describe('AliasRow', () => {
   it('renders display_name when set; otherwise falls back to the alias id', () => {

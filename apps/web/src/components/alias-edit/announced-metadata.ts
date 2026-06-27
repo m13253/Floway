@@ -11,7 +11,7 @@
 // hand. The backend stays authoritative — what `/v1/models` reports
 // is what the gateway computes there, not what this helper emits.
 
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, ModelLimits } from '../../api/types.ts';
+import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, PublicModelLimits } from '../../api/types.ts';
 
 const chatRules = (target: AliasTarget): ChatAliasRules => target.rules as ChatAliasRules;
 
@@ -101,9 +101,9 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
 
 const LIMIT_KEYS = ['max_context_window_tokens', 'max_prompt_tokens', 'max_output_tokens'] as const;
 
-const intersectLimits = (limitsList: readonly ModelLimits[]): ModelLimits => {
+const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelLimits => {
   if (limitsList.length === 0) return {};
-  const result: ModelLimits = {};
+  const result: PublicModelLimits = {};
   for (const key of LIMIT_KEYS) {
     const values = limitsList.map(l => l[key]).filter((v): v is number => v !== undefined);
     if (values.length === limitsList.length) result[key] = Math.min(...values);
