@@ -119,7 +119,15 @@ export const enumerateAddressableModelIds = async (
   }));
 
   for (const result of perUpstream) {
-    if (result.status !== 'fulfilled') continue;
+    if (result.status === 'rejected') {
+      // Cancellation must propagate even from this tolerant fanout — the
+      // per-request abort signal cannot be masked by an upstream's slow
+      // rejection. Other failures (catalog 5xx, parse, transport) collapse
+      // to no addressable-only contribution from that upstream per the
+      // contract above.
+      if (result.reason instanceof Error && result.reason.name === 'AbortError') throw result.reason;
+      continue;
+    }
     for (const entry of result.value) push(entry);
   }
 
