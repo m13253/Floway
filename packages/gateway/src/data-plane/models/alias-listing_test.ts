@@ -113,6 +113,26 @@ describe('synthesizeListedAliases', () => {
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
+  test('multi-target with disjoint output modalities omits the modalities block entirely', () => {
+    // Both targets share text input but their output modalities do not
+    // overlap. Advertising `{ input: ['text'], output: [] }` would claim a
+    // chat model that consumes text and produces nothing — incoherent —
+    // so the synthesizer omits the modalities block when either half of
+    // the intersection collapses.
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { modalities: { input: ['text'], output: ['text'] } } }),
+      realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['image'] } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    expect(entry.chat?.modalities).toBeUndefined();
+  });
+
   test('multi-target with an unavailable target intersects over the available subset', () => {
     const aliases = [aliasFixture({
       targets: [

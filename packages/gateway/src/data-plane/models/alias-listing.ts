@@ -84,7 +84,10 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   if (modalityChats.length === chats.length) {
     const input = intersectArrays(modalityChats.map(c => c.modalities!.input));
     const output = intersectArrays(modalityChats.map(c => c.modalities!.output));
-    if (input.length > 0 || output.length > 0) result.modalities = { input, output };
+    // Both halves must survive — an alias that consumes a modality but
+    // promises no output (or the inverse) is incoherent. Omit the block
+    // entirely when either intersection collapses.
+    if (input.length > 0 && output.length > 0) result.modalities = { input, output };
   }
 
   const reasoningChats = chats.filter(c => c.reasoning !== undefined);
