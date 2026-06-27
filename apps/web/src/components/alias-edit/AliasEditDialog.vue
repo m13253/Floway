@@ -317,15 +317,16 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
           </button>
           <label class="flex shrink-0 cursor-pointer items-center gap-2">
             <Switch :model-value="overrideEnabled" @update:model-value="v => setOverrideEnabled(v === true)" />
-            <span class="text-xs text-gray-400">Enable override</span>
+            <span class="text-xs text-gray-400">Manual</span>
           </label>
         </div>
 
         <div v-if="announcedSectionExpanded" id="announced-metadata-body" class="mt-4">
-          <p v-if="!overrideEnabled" class="mb-3 text-xs text-gray-500">
-            Read-only — the intersection across every currently-available
-            target, with any rule-pinned sub-field treated as unsupported.
-            Enable override to publish a different payload to <code class="font-mono">/v1/models</code>.
+          <p class="mb-3 text-xs text-gray-500">
+            Defaults to the intersection across every currently-available
+            target (rule-pinned sub-fields are treated as unsupported).
+            Switch to Manual any time to publish your own payload to
+            <code class="font-mono">/v1/models</code>.
           </p>
           <ChatMetadataEditor
             :model-value="announcedEditorValue"

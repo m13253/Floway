@@ -169,7 +169,7 @@ describe('AliasEditDialog', () => {
   // ── Announced metadata section ────────────────────────────────────────
 
   // The section header always renders for chat/embedding; the body only
-  // renders the editor when the "Enable override" switch is on. Image
+  // renders the editor when the "Manual" switch is on. Image
   // aliases never see the section at all.
 
   const expandAnnouncedSection = async () => {
@@ -181,8 +181,8 @@ describe('AliasEditDialog', () => {
   const announcedSwitch = (): HTMLButtonElement => {
     // The override switch sits at the right end of the section header
     // row. Reka-UI renders Switch as a <button role="switch">, so scan
-    // by role + the surrounding "Enable override" label.
-    const label = Array.from(document.body.querySelectorAll<HTMLLabelElement>('label')).find(l => (l.textContent ?? '').includes('Enable override'))!;
+    // by role + the surrounding "Manual" label.
+    const label = Array.from(document.body.querySelectorAll<HTMLLabelElement>('label')).find(l => (l.textContent ?? '').includes('Manual'))!;
     return label.querySelector<HTMLButtonElement>('button[role="switch"]')!;
   };
 
@@ -205,8 +205,6 @@ describe('AliasEditDialog', () => {
 
     // The override switch is present but off.
     expect(announcedSwitch().getAttribute('aria-checked')).toBe('false');
-    // The read-only hint copy appears above the editor.
-    expect(portalText()).toContain('Read-only');
     // The shared editor mounts and renders the Reasoning toggles, but
     // every Switch in there is disabled because mode='auto'.
     const sw = effortSwitch();
@@ -235,8 +233,7 @@ describe('AliasEditDialog', () => {
     announcedSwitch().click();
     await nextTick();
 
-    // Read-only hint disappears; the editor now accepts input.
-    expect(portalText()).not.toContain('Read-only');
+    // The editor now accepts input.
     const sw = effortSwitch();
     expect(sw).not.toBeNull();
     expect(sw!.disabled).toBe(false);
@@ -258,8 +255,7 @@ describe('AliasEditDialog', () => {
     sw.click(); await nextTick();
     expect(effortSwitch()!.disabled).toBe(false);
     sw.click(); await nextTick();
-    // Auto mode: read-only hint back, effort switch disabled again.
-    expect(portalText()).toContain('Read-only');
+    // Auto mode: effort switch disabled again.
     expect(effortSwitch()!.disabled).toBe(true);
     w.unmount();
   });
