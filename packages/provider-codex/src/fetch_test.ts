@@ -275,7 +275,6 @@ describe('callCodexResponses — background-write registration', () => {
       upstreamId, account: activeAccount,
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
-
     });
     expect(waitUntil).toHaveBeenCalledTimes(1);
   });
@@ -291,7 +290,6 @@ describe('callCodexResponses — background-write registration', () => {
       upstreamId, account: activeAccount,
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
-
     });
     // Two writes get registered: the freshly-minted access token (401 retry
     // path) and the quota snapshot from the successful second attempt.
