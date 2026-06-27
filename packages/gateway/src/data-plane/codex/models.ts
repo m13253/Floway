@@ -38,10 +38,10 @@ import { applyContextWindowFromRegistry, type ContextWindowResolver } from './co
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelAliasRecord } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { synthesizeListedAliases } from '../models/alias-listing.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -59,61 +59,56 @@ const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | nul
   return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
 };
 
-// First currently-routable target's id, or null when no target resolves
-// against the registry. Single-target aliases collapse to the lone target;
-// multi-target aliases pick first-available (the order the operator
-// configured). This drives both the slug-survives filter and the
-// context-window resolver.
-const firstAvailableTargetId = (alias: ModelAliasRecord, registrySlugs: ReadonlySet<string>): string | null => {
-  for (const target of alias.targets) {
-    if (registrySlugs.has(target.target_model_id)) return target.target_model_id;
-  }
-  return null;
-};
-
 const computeCatalog = async (
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, internalModels, aliases] = await Promise.all([
+  const [catalog, realModels, aliases] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
+    getModels(upstreamIds, fetcherForUpstream, scheduler),
     getRepo().modelAliases.list(),
   ]);
   const slugContextWindow = new Map<string, number>();
-  for (const m of internalModels) {
+  for (const m of realModels) {
     const limit = m.limits.max_context_window_tokens;
     if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
   }
-  const registrySlugs = new Set(internalModels.map(m => m.id));
+  const registrySlugs = new Set(realModels.map(m => m.id));
 
-  // Visible aliases whose first target currently resolves — keyed by alias
-  // name so the slug filter and the context-window resolver both look the
-  // same alias up in O(1).
-  const aliasBySlug = new Map<string, { alias: ModelAliasRecord; firstTargetId: string }>();
-  for (const alias of aliases) {
-    if (!alias.visibleInModelsList) continue;
-    const firstTargetId = firstAvailableTargetId(alias, registrySlugs);
-    if (firstTargetId === null) continue;
-    aliasBySlug.set(alias.name, { alias, firstTargetId });
+  // Run the shared alias synthesizer so the codex catalog reads the same
+  // visible-alias surface that /v1/models, the dashboard, and Gemini do.
+  // Each entry's `aliasedFrom.targets` keeps every configured target — the
+  // synthesizer does not narrow to availability — so we still pick the
+  // first one in registry order here. Selection mode never matters for
+  // this static listing: a `random` alias would refuse to publish a
+  // stable context window, so the catalog uses first-available regardless
+  // of the alias's runtime selection.
+  const aliasFirstTarget = new Map<string, string>();
+  for (const entry of synthesizeListedAliases({ aliases, realModels })) {
+    const aliasedFrom = entry.aliasedFrom;
+    if (aliasedFrom === undefined) continue;
+    const firstRoutable = aliasedFrom.targets.find(t => registrySlugs.has(t.target_model_id));
+    if (firstRoutable !== undefined) aliasFirstTarget.set(entry.id, firstRoutable.target_model_id);
   }
 
   const filtered: CodexCatalog = {
-    models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasBySlug.has(m.slug)),
+    models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasFirstTarget.has(m.slug)),
   };
 
-  // For an alias slug: prefer the operator's announced override, else the
-  // first available target's window. Falls back to the registry-side lookup
-  // for plain (non-alias) slugs.
+  // For an alias slug: redirect to the first routable target's window so
+  // the published number is one the gateway can honour. Plain (non-alias)
+  // slugs read straight off the registry. Operator-set overrides on the
+  // alias's announced metadata travel through `synthesizeListedAliases`
+  // into the alias entry's own limits — but the codex catalog needs the
+  // *target's* window here, not the alias's announced one, because
+  // `applyContextWindowFromRegistry` writes both `context_window` and
+  // `max_context_window` and the upstream binding only enforces the
+  // target's real ceiling.
   const contextWindowOf: ContextWindowResolver = slug => {
-    const aliasEntry = aliasBySlug.get(slug);
-    if (aliasEntry !== undefined) {
-      const overridden = aliasEntry.alias.announcedMetadata?.limits?.max_context_window_tokens;
-      if (typeof overridden === 'number') return overridden;
-      return slugContextWindow.get(aliasEntry.firstTargetId) ?? null;
-    }
+    const firstTargetId = aliasFirstTarget.get(slug);
+    if (firstTargetId !== undefined) return slugContextWindow.get(firstTargetId) ?? null;
     return slugContextWindow.get(slug) ?? null;
   };
   return applyContextWindowFromRegistry(filtered, contextWindowOf);
