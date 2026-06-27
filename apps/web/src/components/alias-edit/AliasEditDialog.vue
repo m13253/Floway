@@ -343,7 +343,7 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
       </section>
 
       <div v-if="aliasLevelWarnings.length > 0" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-        <ul v-if="aliasLevelWarnings.length > 1" class="list-disc space-y-1 pl-5">
+        <ul class="list-disc space-y-1 pl-5">
           <li v-for="w in aliasLevelWarnings" :key="w.type">
             <template v-if="w.type === 'shadow'">
               This alias name shadows a real model id:
@@ -356,15 +356,6 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
             <template v-else>{{ w.message }}</template>
           </li>
         </ul>
-        <template v-else-if="aliasLevelWarnings[0].type === 'shadow'">
-          This alias name shadows a real model id:
-          <code class="font-mono">{{ aliasLevelWarnings[0].shadowedId }}</code>
-          <template v-if="aliasLevelWarnings[0].shadowedDisplayName !== null">
-            (<strong class="font-semibold">{{ aliasLevelWarnings[0].shadowedDisplayName }}</strong>).
-          </template>
-          <template v-else>.</template>
-        </template>
-        <template v-else>{{ aliasLevelWarnings[0].message }}</template>
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-5">
