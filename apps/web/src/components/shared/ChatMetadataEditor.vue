@@ -18,6 +18,7 @@
 import { computed, ref, watch } from 'vue';
 
 import type { AnnouncedMetadata, ChatModelInfo, ModelKind } from '../../api/types.ts';
+import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import { Button, Input, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -50,15 +51,6 @@ const patch = (next: AnnouncedMetadata) => {
   if (next.limits && Object.keys(next.limits).length > 0) out.limits = next.limits;
   if (next.chat && (next.chat.modalities !== undefined || next.chat.reasoning !== undefined)) out.chat = next.chat;
   emit('update:modelValue', Object.keys(out).length > 0 ? out : undefined);
-};
-
-const parseOptionalNumber = (raw: string | number | null | undefined): number | undefined => {
-  if (raw === '' || raw === null || raw === undefined) return undefined;
-  const num = Number(raw);
-  // Both editor surfaces feed nonnegative integer counts (token caps,
-  // budget bounds); a typo that drops a negative shouldn't stage data
-  // the next PUT will 400 on.
-  return Number.isFinite(num) && num >= 0 ? num : undefined;
 };
 
 // ── Limits ────────────────────────────────────────────────────────────

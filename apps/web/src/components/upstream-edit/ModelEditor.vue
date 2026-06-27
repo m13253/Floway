@@ -5,6 +5,7 @@ import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
@@ -64,15 +65,6 @@ const patch = (next: Partial<UpstreamModelConfig>) => {
 const setKind = (k: ModelKind) => {
   if (!editable.value || !config.value) return;
   patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
-};
-
-const parseOptionalNumber = (raw: string | number | null | undefined): number | undefined => {
-  if (raw === '' || raw === null || raw === undefined) return undefined;
-  const num = Number(raw);
-  // Backend pricing validators reject negatives (see `nonNegativeNumberField`
-  // in packages/provider/src/model-config.ts); drop them at the form boundary
-  // so a typo doesn't stage data the next PUT will 400 on.
-  return Number.isFinite(num) && num >= 0 ? num : undefined;
 };
 
 const updateCost = (key: BillingDimension, raw: string | number | null | undefined) => {
