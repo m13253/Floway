@@ -324,9 +324,9 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
         <div v-if="announcedSectionExpanded" id="announced-metadata-body" class="mt-4">
           <p class="mb-3 text-xs text-gray-500">
             Defaults to the intersection across every currently-available
-            target (rule-pinned sub-fields are treated as unsupported).
-            Switch to Manual any time to publish your own payload to
-            <code class="font-mono">/v1/models</code>.
+            target (rule-pinned sub-fields are not modifiable on client
+            side so treated as unsupported). Switch to Manual any time to
+            publish your own payload to <code class="font-mono">/v1/models</code>.
           </p>
           <ChatMetadataEditor
             :model-value="announcedEditorValue"
