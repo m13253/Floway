@@ -462,10 +462,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     // public id; the dated `claude-*-YYYYMMDD` form is also accepted and
     // redirects to the same canonical. Walk the upstream catalog stored on
     // `providerData.rawModels`, run each raw id through `copilotPublicModelId`,
-    // and emit the redirect whenever the canonical id differs. Skip dated
-    // suffixes — the catalog already exposes the de-dated form as a real
-    // entry, so the dated id is reachable through the same redirect rule
-    // without being part of any finite enumeration.
+    // and emit the redirect whenever the canonical id differs.
     enumerateAddressableRedirects: ({ upstreamModels }) => {
       const out: AddressableRedirect[] = [];
       const seen = new Set<string>();
