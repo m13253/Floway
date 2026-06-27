@@ -14,20 +14,18 @@
 // from the registry (see context-window.ts) so the codex client sees the
 // same limits the data plane will actually enforce.
 //
-// Latency: codex aborts the catalog fetch after 5 s
-// (`MODELS_REFRESH_TIMEOUT` in codex-rs/model-provider/src/models_endpoint.rs)
-// and silently falls back to its binary-bundled catalog on miss. The
-// registry leg can cost ~4 s on a slow path, leaving almost no margin
-// once Worker cold-start is added on top. We cache the resolved response
-// in the per-colo Cache API keyed on `(client_version, upstream filter)`
-// so the slow path runs at most once per colo per cache window; subsequent
-// callers get the cached body in milliseconds and the registry call is
-// skipped entirely.
+// Each request runs the registry leg directly — there is no per-colo cache.
+// The slow path is the registry fetch, which can cost ~4 s when the
+// upstream's `/models` endpoint is cold; codex aborts its catalog refresh
+// after 5 s (`MODELS_REFRESH_TIMEOUT` in
+// codex-rs/model-provider/src/models_endpoint.rs) and silently falls back
+// to its binary-bundled catalog on miss. Operators who add or change
+// upstreams see the new catalog on the next CLI session start.
 
 import type { Context } from 'hono';
 
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
-import { parseCodexVersion, resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
+import { resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
 import { synthesizeCatalogEntry, deriveServiceTiers } from './synthesize.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -36,20 +34,6 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { InternalModel } from '@floway-dev/provider';
-
-// Five minutes is short enough to pick up an upstream catalog change within
-// one or two codex sessions but long enough that an active user only ever
-// pays the slow path on the first request after a deploy or a quiet hour.
-const CACHE_TTL_SECONDS = 300;
-
-const cacheKeyFor = (clientVersion: string, upstreamIds: readonly string[] | null): Request => {
-  const ids = upstreamIds === null ? 'all' : [...upstreamIds].sort().join(',');
-  // Synthetic URL: never resolves on the public internet, only used as the
-  // Workers Cache API key. Auth headers on the original request never enter
-  // this key, so two clients with different api keys but the same upstream
-  // filter share the cache entry.
-  return new Request(`https://floway.invalid/codex-models?v=${encodeURIComponent(clientVersion)}&u=${encodeURIComponent(ids)}`);
-};
 
 export const computeCatalog = (
   bundled: CodexCatalog,
@@ -112,28 +96,11 @@ export const computeCatalog = (
 export const codexModels = async (c: Context): Promise<Response> => {
   const userAgent = c.req.header('user-agent');
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default ?? null;
-  const cacheKey = cache === null ? null : cacheKeyFor(
-    c.req.query('client_version') ?? parseCodexVersion(userAgent) ?? 'unknown',
-    upstreamIds,
-  );
-
-  if (cache !== null && cacheKey !== null) {
-    const hit = await cache.match(cacheKey);
-    if (hit !== undefined) return hit;
-  }
-
   const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
   const [bundled, internalModels] = await Promise.all([
     resolveCodexCatalog(userAgent),
     getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
   ]);
-  const response = Response.json(computeCatalog(bundled, internalModels), {
-    headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },
-  });
-  if (cache !== null && cacheKey !== null) {
-    scheduler(cache.put(cacheKey, response.clone()));
-  }
-  return response;
+  return Response.json(computeCatalog(bundled, internalModels));
 };

@@ -483,27 +483,28 @@ describe('codex 1p namespace', () => {
       expect(body.models[0].slug).toBe('claude-sonnet-4');
     });
 
-    it('serves cached responses without re-running the registry on subsequent calls', async () => {
+    it('does not touch the Workers Cache API — the codex catalog endpoint is uncached', async () => {
+      // No per-colo cache at the codex catalog layer: each request flows
+      // straight through to the registry so operator changes to upstreams
+      // surface on the next CLI session start. (The provider-models layer
+      // in models-cache.ts has its own SWR cache; that one is intentional
+      // and tested separately.) Pin the codex-side stance by stubbing
+      // `caches.default` with spies — if the route ever starts reading or
+      // writing the Workers Cache API, one of the spies fires.
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
-      const cacheStore = new Map<string, Response>();
+      let cacheMatches = 0;
+      let cachePuts = 0;
       const cacheStub: Cache = {
-        match: async (req: Request | string) => cacheStore.get(typeof req === 'string' ? req : req.url),
-        put: async (req: Request | string, response: Response) => {
-          cacheStore.set(typeof req === 'string' ? req : req.url, response);
-        },
+        match: async () => { cacheMatches += 1; return undefined; },
+        put: async () => { cachePuts += 1; },
       } as unknown as Cache;
       const globals = globalThis as unknown as { caches?: { default: Cache } };
       const previous = globals.caches;
       globals.caches = { default: cacheStub };
-      let registryCalls = 0;
       try {
         await withMockedFetch(
-          request => {
-            const url = new URL(request.url);
-            if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') registryCalls += 1;
-            return copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }])(request);
-          },
+          copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
           async () => {
             const first = await app.request('/azure-api.codex/models', {
               headers: { authorization: `Bearer ${apiKey.key}` },
@@ -521,8 +522,8 @@ describe('codex 1p namespace', () => {
         if (previous === undefined) delete globals.caches;
         else globals.caches = previous;
       }
-      expect(registryCalls).toBe(1);
-      expect(cacheStore.size).toBe(1);
+      expect(cacheMatches).toBe(0);
+      expect(cachePuts).toBe(0);
     });
   });
 });
