@@ -272,7 +272,7 @@ test('endpoint-aware pool: first-available skips targets whose binding does not 
   assertEquals(result.targetModelId, 'serves-cc');
 });
 
-test('endpoint-aware pool: alias with NO target serving the inbound endpoint throws AliasNoTargetAvailableError', async () => {
+test('endpoint-aware pool: alias with NO target serving the inbound endpoint throws AliasNoTargetAvailableError and pins the endpoint-mismatch wording', async () => {
   setRoutableWith({
     'a': { messages: {} },
     'b': { messages: {} },
@@ -291,5 +291,30 @@ test('endpoint-aware pool: alias with NO target serving the inbound endpoint thr
       repo,
     }),
     AliasNoTargetAvailableError,
+    'none currently serves the inbound endpoint',
+  );
+});
+
+test('alias with every target unresolvable to any upstream throws AliasNoTargetAvailableError and pins the no-binding wording', async () => {
+  // Empty routable map → no target resolves to any binding at all. The
+  // error message stays on the canonical "no enabled upstream binding"
+  // wording so an operator who removed every binding sees that hint
+  // rather than the endpoint-mismatch one.
+  setRoutableWith({});
+  const repo = stubRepoFor(aliasRecord({
+    targets: [
+      { target_model_id: 'gone-1', rules: {} },
+      { target_model_id: 'gone-2', rules: {} },
+    ],
+  }));
+  await assertRejects(
+    () => resolveAlias({
+      modelName: 'gpt-fast',
+      ...RESOLVE_DEFAULTS,
+      endpointAccepts: () => true,
+      repo,
+    }),
+    AliasNoTargetAvailableError,
+    'none currently map to an enabled upstream binding',
   );
 });

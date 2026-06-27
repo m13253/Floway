@@ -29,9 +29,30 @@ export interface AliasResolution {
   readonly aliasName: string;
 }
 
-// Canonical wording for the alias-no-target-available 404.
-const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }): string =>
-  `alias '${params.aliasName}' has ${params.targetCount} target(s); none currently map to an enabled upstream binding`;
+// Why the alias's target pool is empty. The resolver keeps targets whose
+// resolved binding exists AND serves the inbound endpoint (per the caller's
+// `endpointAccepts`); a target lost to either check counts toward its
+// respective bucket here.
+type CandidateRoutability =
+  | { readonly routable: true }
+  | { readonly routable: false; readonly reason: 'no-binding' | 'endpoint-mismatch' };
+
+// Canonical wording for the alias-no-target-available 404. The "every
+// target was endpoint-mismatched" branch is its own message so an
+// embeddings client hitting a chat-only alias (or vice versa) sees a hint
+// pointing at the kind/endpoint instead of the generic "no enabled
+// upstream binding" wording.
+const aliasNoTargetMessage = (params: {
+  readonly aliasName: string;
+  readonly targetCount: number;
+  readonly allEndpointMismatch: boolean;
+}): string => {
+  const stem = `alias '${params.aliasName}' has ${params.targetCount} target(s)`;
+  if (params.allEndpointMismatch) {
+    return `${stem}; none currently serves the inbound endpoint`;
+  }
+  return `${stem}; none currently map to an enabled upstream binding`;
+};
 
 // Thrown when the alias name was found but no target currently resolves to
 // an enabled upstream binding that serves the inbound endpoint. Caught at
@@ -40,10 +61,10 @@ const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }
 export class AliasNoTargetAvailableError extends Error {
   readonly aliasName: string;
 
-  constructor(aliasName: string, targetCount: number) {
-    super(aliasNoTargetMessage({ aliasName, targetCount }));
+  constructor(params: { aliasName: string; targetCount: number; allEndpointMismatch: boolean }) {
+    super(aliasNoTargetMessage(params));
     this.name = 'AliasNoTargetAvailableError';
-    this.aliasName = aliasName;
+    this.aliasName = params.aliasName;
   }
 }
 
@@ -66,38 +87,42 @@ interface ResolveAliasArgs {
   readonly repo: ModelAliasesRepo;
 }
 
-// Reports true when the target id resolves to at least one enabled upstream
-// binding whose endpoint map satisfies the inbound endpoint predicate.
-// `random` selection in particular depends on this — without endpoint
-// awareness, a randomly-picked target may not serve the inbound endpoint
-// and the request would 404 at prefix routing even though another target
-// would have worked.
-const candidateIsRoutable = async (
+// Reports whether the target id resolves to at least one enabled upstream
+// binding whose endpoint map satisfies the inbound endpoint predicate, and
+// distinguishes the two empty-pool causes so `AliasNoTargetAvailableError`
+// can show the right hint.
+const candidateRoutability = async (
   targetModelId: string,
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
   endpointAccepts: (endpoints: ModelEndpoints) => boolean,
-): Promise<boolean> => {
-  if (providers.length === 0) return false;
+): Promise<CandidateRoutability> => {
+  if (providers.length === 0) return { routable: false, reason: 'no-binding' };
   const interpretations = enumerateModelInterpretations(targetModelId, providers);
   const { resolutions } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  return resolutions.some(r => endpointAccepts(r.resolved.binding.upstreamModel.endpoints));
+  if (resolutions.length === 0) return { routable: false, reason: 'no-binding' };
+  if (resolutions.some(r => endpointAccepts(r.resolved.binding.upstreamModel.endpoints))) return { routable: true };
+  return { routable: false, reason: 'endpoint-mismatch' };
 };
 
 // Pre-pick the available pool ONCE. Order is preserved so
 // selection=first-available picks deterministically; selection=random picks
 // uniformly within whatever subset survived availability filtering.
+// `rejections` collects the reason every dropped target was dropped, so the
+// caller can pin the failure message when the pool is empty.
 const buildAvailablePool = async (
   record: ModelAliasRecord,
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
   endpointAccepts: (endpoints: ModelEndpoints) => boolean,
-): Promise<ModelAliasRecord['targets']> => {
-  const availability = await Promise.all(record.targets.map(target =>
-    candidateIsRoutable(target.target_model_id, providers, fetcherForUpstream, scheduler, endpointAccepts)));
-  return record.targets.filter((_, index) => availability[index]);
+): Promise<{ readonly pool: ModelAliasRecord['targets']; readonly rejections: readonly ('no-binding' | 'endpoint-mismatch')[] }> => {
+  const outcomes = await Promise.all(record.targets.map(target =>
+    candidateRoutability(target.target_model_id, providers, fetcherForUpstream, scheduler, endpointAccepts)));
+  const pool = record.targets.filter((_, index) => outcomes[index].routable);
+  const rejections = outcomes.flatMap(o => o.routable ? [] : [o.reason]);
+  return { pool, rejections };
 };
 
 export const resolveAlias = async (args: ResolveAliasArgs): Promise<AliasResolution | null> => {
@@ -105,8 +130,15 @@ export const resolveAlias = async (args: ResolveAliasArgs): Promise<AliasResolut
   const record = await repo.getByName(modelName);
   if (!record) return null;
 
-  const pool = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler, endpointAccepts);
-  if (pool.length === 0) throw new AliasNoTargetAvailableError(record.name, record.targets.length);
+  const { pool, rejections } = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler, endpointAccepts);
+  if (pool.length === 0) {
+    const allEndpointMismatch = rejections.length > 0 && rejections.every(r => r === 'endpoint-mismatch');
+    throw new AliasNoTargetAvailableError({
+      aliasName: record.name,
+      targetCount: record.targets.length,
+      allEndpointMismatch,
+    });
+  }
 
   const picked = record.selection === 'first-available'
     ? pool[0]
