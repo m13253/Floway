@@ -15,11 +15,8 @@ describe('synthesizeCatalogEntry', () => {
     const entry = synthesizeCatalogEntry(base);
     expect(entry.slug).toBe('deepseek-v4-pro');
     expect(entry.display_name).toBe('DeepSeek V4 Pro');
-    // context_window / max_context_window are owned by
-    // applyContextWindowFromRegistry — synth leaves them off so there is a
-    // single writer for the field.
-    expect(entry.context_window).toBeUndefined();
-    expect(entry.max_context_window).toBeUndefined();
+    expect(entry.context_window).toBe(128000);
+    expect(entry.max_context_window).toBe(128000);
     expect(entry.input_modalities).toEqual(['text']);
     expect(entry.supports_image_detail_original).toBe(false);
     expect(entry.web_search_tool_type).toBe('text');
@@ -50,13 +47,14 @@ describe('synthesizeCatalogEntry', () => {
     expect(synthesizeCatalogEntry({ ...base, display_name: undefined }).display_name).toBe('deepseek-v4-pro');
   });
 
-  test('never writes context_window — applyContextWindowFromRegistry is the single writer', () => {
-    const withLimit = synthesizeCatalogEntry(base);
-    expect(withLimit.context_window).toBeUndefined();
-    expect(withLimit.max_context_window).toBeUndefined();
-    const withoutLimit = synthesizeCatalogEntry({ ...base, limits: {} });
-    expect(withoutLimit.context_window).toBeUndefined();
-    expect(withoutLimit.max_context_window).toBeUndefined();
+  test('defaults context_window to 128k when registry omits max_context_window_tokens', () => {
+    // Without a value here, codex's `(cw * 9) / 10` auto-compact trigger
+    // would divide against an absent/zero window. The conservative default
+    // gives every synthesized entry a safe, low ceiling that an operator
+    // can raise by filling in the registry.
+    const entry = synthesizeCatalogEntry({ ...base, limits: {} });
+    expect(entry.context_window).toBe(128_000);
+    expect(entry.max_context_window).toBe(128_000);
   });
 
   test('derives image-aware web_search when modalities include image', () => {

@@ -20,22 +20,18 @@
 // catalog ships every entry with `null`.
 //   https://github.com/openai/codex/blob/f221438b691b8f749d98f22077c93ebe01923fbe/codex-rs/protocol/src/openai_models.rs#L360-L375
 //
-// Slugs whose registry entry has no `max_context_window_tokens` fall back
-// to a conservative default rather than passing through the bundled value
-// (which speaks for OpenAI 1p, not the upstream we actually route to) or
-// leaving the field absent (codex's `(cw * 9) / 10` auto-compact trigger
-// blows up on missing / zero windows). The default is intentionally low —
-// an operator who wants more configures the registry.
+// Slugs the resolver has no value for pass through unchanged — bundled
+// entries keep their bundled-vendored window, synthesized entries keep
+// the conservative default that synthesize.ts wrote.
 
 import type { CodexCatalog } from './catalog.ts';
-
-export const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 
 export type ContextWindowResolver = (slug: string) => number | null;
 
 export const applyContextWindowFromRegistry = (catalog: CodexCatalog, contextWindowOf: ContextWindowResolver): CodexCatalog => ({
   models: catalog.models.map(model => {
-    const actual = contextWindowOf(model.slug) ?? CONSERVATIVE_DEFAULT_CONTEXT_WINDOW;
+    const actual = contextWindowOf(model.slug);
+    if (actual === null) return model;
     return { ...model, context_window: actual, max_context_window: actual };
   }),
 });

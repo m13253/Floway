@@ -9,6 +9,13 @@ import type { InternalModel, Modality } from '@floway-dev/provider';
 
 const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
 
+// Bundled-hit entries inherit a real window from the codex catalog; missing
+// that fallback, a synthesized entry needs SOME value or codex's
+// `(context_window * 9) / 10` auto-compact trigger blows up on absent /
+// zero windows. 128k is deliberately low — an operator who wants more
+// configures `max_context_window_tokens` on the registry entry.
+const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
+
 // Registry-derived: each key in cost.tiers is a billable tier wire-id. Names
 // mirror ids and descriptions are blank — Floway does not yet carry tier
 // metadata, and Codex only needs the id to round-trip the selection.
@@ -32,11 +39,8 @@ export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
   // surface effort pickers for models that don't support effort-tiered reasoning.
   const supportedReasoning = model.chat?.reasoning?.effort?.supported ?? [];
   const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
+  const contextWindow = model.limits.max_context_window_tokens ?? CONSERVATIVE_DEFAULT_CONTEXT_WINDOW;
 
-  // `context_window` / `max_context_window` are left off here — every entry's
-  // window (including the conservative fallback for missing registry values)
-  // is the responsibility of `applyContextWindowFromRegistry` in
-  // context-window.ts, which is the single writer for the field.
   const entry: CatalogModel = {
     slug: model.id,
     display_name: model.display_name ?? model.id,
@@ -70,6 +74,8 @@ export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
     availability_nux: null,
     upgrade: null,
     auto_compact_token_limit: null,
+    context_window: contextWindow,
+    max_context_window: contextWindow,
   };
 
   if (model.chat?.reasoning?.effort?.default !== undefined) {
