@@ -1,11 +1,24 @@
 import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
-import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelCandidates, resolveModelForProvider } from './registry.ts';
+import { compareModelIds, enumerateModelInterpretations, getModels, listModelProviders, resolveModelCandidates, resolveModelForProvider } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
-import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
+import type { BackgroundScheduler } from '@floway-dev/platform';
+import { directFetcher, type Fetcher, type InternalModel, type ModelProviderInstance } from '@floway-dev/provider';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+
+// Strip the execution-layer fields (`providers`, `endpoints`) off each
+// resolved catalog row so the assertions read against the public catalog
+// projection alone. Existed in production as `getInternalModels` until the
+// production code's sole consumer migrated to the addressable surface; the
+// test fixtures still want the projection, so it lives here now.
+const getInternalModels = async (
+  upstreamFilter: readonly string[] | null,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<InternalModel[]> =>
+  (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 

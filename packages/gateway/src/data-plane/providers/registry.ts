@@ -5,7 +5,7 @@ import { getRepo } from '../../repo/index.ts';
 import { type AliasResolution, resolveAlias } from '../model-aliases/resolve.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -40,10 +40,9 @@ export const createProviderInstance = (record: UpstreamRecord): ModelProviderIns
   providerFactories[record.provider](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
-// (this, getModels, getInternalModels) so a caller can never omit it and
-// silently receive the full, unscoped catalog — a missing scope is a compile
-// error, not a runtime leak. Pass `null` to deliberately request every enabled
-// upstream.
+// (this, getModels) so a caller can never omit it and silently receive the
+// full, unscoped catalog — a missing scope is a compile error, not a runtime
+// leak. Pass `null` to deliberately request every enabled upstream.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
 ): Promise<ModelProviderInstance[]> => {
@@ -252,13 +251,6 @@ export const getModels = async (
   if (lastError) throw lastError;
   return [];
 };
-
-export const getInternalModels = async (
-  upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<InternalModel[]> =>
-  (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 interface ResolveCandidatesResult<TTarget> {
   readonly candidates: ReadonlyArray<{
