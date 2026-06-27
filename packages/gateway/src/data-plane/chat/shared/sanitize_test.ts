@@ -9,7 +9,7 @@ import {
 } from './sanitize.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-type TraceLine = { alias?: string; field: string; targetProtocol: string };
+type TraceLine = { field: string; targetProtocol: string };
 
 const makeTrace = (): { ctx: SanitizeTraceCtx; lines: TraceLine[] } => {
   const lines: TraceLine[] = [];
