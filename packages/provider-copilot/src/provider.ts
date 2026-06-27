@@ -20,7 +20,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type AddressableRedirect, type ExecuteResult, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -457,5 +457,29 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     provider,
     supportsResponsesItemReference: false,
     resolveRequestedModelId: copilotRequestedModelAliasTarget,
+    // Copilot publishes every Claude variant (`-high`, `-xhigh`, `-1m`,
+    // `-fast`) as its own upstream id but collapses them under one canonical
+    // public id; the dated `claude-*-YYYYMMDD` form is also accepted and
+    // redirects to the same canonical. Walk the upstream catalog stored on
+    // `providerData.rawModels`, run each raw id through `copilotPublicModelId`,
+    // and emit the redirect whenever the canonical id differs. Skip dated
+    // suffixes — the catalog already exposes the de-dated form as a real
+    // entry, so the dated id is reachable through the same redirect rule
+    // without being part of any finite enumeration.
+    enumerateAddressableRedirects: ({ upstreamModels }) => {
+      const out: AddressableRedirect[] = [];
+      const seen = new Set<string>();
+      for (const model of upstreamModels) {
+        const data = model.providerData as CopilotProviderData | undefined;
+        for (const raw of data?.rawModels ?? []) {
+          const publicId = copilotPublicModelId(raw.id);
+          if (publicId === raw.id) continue;
+          if (seen.has(raw.id)) continue;
+          seen.add(raw.id);
+          out.push({ addressable: raw.id, resolvesTo: publicId });
+        }
+      }
+      return out;
+    },
   };
 };

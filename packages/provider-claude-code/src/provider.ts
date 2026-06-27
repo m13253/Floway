@@ -107,6 +107,13 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     provider,
     supportsResponsesItemReference: false,
     resolveRequestedModelId: claudeCodeResolveRequestedModelId,
+    // Claude Code's redirect rule collapses any `<base>-YYYYMMDD` id to its
+    // de-dated base. The date axis is unbounded, so there is no finite
+    // enumeration to publish — the canonical de-dated id is already in the
+    // catalog, and a power-user dated form still routes through the
+    // `resolveRequestedModelId` path at request time without showing up in
+    // the addressable surface.
+    enumerateAddressableRedirects: () => [],
   };
 };
 

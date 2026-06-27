@@ -32,6 +32,15 @@ export interface ResolvedModel extends InternalModel {
   providers: readonly ProviderModelRecord[];
 }
 
+export interface AddressableRedirect {
+  // Inbound id the provider would silently redirect through
+  // `resolveRequestedModelId` to a different real catalog id.
+  readonly addressable: string;
+  // Real catalog id the redirect resolves to. Must appear in the
+  // provider's own `getProvidedModels` output for the entry to be useful.
+  readonly resolvesTo: string;
+}
+
 export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
@@ -45,6 +54,24 @@ export interface ModelProviderInstance {
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
   resolveRequestedModelId?(modelId: string): string | undefined;
+  // Enumerate the finite set of inbound ids this provider would accept
+  // through `resolveRequestedModelId` that are NOT already part of the
+  // public-listed catalog. Each entry pairs the addressable id with the
+  // real catalog id it resolves to. The catalog-addressable surface
+  // enumeration uses this to mark prefix-variant / collapsed-id forms as
+  // routable without forcing every consumer to walk the provider's
+  // redirect rule by hand.
+  //
+  // Implementations whose redirect domain is unbounded (e.g. arbitrary
+  // date suffixes that collapse to the same base id) return `[]` — the
+  // base id is still listed in the catalog, so the addressable surface
+  // already covers the canonical entry. The hook receives the SWR-cached
+  // upstream catalog the caller already fetched so the same upstream
+  // round-trip feeds both the listed projection and the redirect
+  // enumeration.
+  enumerateAddressableRedirects?(args: {
+    readonly upstreamModels: readonly UpstreamModel[];
+  }): readonly AddressableRedirect[];
 }
 
 export interface ProviderCallResult {
