@@ -176,7 +176,7 @@ const handleClientMessage = async (
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, store, snapshotMode: 'append', headers: inboundHeadersForUpstream(c) });
+      result = await responsesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
