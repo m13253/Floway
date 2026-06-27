@@ -5,7 +5,7 @@ import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../../data-plane/providers/addressable.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
@@ -51,14 +51,22 @@ export const controlPlaneModels = async (c: Context) => {
   try {
     const includeAliases = c.req.query('aliases') !== 'false';
     const includeUnlisted = c.req.query('include_unlisted') === 'true';
-    // Scope the dashboard catalog to the caller's effective upstreams, exactly
-    // like the data-plane /models endpoint. On a session request there is no
-    // API key, so this resolves to the user's per-user upstream cap: a user who
-    // has had an upstream removed must not see its models in the Models tab.
+    const gatewayWide = c.req.query('gateway_wide') === 'true';
+    // `gateway_wide=true` lets the alias / upstream edit surfaces see every
+    // model on the gateway regardless of the caller's effective upstream
+    // cap — admin's editor surfaces configure gateway state, not their
+    // per-account data-plane view. Non-admin sessions get a 403 because the
+    // bypass exposes models from upstreams they have no data-plane access
+    // to. Default behavior stays scoped (Models page + Playground respect
+    // self-restriction the same way the data plane does).
+    if (gatewayWide && !userFromContext(c).isAdmin) {
+      return c.json({ error: 'Admin privileges required for gateway_wide=true' }, 403);
+    }
+    const upstreamScope = gatewayWide ? null : effectiveUpstreamIdsFromContext(c);
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const [addressable, aliases] = await Promise.all([
       enumerateAddressableModelIds(
-        effectiveUpstreamIdsFromContext(c),
+        upstreamScope,
         fetcherForUpstream,
         backgroundSchedulerFromContext(c),
       ),

@@ -730,10 +730,15 @@ export const tokenUsageQuery = z.object(usageBaseQuery);
 // raw real-model set. `include_unlisted=true` extends the payload with the
 // addressable-but-not-listed surface (prefix-form alternates, Copilot
 // variant ids, provider-side redirects), so the alias dialog combobox sees
-// every id the data-plane resolver would accept.
+// every id the data-plane resolver would accept. `gateway_wide=true`
+// bypasses the caller's effective upstream cap and returns models for
+// every upstream on the gateway — admin-only; used by alias / upstream
+// edit surfaces that need to see "what exists" rather than "what this
+// account can reach".
 export const modelsQuery = z.object({
   aliases: z.enum(['true', 'false']).optional(),
   include_unlisted: z.enum(['true', 'false']).optional(),
+  gateway_wide: z.enum(['true', 'false']).optional(),
 });
 
 export const searchUsageQuery = z.object({
