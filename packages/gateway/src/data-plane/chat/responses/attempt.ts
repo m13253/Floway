@@ -32,21 +32,20 @@ export interface ResponsesAttemptInvokeArgs {
 }
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
-// The post-chain envelope-drain branch keys on the caller's intent (`action`
-// passed by value), not on `invocation.action` — interceptors are free to
-// mutate the latter to steer inner dispatch without changing the shape of
-// the result the caller already committed to.
+// The interceptor chain owns the action through `invocation.action` and may
+// flip it (the responses-compact-shim pivots 'compact'→'generate' for the
+// inner dispatch on non-responses targets and restores it on the way out, so
+// envelope-drain still selects the compact branch); post-chain we read
+// `invocation.action` to decide whether to drain the event stream into a
+// single compaction envelope (compact branch) or to hand it back as a
+// streaming `ExecuteResult` (generate branch).
 //
-// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
-// which derives the snapshot mode by observing the output stream — `'replace'`
-// when any output item is a compaction (the three convergence cases:
-// native `/v1/responses/compact`, a `compaction_trigger` input on
-// `/v1/responses` reshaped by the upstream, and the server-side
-// `context_management` `compact_threshold` mode), `'append'` otherwise.
-// "Don't write" is expressed by the store itself: cross-protocol translation
-// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
-// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
-// no-op at the store-write layer.
+// The module-boundary invariant `action='compact' ⇒ targetApi='responses'`
+// at dispatch time is enforced inside `dispatchResponses` — its `case
+// 'messages'` and `case 'chat-completions'` branches throw if they receive
+// `invocation.action === 'compact'`. That position is structurally correct:
+// the throw fires pre-upstream-call, lives inside the chain (not after the
+// interceptor finally blocks), and stays independent of the shim's presence.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers } = args;
@@ -81,29 +80,13 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    // Module-boundary invariant: the only legitimate way for the chain to
-    // reach this point with `invocation.action === 'compact'` is if dispatch
-    // ran against the `responses` target (native /v1/responses/compact wire).
-    // On any other target the responses-compact-shim is structurally required
-    // and pivots `ctx.action` to `'generate'` before dispatch; reaching here
-    // with `action='compact'` against `messages` or `chat-completions` means
-    // the shim was wired out of the chain. Fail loudly so the misconfiguration
-    // surfaces instead of silently passing compact-shape data to a translator
-    // that has no compact contract.
-    if (invocation.action === 'compact' && candidate.targetApi !== 'responses') {
-      throw new Error(`responsesAttempt: chain returned with action='compact' against targetApi='${candidate.targetApi}' — the responses-compact-shim must engage and pivot the action before dispatch`);
-    }
-
     const responseId = createStoredResponseId();
-    if (action === 'compact') {
-      // The caller entered through /v1/responses/compact (or
-      // serve.compact). Drain the chain's events — whether they came from a
-      // native /compact wire or from the shim's synthesized envelope — into
-      // a single result envelope so the http layer can JSON-encode it
-      // directly. Storage still runs over the synthesized event stream so
-      // the snapshot is committed under the same id the client will see —
-      // wrap detects the `compaction` output item and writes a `'replace'`
-      // snapshot.
+    if (invocation.action === 'compact') {
+      // Drain the events into a single envelope and return the value branch
+      // so the http compact endpoint can JSON-encode it directly. Storage
+      // still runs over the synthesized event stream so the snapshot is
+      // committed under the same id the client will see — wrap detects the
+      // `compaction` output item and writes a `'replace'` snapshot.
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
       await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
         store,
@@ -146,14 +129,13 @@ export const responsesAttempt = {
   // Narrowing wrapper for cross-protocol translation callers
   // (Messages/Gemini/ChatCompletions translating into Responses) and the
   // native HTTP/WS generate entry — both always run in generate mode and
-  // want the ExecuteResult branch. `invoke` keys envelope-drain on the
-  // caller's intent action, so a generate caller cannot receive the result
-  // branch; the runtime check is a tautology guard that catches the day
-  // someone changes that invariant.
+  // want the ExecuteResult branch. The compact branch is a contract
+  // violation here; an interceptor that pivoted generate→compact would
+  // surface as a throw, not a silent shape mismatch.
   generate: async (args: Omit<ResponsesAttemptInvokeArgs, 'action'>): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const result = await responsesAttempt.invoke({ ...args, action: 'generate' });
     if (result.type === 'result') {
-      throw new Error('responsesAttempt.generate received a result-shape envelope from invoke — caller-intent branching invariant violated');
+      throw new Error('responsesAttempt.generate received a compact result; an interceptor pivoted generate→compact unexpectedly');
     }
     return result;
   },

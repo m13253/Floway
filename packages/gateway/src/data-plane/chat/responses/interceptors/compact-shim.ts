@@ -35,14 +35,8 @@
 //      history. Call `run()` to drive the chain through the normal generate
 //      path; collect the resulting summary text; pack a single user-role
 //      message containing the summary into a synthetic
-//      `response.compaction` envelope. The action pivot is one-way: the
-//      shim does not restore `invocation.action` to 'compact'. attempt.ts
-//      keys envelope-drain on the caller's intent action passed by value,
-//      so a chain that left action='generate' still routes the synthesized
-//      compaction back through the compact endpoint's value-branch return —
-//      and attempt enforces the module-boundary invariant that
-//      `invocation.action === 'compact'` after the chain implies
-//      `targetApi === 'responses'`.
+//      `response.compaction` envelope; re-tag `invocation.action` back to
+//      'compact' so the gateway's post-chain envelope-drain branch fires.
 //
 // Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding
 // or fail the array-of-objects-with-string-types schema below) round-trip
@@ -159,6 +153,7 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
 
 const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
+  const originalAction = ctx.action;
 
   // Materialize the user-supplied input (string or array) into Responses items,
   // then strip compaction_trigger so the upstream sees a plain generate turn
@@ -194,14 +189,8 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     // conversation history.
     store: false,
   };
-  // Pivot the action so the inner dispatch routes to the upstream's generate
-  // wire instead of its compact wire. The pivot is one-way: the shim does
-  // not restore `ctx.action` on the way out. attempt.ts keys envelope-drain
-  // on the caller's intent action passed by value, so leaving
-  // `invocation.action === 'generate'` post-chain does not change the
-  // result shape — and it lets attempt assert the module-boundary
-  // invariant that `invocation.action === 'compact'` after the chain
-  // implies `targetApi === 'responses'`.
+  // Pivot the action so the inner dispatch routes to the upstream's
+  // generate wire instead of its compact wire.
   ctx.action = 'generate';
 
   let upstreamResult: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
@@ -209,6 +198,12 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     upstreamResult = await run();
   } finally {
     ctx.payload = originalPayload;
+    // Re-tag the action to what it was on entry so the gateway's post-chain
+    // envelope-drain branch in attempt.invoke fires off the synthesized
+    // events. For the native `/responses/compact` path that is 'compact';
+    // for the `compaction_trigger`-on-generate path it stays 'generate' and
+    // the events fall through to the streaming branch.
+    ctx.action = originalAction;
   }
 
   if (upstreamResult.type !== 'events') {
