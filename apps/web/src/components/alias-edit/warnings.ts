@@ -6,19 +6,12 @@
 import type { AliasKind, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 // Excludes alias rows — target ids never re-enter the alias layer, so the
-// rule-warning lookup must compare against the same real-model surface that
-// `realModelIds` and `computeShadowWarning` use.
+// rule-warning lookup runs against the real-model surface only.
 export const findCatalogModel = (
   models: readonly ControlPlaneModel[] | null | undefined,
   targetModelId: string,
 ): ControlPlaneModel | undefined =>
   (models ?? []).find(m => m.id === targetModelId && m.aliasedFrom === undefined);
-
-// Real (non-alias) model ids the operator can route to — both listed
-// entries and addressable-but-not-listed ones. Used by the shadow-warning
-// check (no kind filter — shadowing is a name collision).
-export const realModelIds = (models: readonly ControlPlaneModel[] | null | undefined): string[] =>
-  (models ?? []).filter(m => m.aliasedFrom === undefined).map(m => m.id);
 
 // Real (non-alias) model ids whose kind matches the alias's kind. Used by
 // the target-id combobox suggestion list so an embedding alias only

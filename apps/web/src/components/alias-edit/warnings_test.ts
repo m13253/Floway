@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeAliasLevelWarnings, computeModelWarnings, computeRuleWarnings, findCatalogModel, realModelIds, type AliasView } from './warnings.ts';
+import { computeAliasLevelWarnings, computeModelWarnings, computeRuleWarnings, findCatalogModel, type AliasView } from './warnings.ts';
 import type { ControlPlaneModel } from '../../api/types.ts';
 
 const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
@@ -26,22 +26,6 @@ const unlistedModel = (over: Partial<ControlPlaneModel> & { id: string }): Contr
 const view = (name: string, ids: readonly string[]): AliasView => ({
   name,
   targets: ids.map(id => ({ target_model_id: id })),
-});
-
-describe('realModelIds', () => {
-  it('excludes alias entries and returns the remaining ids in catalog order', () => {
-    const catalog: ControlPlaneModel[] = [
-      realModel({ id: 'gpt-5' }),
-      aliasModel({ id: 'auto-review' }),
-      realModel({ id: 'claude-sonnet' }),
-    ];
-    expect(realModelIds(catalog)).toEqual(['gpt-5', 'claude-sonnet']);
-  });
-
-  it('returns an empty array for a null or missing catalog', () => {
-    expect(realModelIds(null)).toEqual([]);
-    expect(realModelIds(undefined)).toEqual([]);
-  });
 });
 
 describe('findCatalogModel', () => {
