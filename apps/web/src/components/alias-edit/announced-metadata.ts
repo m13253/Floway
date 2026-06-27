@@ -127,7 +127,7 @@ export const computeAnnouncedMetadata = (
 
   if (available.length === 0) return {};
 
-  const limitsList = available.map(({ real }) => real.limits ?? {});
+  const limitsList = available.map(({ real }) => real.limits);
   const limits = intersectLimits(limitsList);
 
   const effectiveChats = available
