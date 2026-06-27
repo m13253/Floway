@@ -165,6 +165,24 @@ test('messages: non-fast serviceTier lands on service_tier directly', () => {
   assertEquals(body.speed, undefined);
 });
 
+test('messages: serviceTier=fast clears a pre-existing body.service_tier on the same payload', () => {
+  // Upstream must never see both `speed` and `service_tier` set on the
+  // same request — Anthropic treats them as alternates and the wire
+  // semantics for a conflict are undefined. The overlay clears the
+  // sibling field whichever branch it takes.
+  const body = msgPayload({ service_tier: 'priority' });
+  applyChatRulesToMessages(body, { serviceTier: 'fast' });
+  assertEquals(body.speed, 'fast');
+  assertEquals(body.service_tier, undefined);
+});
+
+test('messages: non-fast serviceTier clears a pre-existing body.speed on the same payload', () => {
+  const body = msgPayload({ speed: 'fast' });
+  applyChatRulesToMessages(body, { serviceTier: 'priority' });
+  assertEquals(body.service_tier, 'priority');
+  assertEquals(body.speed, undefined);
+});
+
 test('messages: alias rules overwrite existing thinking + output_config fields', () => {
   const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
   applyChatRulesToMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
