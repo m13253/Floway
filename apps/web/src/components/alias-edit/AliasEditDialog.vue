@@ -8,7 +8,7 @@ import { computed, ref, watch } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
 import { computeAnnouncedMetadata } from './announced-metadata.ts';
-import { computeShadowWarning, realModelIdsOfKind } from './warnings.ts';
+import { computeAliasLevelWarnings, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
@@ -148,7 +148,13 @@ watch(kind, k => {
 // opaque string — the list is a hint, not a constraint.
 const targetIdItems = computed(() => realModelIdsOfKind(modelsStore.models.value, kind.value));
 
-const shadowWarning = computed(() => computeShadowWarning(aliasName.value.trim(), targets.value, modelsStore.models.value));
+// Alias-level warnings on the live dialog state. Re-projects name +
+// targets to the structural shape `computeAliasLevelWarnings` accepts so
+// the Settings card row and the dialog read the same surface.
+const aliasLevelWarnings = computed(() => computeAliasLevelWarnings(
+  { name: aliasName.value.trim(), targets: targets.value },
+  modelsStore.models.value,
+));
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -336,13 +342,29 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
         </div>
       </section>
 
-      <div v-if="shadowWarning" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
-        This alias name shadows a real model id:
-        <code class="font-mono">{{ shadowWarning.shadowedId }}</code>
-        <template v-if="shadowWarning.shadowedDisplayName !== null">
-          (<strong class="font-semibold">{{ shadowWarning.shadowedDisplayName }}</strong>).
+      <div v-if="aliasLevelWarnings.length > 0" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+        <ul v-if="aliasLevelWarnings.length > 1" class="list-disc space-y-1 pl-5">
+          <li v-for="w in aliasLevelWarnings" :key="w.type">
+            <template v-if="w.type === 'shadow'">
+              This alias name shadows a real model id:
+              <code class="font-mono">{{ w.shadowedId }}</code>
+              <template v-if="w.shadowedDisplayName !== null">
+                (<strong class="font-semibold">{{ w.shadowedDisplayName }}</strong>).
+              </template>
+              <template v-else>.</template>
+            </template>
+            <template v-else>{{ w.message }}</template>
+          </li>
+        </ul>
+        <template v-else-if="aliasLevelWarnings[0].type === 'shadow'">
+          This alias name shadows a real model id:
+          <code class="font-mono">{{ aliasLevelWarnings[0].shadowedId }}</code>
+          <template v-if="aliasLevelWarnings[0].shadowedDisplayName !== null">
+            (<strong class="font-semibold">{{ aliasLevelWarnings[0].shadowedDisplayName }}</strong>).
+          </template>
+          <template v-else>.</template>
         </template>
-        <template v-else>.</template>
+        <template v-else>{{ aliasLevelWarnings[0].message }}</template>
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] pt-5">

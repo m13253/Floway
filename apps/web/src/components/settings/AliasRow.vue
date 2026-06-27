@@ -6,7 +6,7 @@
 import { computed } from 'vue';
 
 import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
-import { computeShadowWarning } from '../alias-edit/warnings.ts';
+import { computeAliasLevelWarnings } from '../alias-edit/warnings.ts';
 import { Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -40,13 +40,10 @@ const kindLabel = computed(() => KIND_LABELS[props.alias.kind]);
 const selectionLabel = computed(() => SELECTION_LABELS[props.alias.selection]);
 const targetCountLabel = computed(() => `${props.alias.targets.length} target${props.alias.targets.length === 1 ? '' : 's'}`);
 
-const shadowWarning = computed(() => computeShadowWarning(props.alias.name, props.alias.targets, props.models));
-const shadowTooltip = computed(() => {
-  const w = shadowWarning.value;
-  if (!w) return '';
-  const label = w.shadowedDisplayName !== null ? `${w.shadowedId} (${w.shadowedDisplayName})` : w.shadowedId;
-  return `Alias name shadows a real model id: ${label}`;
-});
+const aliasWarnings = computed(() => computeAliasLevelWarnings(props.alias, props.models));
+// Join messages with newlines so the tooltip stays a single visual block
+// when both shadow + no-target fire on the same alias.
+const aliasWarningTooltip = computed(() => aliasWarnings.value.map(w => w.message).join('\n'));
 </script>
 
 <template>
@@ -63,7 +60,7 @@ const shadowTooltip = computed(() => {
       </div>
 
       <div class="flex shrink-0 items-center gap-1">
-        <Tooltip v-if="shadowWarning" :content="shadowTooltip">
+        <Tooltip v-if="aliasWarnings.length > 0" :content="aliasWarningTooltip">
           <span
             class="inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-400"
             aria-label="Alias warning"

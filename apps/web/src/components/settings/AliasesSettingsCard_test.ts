@@ -48,7 +48,12 @@ const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => 
 
 beforeEach(() => {
   aliasesRef.value = [];
-  modelsRef.value = [];
+  // Seed the catalog with the alias fixtures' target ids so the
+  // no-target alias-level warning stays quiet by default — every test
+  // that wants the warning sets `modelsRef.value = []` itself.
+  modelsRef.value = [
+    { id: 'gpt-5', kind: 'chat', upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }] },
+  ];
   aliasErrorRef.value = null;
   deleteSpy.mockClear();
   vi.restoreAllMocks();

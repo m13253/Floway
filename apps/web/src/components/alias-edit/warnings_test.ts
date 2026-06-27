@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeModelWarnings, computeRuleWarnings, computeShadowWarning, findCatalogModel, realModelIds } from './warnings.ts';
+import { computeAliasLevelWarnings, computeModelWarnings, computeRuleWarnings, findCatalogModel, realModelIds, type AliasView } from './warnings.ts';
 import type { ControlPlaneModel } from '../../api/types.ts';
 
 const realModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
@@ -14,6 +14,18 @@ const aliasModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlP
   kind: 'chat',
   aliasedFrom: { name: over.id, kind: 'chat', selection: 'first-available', targets: [] },
   ...over,
+});
+
+const unlistedModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
+  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+  kind: 'chat',
+  unlisted: true,
+  ...over,
+});
+
+const view = (name: string, ids: readonly string[]): AliasView => ({
+  name,
+  targets: ids.map(id => ({ target_model_id: id })),
 });
 
 describe('realModelIds', () => {
@@ -122,33 +134,67 @@ describe('computeRuleWarnings', () => {
   });
 });
 
-describe('computeShadowWarning', () => {
+describe('computeAliasLevelWarnings', () => {
   const catalog: ControlPlaneModel[] = [
     realModel({ id: 'gpt-5', display_name: 'GPT 5' }),
     realModel({ id: 'plain' }),
     aliasModel({ id: 'auto-review' }),
   ];
 
-  it('returns null when the alias name does not match any real model id', () => {
-    expect(computeShadowWarning('not-a-real-id', [{ target_model_id: 'gpt-5' }], catalog)).toBeNull();
+  it('returns no warnings when the alias name is fresh and every target resolves', () => {
+    expect(computeAliasLevelWarnings(view('fresh', ['gpt-5']), catalog)).toEqual([]);
   });
 
-  it('returns null when the alias name matches another alias (not a real model)', () => {
-    expect(computeShadowWarning('auto-review', [{ target_model_id: 'gpt-5' }], catalog)).toBeNull();
+  it('emits a shadow warning when the alias name collides with a listed real id and no target references it', () => {
+    const warnings = computeAliasLevelWarnings(view('gpt-5', ['plain']), catalog);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toEqual(expect.objectContaining({
+      type: 'shadow',
+      shadowedId: 'gpt-5',
+      shadowedDisplayName: 'GPT 5',
+    }));
   });
 
-  it('returns null when one of the targets references the shadowed id (seed pattern)', () => {
-    expect(computeShadowWarning('gpt-5', [{ target_model_id: 'gpt-5' }, { target_model_id: 'plain' }], catalog)).toBeNull();
+  it('suppresses the shadow warning when one of the targets references the shadowed id (seed pattern)', () => {
+    expect(computeAliasLevelWarnings(view('gpt-5', ['gpt-5', 'plain']), catalog))
+      .toEqual([]);
   });
 
-  it('returns the shadowed id with display_name only when display_name differs from id', () => {
-    const w1 = computeShadowWarning('gpt-5', [{ target_model_id: 'plain' }], catalog);
-    expect(w1).toEqual({ shadowedId: 'gpt-5', shadowedDisplayName: 'GPT 5' });
-    const w2 = computeShadowWarning('plain', [{ target_model_id: 'gpt-5' }], catalog);
-    expect(w2).toEqual({ shadowedId: 'plain', shadowedDisplayName: null });
+  it('ignores collisions with addressable-but-not-listed variant ids (preserves today\'s scope)', () => {
+    const withUnlisted: ControlPlaneModel[] = [
+      ...catalog,
+      unlistedModel({ id: 'claude-opus-4.7-high' }),
+    ];
+    expect(computeAliasLevelWarnings(view('claude-opus-4.7-high', ['gpt-5']), withUnlisted))
+      .toEqual([]);
   });
 
-  it('returns null on an empty alias name (mid-edit)', () => {
-    expect(computeShadowWarning('', [{ target_model_id: 'gpt-5' }], catalog)).toBeNull();
+  it('emits a no-target warning when every configured target falls outside the addressable surface', () => {
+    const warnings = computeAliasLevelWarnings(view('lonely', ['missing-a', 'missing-b']), catalog);
+    expect(warnings).toEqual([{
+      type: 'no-target',
+      message: 'No target currently resolves under your upstream access.',
+    }]);
+  });
+
+  it('counts addressable-but-not-listed entries as available for the no-target check', () => {
+    const withUnlisted: ControlPlaneModel[] = [
+      ...catalog,
+      unlistedModel({ id: 'claude-opus-4.7-high' }),
+    ];
+    expect(computeAliasLevelWarnings(view('fast-claude', ['claude-opus-4.7-high']), withUnlisted))
+      .toEqual([]);
+  });
+
+  it('returns both warnings when an alias both shadows a listed id and has no reachable target', () => {
+    // Real catalog deliberately drops the shadowed id so the no-target
+    // branch also fires. (`gpt-5` shadowed, target `gpt-5` does not exist
+    // here.)
+    const warnings = computeAliasLevelWarnings(view('gpt-5', ['gone']), [realModel({ id: 'gpt-5' })]);
+    expect(warnings.map(w => w.type).sort()).toEqual(['no-target', 'shadow']);
+  });
+
+  it('skips the no-target warning while the catalog is loading (models is null)', () => {
+    expect(computeAliasLevelWarnings(view('lonely', ['missing']), null)).toEqual([]);
   });
 });
