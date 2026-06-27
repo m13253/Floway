@@ -1500,6 +1500,5 @@ test('translateResponsesToChatCompletions drops reasoning.summary (Chat has no s
   });
 
   assertEquals(result.target.reasoning_effort, 'medium');
-  // Verbosity is on text.* not reasoning; ensure no surrogate field invented.
   assertEquals('reasoning_summary' in result.target, false);
 });

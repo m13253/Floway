@@ -25,9 +25,9 @@ export interface GatewayCtx {
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
   // response untouched.
   readonly dump: DumpAccumulator | null;
-  // Headers staged during request processing (today: `x-floway-alias`)
-  // and written onto the outbound response by `finalizeGatewayResponse`,
-  // regardless of how the responder built the body.
+  // Headers staged during request processing and written onto the
+  // outbound response by `finalizeGatewayResponse`, regardless of how
+  // the responder built the body.
   readonly responseHeaders: Headers;
 }
 

@@ -14,12 +14,11 @@ const stripKeys = (
   keys: readonly string[],
   targetProtocol: string,
   trace: SanitizeTraceCtx | undefined,
-  fieldPrefix: string = '',
 ): void => {
   for (const key of keys) {
     if (key in body) {
       delete body[key];
-      trace?.emit({ field: `${fieldPrefix}${key}`, targetProtocol });
+      trace?.emit({ field: key, targetProtocol });
     }
   }
 };
