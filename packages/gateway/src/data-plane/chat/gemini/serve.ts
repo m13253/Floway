@@ -41,8 +41,7 @@ export const geminiServe = {
       renderAliasFailure: failure => renderGeminiFailure(failure, 'generate'),
     });
     if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams, aliasResolution } = resolved;
-    const model = aliasResolution?.targetModelId ?? args.model;
+    const { candidates, sawModel, failedUpstreams, effectiveModelId: model } = resolved;
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
 
@@ -75,8 +74,7 @@ export const geminiServe = {
       renderAliasFailure: failure => renderGeminiFailure(failure, 'countTokens'),
     });
     if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams, aliasResolution } = resolved;
-    const model = aliasResolution?.targetModelId ?? args.model;
+    const { candidates, sawModel, failedUpstreams, effectiveModelId: model } = resolved;
     const decision = await planGeminiRouting({ payload, candidates, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
 

@@ -40,6 +40,13 @@ export type ResolveCandidatesOk<TTarget> = {
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
   readonly aliasResolution: AliasResolution | null;
+  // The model id every downstream surface should use: the alias's
+  // `target_model_id` when an alias matched, the original inbound id
+  // otherwise. Body-based protocols (chat-completions/messages/responses)
+  // already mutate `payload.model` in their `applyAlias` callback and read
+  // that; path-based protocols (Gemini routes the id in the URL) have
+  // nowhere to mutate and read this field instead.
+  readonly effectiveModelId: string;
 };
 
 export type ResolveCandidatesOutcome<TTarget, F> =
@@ -73,5 +80,12 @@ export const resolveCandidatesAndApplyAlias = async <TTarget, F>(args: ResolveCa
     applyAlias?.(aliasResolution);
     ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
   }
-  return { kind: 'ok', candidates: candidates as ResolveCandidatesOk<TTarget>['candidates'], sawModel, failedUpstreams, aliasResolution };
+  return {
+    kind: 'ok',
+    candidates: candidates as ResolveCandidatesOk<TTarget>['candidates'],
+    sawModel,
+    failedUpstreams,
+    aliasResolution,
+    effectiveModelId: aliasResolution?.targetModelId ?? modelName,
+  };
 };
