@@ -90,21 +90,23 @@ export const OPTIONAL_FLAGS = [
     description: "Pick this when the upstream rejects `role: 'system'` after the first non-system message (e.g. DeepSeek-R1). The leading contiguous run of system messages is preserved; any later inline system message has its role rewritten to `user`, with content kept verbatim. For Anthropic Messages — where `payload.system` is conceptually the only first-position system slot — every inline `role: 'system'` message is demoted unconditionally.",
     defaultFor: [],
   },
-  // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
-  // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
-  // subscription endpoint reads the placeholder block itself to attribute
-  // billing.
   {
     id: 'demote-developer-to-system',
     label: 'Demote developer role to system',
     description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
     defaultFor: [],
   },
+  // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
+  // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
+  // subscription endpoint reads the placeholder block itself to attribute
+  // billing. So strip it on every non-Anthropic upstream (it would only
+  // pollute their prompt-cache key) and keep it only on `claude-code`,
+  // where the same block is what bills the request against the user's plan.
   {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',
-    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for copilot/azure/custom — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for claude-code, where the same block is the input Anthropic uses to bill the request against the user's plan.",
-    defaultFor: ['copilot', 'azure', 'custom'],
+    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for every upstream kind except `claude-code` — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for `claude-code`, where the same block is the input Anthropic uses to bill the request against the user's plan.",
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => p !== 'claude-code'),
   },
 ] as const satisfies readonly Flag[];
 
