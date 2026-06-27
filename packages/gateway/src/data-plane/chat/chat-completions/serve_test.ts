@@ -3,13 +3,12 @@ import { test, vi } from 'vitest';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the serve exactly the

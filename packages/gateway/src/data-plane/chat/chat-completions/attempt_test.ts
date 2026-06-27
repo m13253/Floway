@@ -4,13 +4,12 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';

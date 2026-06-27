@@ -6,10 +6,9 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the

@@ -10,7 +10,6 @@ import { recordPerformanceLatency, requireRecordedDurationMs } from '../../share
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
-import type { ChatCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { createSanitizeTraceCtx, sanitizeForResponsesUpstream } from '../shared/sanitize.ts';
@@ -20,7 +19,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderCandidate, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptInvokeArgs {
@@ -28,7 +27,7 @@ export interface ResponsesAttemptInvokeArgs {
   readonly action: ResponsesAction;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ChatCandidate;
+  readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 
@@ -155,7 +154,7 @@ type RewriteOutcome =
 const rewriteOrRenderFailure = async (
   payload: ResponsesPayload,
   store: StatefulResponsesStore,
-  candidate: ChatCandidate,
+  candidate: ProviderCandidate,
 ): Promise<RewriteOutcome> => {
   try {
     return await rewriteResponsesItemsForCandidate(payload, store, candidate);
@@ -264,7 +263,7 @@ const dispatchResponses = async (
 // the provider executed.
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
-  candidate: ChatCandidate,
+  candidate: ProviderCandidate,
   ctx: GatewayCtx,
   recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {

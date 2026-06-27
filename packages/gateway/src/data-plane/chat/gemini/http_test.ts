@@ -5,11 +5,10 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type ProviderCallResult, type ProviderCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];

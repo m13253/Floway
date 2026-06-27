@@ -6,7 +6,6 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ChatCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
@@ -16,7 +15,7 @@ import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type ProviderCandidate } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -24,7 +23,7 @@ export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ChatCandidate;
+  readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 
@@ -32,7 +31,7 @@ export interface MessagesAttemptCountTokensArgs {
   readonly payload: MessagesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ChatCandidate;
+  readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 
@@ -127,7 +126,7 @@ export const messagesAttempt = {
 const rewriteOrRenderMessagesFailure = async (
   payload: MessagesPayload,
   store: StatefulResponsesStore,
-  candidate: ChatCandidate,
+  candidate: ProviderCandidate,
 ): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(

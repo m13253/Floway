@@ -6,20 +6,19 @@ import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import type { ChatCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import { plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult } from '@floway-dev/provider';
+import { plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult, type ProviderCandidate } from '@floway-dev/provider';
 import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
 
 export interface GeminiAttemptGenerateArgs {
   readonly payload: GeminiPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ChatCandidate;
+  readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 
@@ -27,7 +26,7 @@ export interface GeminiAttemptCountTokensArgs {
   readonly payload: GeminiPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly candidate: ChatCandidate;
+  readonly candidate: ProviderCandidate;
   readonly headers: Headers;
 }
 

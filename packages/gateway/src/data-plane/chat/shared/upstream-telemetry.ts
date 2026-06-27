@@ -1,8 +1,7 @@
-import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ChatTargetApi, PerformanceTelemetryContext, ProviderCandidate } from '@floway-dev/provider';
 
 export { createUpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 

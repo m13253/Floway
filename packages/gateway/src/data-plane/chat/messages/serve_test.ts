@@ -3,12 +3,11 @@ import { test, vi } from 'vitest';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];

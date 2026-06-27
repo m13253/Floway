@@ -1,9 +1,8 @@
-import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { requireRecordedDurationMs, type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Telemetry identity for the chosen candidate plus the upstream-reported
 // model key. Pricing reads off the provider so the cost lookup respects any

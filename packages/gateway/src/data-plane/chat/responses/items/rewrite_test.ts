@@ -7,9 +7,8 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

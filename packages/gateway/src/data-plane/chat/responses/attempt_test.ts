@@ -7,12 +7,11 @@ import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';

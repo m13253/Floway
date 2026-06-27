@@ -6,9 +6,8 @@ import { planResponsesRouting } from './routing.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type ProviderCandidate } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_routing_test';
