@@ -2,11 +2,22 @@
 import { computed } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
+import { reachableTargets } from '../../utils/reachability.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 import { type AliasRuleBadgeField, formatAliasRuleBadges } from '@floway-dev/protocols/common';
 
 const props = defineProps<{
   model: ControlPlaneModel;
+  // Full catalog the row came from; needed so alias rows can show how
+  // many of their configured targets are actually reachable under the
+  // caller's current cap. Optional because callers outside the
+  // playground may not have a meaningful catalog (e.g. the Models
+  // page's tile renders the row in isolation).
+  catalog?: readonly ControlPlaneModel[];
+  // Effective upstream cap of the playground's current api key choice;
+  // `null` means unrestricted. Drives the alias-reachable-count badge.
+  // Omitted by callers that have no cap to apply.
+  cap?: readonly string[] | null;
 }>();
 
 defineEmits<{ clear: [] }>();
@@ -25,6 +36,21 @@ const aliasOfLabel = computed<string | null>(() => {
   const ids = a.targets.map(t => t.target_model_id);
   if (ids.length <= 3) return `alias of: ${ids.join(', ')}`;
   return `alias of: ${ids.slice(0, 3).join(', ')} +${ids.length - 3} more`;
+});
+
+// For an alias row in the playground: how many configured targets
+// resolve to a real model the caller can route to under the current
+// effective cap. Only renders when the consumer supplied `catalog`
+// and `cap` props — the Models page tile (no cap context) hides this
+// badge entirely. `cap === null` means "no restriction" and the badge
+// renders as N/N. Targets pointing at ids the catalog cannot resolve
+// (typo, removed model) count as unreachable, mirroring the data-plane
+// resolver.
+const reachableTargetSummary = computed<string | null>(() => {
+  const a = props.model.aliasedFrom;
+  if (!a || props.catalog === undefined) return null;
+  const reachable = reachableTargets(props.model, props.catalog, props.cap ?? null);
+  return `${reachable.length} / ${a.targets.length} target${a.targets.length === 1 ? '' : 's'} reachable`;
 });
 
 // Single-target aliases render one badge per rule; multi-target aliases
@@ -78,6 +104,7 @@ const ruleBadges = computed<{ label: string }[]>(() => {
             output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
           </span>
           <span v-if="aliasOfLabel" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ aliasOfLabel }}</span>
+          <span v-if="reachableTargetSummary" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ reachableTargetSummary }}</span>
           <span v-if="model.aliasedFrom" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">selection: {{ model.aliasedFrom.selection }}</span>
           <span
             v-for="badge in ruleBadges"

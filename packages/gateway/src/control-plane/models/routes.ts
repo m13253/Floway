@@ -51,18 +51,15 @@ export const controlPlaneModels = async (c: Context) => {
   try {
     const includeAliases = c.req.query('aliases') !== 'false';
     const includeUnlisted = c.req.query('include_unlisted') === 'true';
-    const gatewayWide = c.req.query('gateway_wide') === 'true';
-    // `gateway_wide=true` lets the alias / upstream edit surfaces see every
-    // model on the gateway regardless of the caller's effective upstream
-    // cap — admin's editor surfaces configure gateway state, not their
-    // per-account data-plane view. Non-admin sessions get a 403 because the
-    // bypass exposes models from upstreams they have no data-plane access
-    // to. Default behavior stays scoped (Models page + Playground respect
-    // self-restriction the same way the data plane does).
-    if (gatewayWide && !userFromContext(c).isAdmin) {
-      return c.json({ error: 'Admin privileges required for gateway_wide=true' }, 403);
-    }
-    const upstreamScope = gatewayWide ? null : effectiveUpstreamIdsFromContext(c);
+    // Admin sessions see the entire gateway: editor surfaces (alias edit,
+    // upstream edit) need to configure models on upstreams the admin may
+    // have self-restricted out of their own data-plane access, and the
+    // dashboard filters the result client-side for surfaces that should
+    // respect the restriction (Models page, playground). Non-admin
+    // sessions stay scoped to their effective upstream cap so the
+    // dashboard cannot leak models from upstreams their account has no
+    // data-plane access to.
+    const upstreamScope = userFromContext(c).isAdmin ? null : effectiveUpstreamIdsFromContext(c);
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const [addressable, aliases] = await Promise.all([
       enumerateAddressableModelIds(

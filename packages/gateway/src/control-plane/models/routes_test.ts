@@ -222,16 +222,17 @@ test('/api/models?include_unlisted=true: alias whose name collides with an unlis
   );
 });
 
-test('/api/models?gateway_wide=true bypasses the caller\'s upstream cap for admin sessions', async () => {
+test('/api/models for an admin session returns the gateway-wide catalog, bypassing the admin\'s own user.upstreamIds cap', async () => {
   const { adminSession, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
   await repo.upstreams.save(azureUpstream());
 
-  // Admin self-restricts to a subset of upstreams. The Models page and
-  // playground must respect that cap (default scoped behavior); the alias
-  // edit / upstream edit surfaces opt into gateway-wide with
-  // ?gateway_wide=true so they see "what exists" not "what this account
-  // can reach".
+  // Admin self-restricts. The dashboard's editor surfaces (alias edit,
+  // upstream edit) need to see "what exists on the entire gateway", and
+  // the Models page + playground filter the gateway-wide payload
+  // client-side for surfaces that should respect the restriction.
+  // Server-side gateway-wide for admin is the foundation that lets the
+  // dashboard do that filtering.
   await repo.users.save({
     id: 1,
     username: 'admin',
@@ -244,41 +245,10 @@ test('/api/models?gateway_wide=true bypasses the caller\'s upstream cap for admi
   });
 
   await withMockedFetch(modelsFetchHandler, async () => {
-    // Default: scoped to admin's self-restriction.
-    const scoped = await requestApp('/api/models', { headers: { 'x-floway-session': adminSession } });
-    assertEquals(scoped.status, 200);
-    const scopedIds = ((await scoped.json()) as { data: Array<{ id: string }> }).data.map(m => m.id).sort();
-    assertEquals(scopedIds.includes('azure-public'), false);
-
-    // gateway_wide=true bypasses the cap.
-    const wide = await requestApp('/api/models?gateway_wide=true', { headers: { 'x-floway-session': adminSession } });
-    assertEquals(wide.status, 200);
-    const wideIds = ((await wide.json()) as { data: Array<{ id: string }> }).data.map(m => m.id).sort();
-    assertEquals(wideIds.includes('azure-public'), true);
-    assertEquals(wideIds.includes('custom-model'), true);
-  });
-});
-
-test('/api/models?gateway_wide=true rejects non-admin sessions with 403', async () => {
-  // Non-admin sessions can read the scoped /api/models for the Models page,
-  // but the gateway_wide bypass would leak models from upstreams they have
-  // no data-plane access to.
-  const { repo } = await setupAppTest();
-  await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await repo.users.save({
-    id: 2,
-    username: 'tester',
-    passwordHash: null,
-    isAdmin: false,
-    upstreamIds: null,
-    canViewGlobalTelemetry: false,
-    createdAt: '2026-03-15T00:00:00.000Z',
-    deletedAt: null,
-  });
-  const session = (await repo.sessions.create(2)).id;
-
-  await withMockedFetch(modelsFetchHandler, async () => {
-    const response = await requestApp('/api/models?gateway_wide=true', { headers: { 'x-floway-session': session } });
-    assertEquals(response.status, 403);
+    const response = await requestApp('/api/models', { headers: { 'x-floway-session': adminSession } });
+    assertEquals(response.status, 200);
+    const ids = ((await response.json()) as { data: Array<{ id: string }> }).data.map(m => m.id).sort();
+    assertEquals(ids.includes('azure-public'), true);
+    assertEquals(ids.includes('custom-model'), true);
   });
 });
