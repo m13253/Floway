@@ -90,21 +90,29 @@ const computeCatalog = async (
   const addressableSet = new Set(addressable.map(entry => entry.id));
 
   // Each alias entry survives in the codex catalog when at least one of
-  // its configured targets is currently addressable. `firstTargetId` is
-  // the fallback window source: selection mode is irrelevant here because
-  // the catalog must publish a single stable window.
+  // its configured targets is currently addressable. The fallback window
+  // — used when the operator did not override `announcedMetadata` —
+  // is the min across every routable target's window, matching the
+  // safe-lower-bound rule `/v1/models` already applies via the rule-aware
+  // intersection. Selection mode is irrelevant here because the catalog
+  // must publish a single stable window.
   interface AliasCatalogInfo {
-    readonly firstTargetId: string;
+    readonly routableWindowsMin: number | null;
     readonly announcedContextWindow: number | undefined;
   }
   const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
   for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
-    const firstRoutable = aliasedFrom.targets.find(t => addressableSet.has(t.target_model_id));
-    if (firstRoutable === undefined) continue;
+    const routableIds = aliasedFrom.targets
+      .map(t => t.target_model_id)
+      .filter(id => addressableSet.has(id));
+    if (routableIds.length === 0) continue;
+    const windows = routableIds
+      .map(id => slugContextWindow.get(id))
+      .filter((w): w is number => w !== undefined);
     aliasCatalogInfo.set(entry.id, {
-      firstTargetId: firstRoutable.target_model_id,
+      routableWindowsMin: windows.length > 0 ? Math.min(...windows) : null,
       announcedContextWindow: entry.limits.max_context_window_tokens,
     });
   }
@@ -116,12 +124,12 @@ const computeCatalog = async (
   // Alias slug: prefer the alias's announced window (operator override OR
   // the synthesizer's automatic intersection) so codex's local gating —
   // auto-compact, context-budget UX — agrees with what /v1/models told
-  // the operator's other tooling. Fallback to the first routable target's
-  // window when the alias publishes no window. Plain slugs read straight
-  // off the registry.
+  // the operator's other tooling. Fallback to the min over routable
+  // targets' windows when the alias publishes no window. Plain slugs read
+  // straight off the registry.
   const contextWindowOf: ContextWindowResolver = slug => {
     const info = aliasCatalogInfo.get(slug);
-    if (info !== undefined) return info.announcedContextWindow ?? slugContextWindow.get(info.firstTargetId) ?? null;
+    if (info !== undefined) return info.announcedContextWindow ?? info.routableWindowsMin;
     return slugContextWindow.get(slug) ?? null;
   };
   return applyContextWindowFromRegistry(filtered, contextWindowOf);

@@ -584,6 +584,48 @@ describe('codex 1p namespace', () => {
       expect(autoReview?.context_window).toBe(272000);
     });
 
+    it('takes min(window) across all routable targets when the alias publishes no window', async () => {
+      // Multi-target alias with two routable targets advertising different
+      // windows and no announced override (intersection drops the field
+      // because targets disagree); the catalog should pick the safe lower
+      // bound, matching the rule-aware intersection /v1/models already
+      // applies.
+      const { apiKey, repo } = await setupAppTest();
+      await repo.modelAliases.insert({
+        name: 'codex-auto-review',
+        kind: 'chat',
+        selection: 'first-available',
+        displayName: 'Codex Auto Review',
+        visibleInModelsList: true,
+        targets: [
+          { target_model_id: 'gpt-5.4', rules: {} },
+          { target_model_id: 'gpt-5.5', rules: {} },
+        ],
+        announcedMetadata: null,
+        sortOrder: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const app = buildCodexApp();
+      const body = await withMockedFetch(
+        copilotFetch([
+          { id: 'gpt-5.4', maxContextWindowTokens: 272000, supported_endpoints: ['/chat/completions'] },
+          { id: 'gpt-5.5', maxContextWindowTokens: 120000, supported_endpoints: ['/chat/completions'] },
+        ]),
+        async () => {
+          const response = await app.request('/azure-api.codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
+      const autoReview = body.models.find(m => m.slug === 'codex-auto-review');
+      // gpt-5.4 → 272000, gpt-5.5 → 120000. min(272000, 120000) = 120000.
+      expect(autoReview?.max_context_window).toBe(120000);
+      expect(autoReview?.context_window).toBe(120000);
+    });
+
     it('returns an empty catalog when the registry has no overlapping slugs', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
