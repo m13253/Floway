@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import AliasRow from './AliasRow.vue';
 import { buildAliasModel, buildRealModel } from '../../api/test-fixtures.ts';
-import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 
 const alias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => ({
   kind: 'chat',
   selection: 'first-available',
   display_name: null,
   visible_in_models_list: true,
-  targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }],
+  targets: [{ target_model_id: 'gpt-5', rules: {} }],
   announced_metadata: null,
   sort_order: 0,
   created_at: '2026-01-01T00:00:00Z',
@@ -32,7 +32,7 @@ describe('AliasRow', () => {
     // as the mono pill next to it — the chat-playground idiom).
     const single = mount(AliasRow, {
       props: {
-        alias: alias({ name: 'a', display_name: null, targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } as ChatAliasRules }] }),
+        alias: alias({ name: 'a', display_name: null, targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } }] }),
         models: [],
       },
     });
@@ -44,8 +44,8 @@ describe('AliasRow', () => {
           name: 'gizmo',
           display_name: null,
           targets: [
-            { target_model_id: 'gpt-5', rules: {} as ChatAliasRules },
-            { target_model_id: 'claude', rules: {} as ChatAliasRules },
+            { target_model_id: 'gpt-5', rules: {} },
+            { target_model_id: 'claude', rules: {} },
           ],
         }),
         models: [],
@@ -62,8 +62,8 @@ describe('AliasRow', () => {
           selection: 'random',
           visible_in_models_list: false,
           targets: [
-            { target_model_id: 'a', rules: {} as ChatAliasRules },
-            { target_model_id: 'b', rules: {} as ChatAliasRules },
+            { target_model_id: 'a', rules: {} },
+            { target_model_id: 'b', rules: {} },
           ],
         }),
         models: [],
@@ -92,16 +92,16 @@ describe('AliasRow', () => {
   it('renders the alias-level warning icon only when the shadow warning fires', () => {
     const catalog = [realModel('gpt-5'), realModel('plain')];
 
-    const noShadow = mount(AliasRow, { props: { alias: alias({ name: 'unique', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }), models: catalog } });
+    const noShadow = mount(AliasRow, { props: { alias: alias({ name: 'unique', targets: [{ target_model_id: 'gpt-5', rules: {} }] }), models: catalog } });
     expect(noShadow.find('span[aria-label="Alias warning"]').exists()).toBe(false);
 
-    const shadow = mount(AliasRow, { props: { alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'plain', rules: {} as ChatAliasRules }] }), models: catalog } });
+    const shadow = mount(AliasRow, { props: { alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'plain', rules: {} }] }), models: catalog } });
     expect(shadow.find('span[aria-label="Alias warning"]').exists()).toBe(true);
 
     // Seed pattern (target references shadowed id) suppresses the warning.
     const seeded = mount(AliasRow, {
       props: {
-        alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }, { target_model_id: 'plain', rules: {} as ChatAliasRules }] }),
+        alias: alias({ name: 'gpt-5', targets: [{ target_model_id: 'gpt-5', rules: {} }, { target_model_id: 'plain', rules: {} }] }),
         models: catalog,
       },
     });
@@ -110,7 +110,7 @@ describe('AliasRow', () => {
     // An alias-name collision against another alias doesn't shadow (only real-model collisions do).
     const aliasCollision = mount(AliasRow, {
       props: {
-        alias: alias({ name: 'auto-review', targets: [{ target_model_id: 'plain', rules: {} as ChatAliasRules }] }),
+        alias: alias({ name: 'auto-review', targets: [{ target_model_id: 'plain', rules: {} }] }),
         models: [aliasModel('auto-review'), realModel('plain')],
       },
     });

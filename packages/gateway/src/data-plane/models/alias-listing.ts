@@ -30,7 +30,7 @@ import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { AddressableIdEntry } from '../providers/addressable.ts';
 import { unionEndpoints } from '../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
@@ -42,11 +42,6 @@ export interface ListedAliasInputs {
   // Copilot variant id still counts as available.
   readonly addressableModelIds: readonly AddressableIdEntry[];
 }
-
-// The repo guarantees rule shape matches the row's `kind` (chat rows carry
-// `ChatAliasRules`; embedding / image rows carry the empty record), so a
-// chat-row target can be read as ChatAliasRules without a runtime check.
-const chatRules = (target: AliasTarget): ChatAliasRules => target.rules as ChatAliasRules;
 
 // Result preserves the order of `arrays[0]`. Matters for callers like the
 // reasoning-effort intersection below: when no agreed-default exists, the
@@ -64,8 +59,7 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
 // through unchanged.
 const effectiveChatForIntersection = (chat: ChatModelInfo | undefined, target: AliasTarget): ChatModelInfo | undefined => {
   if (chat === undefined) return undefined;
-  const rules = chatRules(target);
-  const ruleReasoning = rules.reasoning;
+  const ruleReasoning = target.rules.reasoning;
   if (ruleReasoning === undefined) return chat;
   if (chat.reasoning === undefined) return chat;
 

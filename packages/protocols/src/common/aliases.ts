@@ -58,10 +58,12 @@ export interface ChatAliasRules {
   serviceTier?: ServiceTier;
 }
 
-// Rule overlay union keyed by `AliasKind`. Embedding and image targets carry
-// an empty record today; the schema reserves the slot so per-kind rules can
-// grow later without a fresh migration.
-export type AliasRules = ChatAliasRules | Record<string, never>;
+// Rule overlay payload. Today only chat-kind aliases carry rules — embedding
+// and image targets pass `{}`, which already satisfies `ChatAliasRules`
+// because every field is optional. The type is a single alias rather than a
+// union so consumers can read `rules.reasoning?.effort` directly without an
+// unchecked cast.
+export type AliasRules = ChatAliasRules;
 
 // One target row inside an alias's `targets` list. Order is meaningful for
 // `first-available` selection and preserved (but ignored) for `random`.
@@ -133,15 +135,14 @@ export interface AliasRuleBadge {
 // operator who configures `effort + verbosity` sees them in the same order
 // whether the dashboard renders badges or a comma-joined caption.
 const aliasRuleParts = (rules: AliasRules): AliasRuleBadge[] => {
-  const chat = rules as ChatAliasRules;
   const parts: AliasRuleBadge[] = [];
-  if (chat.reasoning?.effort !== undefined) parts.push({ field: 'reasoning.effort', label: `${chat.reasoning.effort} effort` });
-  if (chat.reasoning?.budget_tokens !== undefined) parts.push({ field: 'reasoning.budget_tokens', label: `${chat.reasoning.budget_tokens}tok budget` });
-  if (chat.reasoning?.adaptive === true) parts.push({ field: 'reasoning.adaptive', label: 'adaptive' });
-  else if (chat.reasoning?.adaptive === false) parts.push({ field: 'reasoning.adaptive', label: 'non-adaptive' });
-  if (chat.reasoning?.summary !== undefined) parts.push({ field: 'reasoning.summary', label: `summary: ${chat.reasoning.summary}` });
-  if (chat.verbosity !== undefined) parts.push({ field: 'verbosity', label: `${chat.verbosity} verbosity` });
-  if (chat.serviceTier !== undefined) parts.push({ field: 'serviceTier', label: `${chat.serviceTier} tier` });
+  if (rules.reasoning?.effort !== undefined) parts.push({ field: 'reasoning.effort', label: `${rules.reasoning.effort} effort` });
+  if (rules.reasoning?.budget_tokens !== undefined) parts.push({ field: 'reasoning.budget_tokens', label: `${rules.reasoning.budget_tokens}tok budget` });
+  if (rules.reasoning?.adaptive === true) parts.push({ field: 'reasoning.adaptive', label: 'adaptive' });
+  else if (rules.reasoning?.adaptive === false) parts.push({ field: 'reasoning.adaptive', label: 'non-adaptive' });
+  if (rules.reasoning?.summary !== undefined) parts.push({ field: 'reasoning.summary', label: `summary: ${rules.reasoning.summary}` });
+  if (rules.verbosity !== undefined) parts.push({ field: 'verbosity', label: `${rules.verbosity} verbosity` });
+  if (rules.serviceTier !== undefined) parts.push({ field: 'serviceTier', label: `${rules.serviceTier} tier` });
   return parts;
 };
 

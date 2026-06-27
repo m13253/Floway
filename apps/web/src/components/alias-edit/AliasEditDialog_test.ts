@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
 
 import { buildRealModel } from '../../api/test-fixtures.ts';
-import type { ChatAliasRules, ControlPlaneModel, ModelAlias } from '../../api/types.ts';
+import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
 
 // Mock the API client + composables so the dialog mounts without hitting the
 // network. The composables expose `ref`-based state — return the same shape
@@ -48,7 +48,7 @@ const baseAlias = (over: Partial<ModelAlias> & { name: string }): ModelAlias => 
   selection: 'first-available',
   display_name: null,
   visible_in_models_list: true,
-  targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }],
+  targets: [{ target_model_id: 'gpt-5', rules: {} }],
   announced_metadata: null,
   sort_order: 0,
   created_at: '2026-01-01T00:00:00Z',
@@ -98,7 +98,7 @@ describe('AliasEditDialog', () => {
 
   it('expands the chat rule body for chat aliases; the row toggle is disabled for non-chat aliases', async () => {
     const chat = mount(AliasEditDialog, {
-      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } as ChatAliasRules }] }) },
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } }] }) },
       attachTo: document.body,
     });
     await nextTick();
@@ -127,7 +127,7 @@ describe('AliasEditDialog', () => {
     const w = mount(AliasEditDialog, {
       props: {
         open: true,
-        record: baseAlias({ name: '', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }),
+        record: baseAlias({ name: '', targets: [{ target_model_id: 'gpt-5', rules: {} }] }),
       },
       attachTo: document.body,
     });
@@ -195,7 +195,7 @@ describe('AliasEditDialog', () => {
 
   it('announced metadata: override off → editor renders in auto (read-only) mode', async () => {
     const w = mount(AliasEditDialog, {
-      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} }] }) },
       attachTo: document.body,
     });
     await nextTick();
@@ -220,7 +220,7 @@ describe('AliasEditDialog', () => {
       }),
     ];
     const w = mount(AliasEditDialog, {
-      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} }] }) },
       attachTo: document.body,
     });
     await nextTick();
@@ -241,7 +241,7 @@ describe('AliasEditDialog', () => {
 
   it('announced metadata: toggling override off restores auto (read-only) mode', async () => {
     const w = mount(AliasEditDialog, {
-      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} as ChatAliasRules }] }) },
+      props: { open: true, record: baseAlias({ name: 'a', targets: [{ target_model_id: 'gpt-5', rules: {} }] }) },
       attachTo: document.body,
     });
     await nextTick();

@@ -4,11 +4,11 @@ import { nextTick } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
-import type { AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { AliasTarget, ControlPlaneModel } from '../../api/types.ts';
 
 const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({
   target_model_id: 'gpt-5',
-  rules: {} as ChatAliasRules,
+  rules: {},
   ...over,
 });
 
@@ -77,7 +77,7 @@ describe('AliasTargetRow', () => {
 
   it('renders a rule-level warning under reasoning.effort when the target does not advertise it', async () => {
     const w = mountRow({
-      modelValue: { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'xhigh' } } as ChatAliasRules },
+      modelValue: { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'xhigh' } } },
       models: [realModel('gpt-5', { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } })],
     });
     await w.find('button[aria-label="Toggle target row"]').trigger('click');

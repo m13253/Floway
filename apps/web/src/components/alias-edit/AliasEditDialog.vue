@@ -5,7 +5,7 @@ import AliasTargetRow from './AliasTargetRow.vue';
 import { computeAnnouncedMetadata } from './announced-metadata.ts';
 import { computeAliasLevelWarnings, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
-import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ModelAlias } from '../../api/types.ts';
+import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useRawModelsStore } from '../../composables/useModels.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
@@ -30,7 +30,7 @@ const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'
 
 // Switching kind discards rule state — a chat-only rule must not survive a
 // switch into embedding/image.
-const emptyRulesFor = (k: AliasKind): AliasTarget['rules'] => (k === 'chat' ? {} as ChatAliasRules : {} as Record<string, never>);
+const emptyRulesFor = (k: AliasKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
 
 const blankTarget = (k: AliasKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
 

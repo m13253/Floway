@@ -36,24 +36,21 @@ const targetId = computed({
   set: v => { target.value = { ...target.value, target_model_id: v }; },
 });
 
-// Read-only view of the rules as `ChatAliasRules`. The template gates this
-// to the chat branch; setters always clone the rules so the v-model emit
-// fires and the parent's targets array stays referentially up to date.
-const chatRules = computed<ChatAliasRules>(() => target.value.rules as ChatAliasRules);
-
+// Setters always clone the rules object so the v-model emit fires and the
+// parent's targets array stays referentially up to date.
 const setRules = (next: ChatAliasRules) => { target.value = { ...target.value, rules: next }; };
 
 const patchReasoning = (patch: Partial<NonNullable<ChatAliasRules['reasoning']>>) => {
-  const current = chatRules.value.reasoning ?? {};
+  const current = target.value.rules.reasoning ?? {};
   const next = { ...current, ...patch };
   for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
     if (patch[k] === undefined) delete (next as Record<string, unknown>)[k];
   }
   if (Object.keys(next).length === 0) {
-    const { reasoning: _, ...rest } = chatRules.value;
+    const { reasoning: _, ...rest } = target.value.rules;
     setRules(rest);
   } else {
-    setRules({ ...chatRules.value, reasoning: next });
+    setRules({ ...target.value.rules, reasoning: next });
   }
 };
 
@@ -61,13 +58,13 @@ const setEffort = (raw: string) => patchReasoning({ effort: raw === '' ? undefin
 const setSummary = (raw: string) => patchReasoning({ summary: raw === '' ? undefined : raw });
 const setAdaptive = (on: boolean | undefined) => patchReasoning({ adaptive: on === true ? true : undefined });
 const setVerbosity = (raw: string) => {
-  const next = { ...chatRules.value };
+  const next = { ...target.value.rules };
   if (raw === '') delete next.verbosity;
   else next.verbosity = raw;
   setRules(next);
 };
 const setServiceTier = (raw: string) => {
-  const next = { ...chatRules.value };
+  const next = { ...target.value.rules };
   if (raw === '') delete next.serviceTier;
   else next.serviceTier = raw;
   setRules(next);
@@ -79,8 +76,8 @@ const setServiceTier = (raw: string) => {
 // when the parsed number is a finite integer. The watch syncs the input
 // back to the parent's value when the parent resets the rule object (e.g.
 // the dialog switches `kind` and re-initialises every target row's rules).
-const budgetText = ref(chatRules.value.reasoning?.budget_tokens === undefined ? '' : String(chatRules.value.reasoning.budget_tokens));
-watch(() => chatRules.value.reasoning?.budget_tokens, parsed => {
+const budgetText = ref(target.value.rules.reasoning?.budget_tokens === undefined ? '' : String(target.value.rules.reasoning.budget_tokens));
+watch(() => target.value.rules.reasoning?.budget_tokens, parsed => {
   const next = parsed === undefined ? '' : String(parsed);
   if (next !== budgetText.value.trim()) budgetText.value = next;
 });
@@ -103,7 +100,7 @@ const SERVICE_TIER_ITEMS = ['default', 'flex', 'priority', 'scale', 'fast'];
 
 const catalog = computed(() => findCatalogModel(props.models, target.value.target_model_id));
 const modelWarnings = computed(() => computeModelWarnings(target.value.target_model_id, catalog.value, props.kind));
-const ruleWarnings = computed(() => computeRuleWarnings(chatRules.value, catalog.value));
+const ruleWarnings = computed(() => computeRuleWarnings(target.value.rules, catalog.value));
 const warningFor = (field: string) => ruleWarnings.value.find(w => w.field === field)?.message;
 const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
 </script>
@@ -183,7 +180,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning effort</label>
           <Combobox
-            :model-value="chatRules.reasoning?.effort ?? ''"
+            :model-value="target.rules.reasoning?.effort ?? ''"
             :items="EFFORT_ITEMS"
             placeholder="e.g. low"
             @update:model-value="setEffort"
@@ -208,7 +205,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Adaptive reasoning</label>
           <div class="flex h-9 items-center gap-2">
             <Switch
-              :model-value="chatRules.reasoning?.adaptive === true"
+              :model-value="target.rules.reasoning?.adaptive === true"
               @update:model-value="setAdaptive"
             />
             <span class="text-sm text-gray-300">Enable</span>
@@ -219,7 +216,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Reasoning summary</label>
           <Combobox
-            :model-value="chatRules.reasoning?.summary ?? ''"
+            :model-value="target.rules.reasoning?.summary ?? ''"
             :items="SUMMARY_ITEMS"
             placeholder="e.g. auto"
             @update:model-value="setSummary"
@@ -230,7 +227,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Verbosity</label>
           <Combobox
-            :model-value="chatRules.verbosity ?? ''"
+            :model-value="target.rules.verbosity ?? ''"
             :items="VERBOSITY_ITEMS"
             placeholder="e.g. medium"
             @update:model-value="setVerbosity"
@@ -241,7 +238,7 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Service tier</label>
           <Combobox
-            :model-value="chatRules.serviceTier ?? ''"
+            :model-value="target.rules.serviceTier ?? ''"
             :items="SERVICE_TIER_ITEMS"
             placeholder="e.g. default"
             @update:model-value="setServiceTier"

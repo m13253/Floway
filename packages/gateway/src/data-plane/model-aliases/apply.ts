@@ -1,11 +1,8 @@
 // Per-protocol rule overlay. Alias rules overwrite IR fields they name;
-// fields the target IR cannot express are silently dropped. The functions
-// accept the resolver's wide `AliasRules` union and narrow internally —
-// non-chat aliases carry an empty rules object so the chat-only fields are
-// all undefined and the overlay is a no-op.
+// fields the target IR cannot express are silently dropped.
 
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import type { AliasRules, ChatAliasRules } from '@floway-dev/protocols/common';
+import type { AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -15,28 +12,24 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 // "upstream saw Y" via this header.
 export const ALIAS_RESPONSE_HEADER = 'x-floway-alias';
 
-const asChat = (rules: AliasRules): ChatAliasRules => rules as ChatAliasRules;
-
-const hasReasoning = (rules: ChatAliasRules): rules is ChatAliasRules & { reasoning: NonNullable<ChatAliasRules['reasoning']> } =>
+const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 
 export const applyChatRulesToChatCompletions = (body: ChatCompletionsPayload, rules: AliasRules): void => {
-  const chat = asChat(rules);
-  if (hasReasoning(chat)) {
-    const { effort, budget_tokens, adaptive, summary } = chat.reasoning;
+  if (hasReasoning(rules)) {
+    const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     if (effort !== undefined) body.reasoning_effort = effort;
     if (budget_tokens !== undefined) body.thinking_budget = budget_tokens;
     if (adaptive !== undefined) body.adaptive_thinking = adaptive;
     if (summary !== undefined) body.reasoning_summary = summary;
   }
-  if (chat.verbosity !== undefined) body.verbosity = chat.verbosity;
-  if (chat.serviceTier !== undefined) body.service_tier = chat.serviceTier;
+  if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;
+  if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
 export const applyChatRulesToResponses = (body: ResponsesPayload, rules: AliasRules): void => {
-  const chat = asChat(rules);
-  if (hasReasoning(chat)) {
-    const { effort, budget_tokens, adaptive, summary } = chat.reasoning;
+  if (hasReasoning(rules)) {
+    const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     if (effort !== undefined || summary !== undefined) {
       const existing = body.reasoning ?? {};
       body.reasoning = {
@@ -48,16 +41,15 @@ export const applyChatRulesToResponses = (body: ResponsesPayload, rules: AliasRu
     if (budget_tokens !== undefined) body.thinking_budget = budget_tokens;
     if (adaptive !== undefined) body.adaptive_thinking = adaptive;
   }
-  if (chat.verbosity !== undefined) {
-    body.text = { ...body.text, verbosity: chat.verbosity };
+  if (rules.verbosity !== undefined) {
+    body.text = { ...body.text, verbosity: rules.verbosity };
   }
-  if (chat.serviceTier !== undefined) body.service_tier = chat.serviceTier;
+  if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
 export const applyChatRulesToMessages = (body: MessagesPayload, rules: AliasRules): void => {
-  const chat = asChat(rules);
-  if (hasReasoning(chat)) {
-    const { effort, budget_tokens, adaptive } = chat.reasoning;
+  if (hasReasoning(rules)) {
+    const { effort, budget_tokens, adaptive } = rules.reasoning;
     // Anthropic stores explicit effort in `output_config.effort`; budget /
     // adaptive ride on `thinking.*`. Splitting them so both can be set in
     // the same overlay (effort fixed + budget pinned, e.g.) without one
@@ -71,18 +63,21 @@ export const applyChatRulesToMessages = (body: MessagesPayload, rules: AliasRule
       body.thinking = { ...body.thinking, type: 'enabled', budget_tokens };
     }
   }
-  if (chat.verbosity !== undefined) body.verbosity = chat.verbosity;
-  if (chat.serviceTier !== undefined) {
+  if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;
+  if (rules.serviceTier !== undefined) {
     // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
     // `service_tier: 'fast'`; on a native Messages target the alias rule
     // `serviceTier: 'fast'` lands on `speed` so the upstream sees Fast Mode
     // through its native field. Other tier values pass through on
     // `service_tier` since Messages's native enum (`auto`/`standard_only`)
-    // doesn't model them.
-    if (chat.serviceTier === 'fast') {
+    // doesn't model them. Whichever branch we take, clear the sibling field
+    // so the upstream never sees two tiers in conflict.
+    if (rules.serviceTier === 'fast') {
       body.speed = 'fast';
+      delete body.service_tier;
     } else {
-      body.service_tier = chat.serviceTier;
+      body.service_tier = rules.serviceTier;
+      delete body.speed;
     }
   }
 };
@@ -98,9 +93,8 @@ const GEMINI_THINKING_LEVEL_BY_EFFORT: Record<string, 'minimal' | 'low' | 'mediu
 };
 
 export const applyChatRulesToGemini = (body: GeminiPayload, rules: AliasRules): void => {
-  const chat = asChat(rules);
-  if (hasReasoning(chat)) {
-    const { effort, budget_tokens, adaptive } = chat.reasoning;
+  if (hasReasoning(rules)) {
+    const { effort, budget_tokens, adaptive } = rules.reasoning;
     // Gemini collapses the three reasoning controls onto one `thinkingConfig`
     // sub-object. Adaptive wins by encoding budget=-1 (Gemini's adaptive
     // sentinel); an explicit budget pins the count; effort sets the level.
@@ -118,10 +112,10 @@ export const applyChatRulesToGemini = (body: GeminiPayload, rules: AliasRules): 
       body.generationConfig = { ...body.generationConfig, thinkingConfig };
     }
   }
-  if (chat.verbosity !== undefined) {
-    body.generationConfig = { ...body.generationConfig, verbosity: chat.verbosity };
+  if (rules.verbosity !== undefined) {
+    body.generationConfig = { ...body.generationConfig, verbosity: rules.verbosity };
   }
-  if (chat.serviceTier !== undefined) {
-    body.generationConfig = { ...body.generationConfig, serviceTier: chat.serviceTier };
+  if (rules.serviceTier !== undefined) {
+    body.generationConfig = { ...body.generationConfig, serviceTier: rules.serviceTier };
   }
 };
