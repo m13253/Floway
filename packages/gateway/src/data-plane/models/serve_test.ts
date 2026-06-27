@@ -119,9 +119,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
         assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
-        // `endpoints` IS surfaced — see assertion further below for the
-        // exact shape (the chat-three-API atom + optional /completions
-        // + embeddings / images keys).
         assertEquals(model.upstream, undefined);
         assertEquals(model.upstreamModel, undefined);
         // Copilot-only raw fields never reach the public DTO.
