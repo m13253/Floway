@@ -2,7 +2,7 @@
 // shape (`ModelAlias`) lives in `@floway-dev/protocols/common`.
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
-import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias } from '@floway-dev/protocols/common';
+import type { ModelAlias } from '@floway-dev/protocols/common';
 
 export const recordToWire = (record: ModelAliasRecord): ModelAlias => ({
   name: record.name,
@@ -17,16 +17,14 @@ export const recordToWire = (record: ModelAliasRecord): ModelAlias => ({
   updated_at: record.updatedAt,
 });
 
-export interface ModelAliasWireInput {
-  name: string;
-  kind: AliasKind;
-  selection: AliasSelection;
-  display_name: string | null;
-  visible_in_models_list: boolean;
-  targets: AliasTarget[];
-  announced_metadata: AnnouncedMetadata | null;
-  sort_order?: number;
-}
+// Server-managed fields (`created_at` / `updated_at` are stamped by the repo;
+// `sort_order` defaults to `nextSortOrder` when omitted) are stripped here so
+// the create/update bodies cannot dictate them. The remaining required-field
+// list rides entirely on `ModelAlias` — a new column in the wire DTO only
+// requires editing one place.
+export type ModelAliasWireInput =
+  & Omit<ModelAlias, 'sort_order' | 'created_at' | 'updated_at'>
+  & { sort_order?: number };
 
 export const wireToRecord = (
   wire: ModelAliasWireInput,
