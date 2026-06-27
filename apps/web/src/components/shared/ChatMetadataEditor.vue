@@ -299,7 +299,7 @@ const toggleMandatory = (on: boolean) => {
     <section>
       <div class="mb-3 flex items-baseline gap-3">
         <h4 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Limits</h4>
-        <span class="text-[11px] text-gray-500">tokens — leave blank to inherit</span>
+        <span class="text-[11px] text-gray-500">tokens</span>
       </div>
       <div class="grid gap-3 sm:grid-cols-3">
         <label class="block space-y-1.5">
