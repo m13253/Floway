@@ -22,10 +22,7 @@ vi.mock('../../providers/registry.ts', async importOriginal => {
   return {
     ...original,
     resolveModelCandidates: vi.fn(async (args: { modelName: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
-      // Drain a queued resolution from `aliasResolutionQueue` so the rule-overlay test
-      // sees the resolved target id reach the candidates layer and the
-      // serve overlays rules from the returned `aliasResolution`. Tests
-      // queue the resolution via `aliasResolutionQueue`.
+      // Pull the queued alias resolution so the serve sees a resolved target id and overlays rules from `aliasResolution`.
       const aliasResolution = await resolveAlias({
         modelName: args.modelName,
         providers: [],

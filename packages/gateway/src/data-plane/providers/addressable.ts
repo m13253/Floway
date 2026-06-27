@@ -77,14 +77,11 @@ export const enumerateAddressableModelIds = async (
   // catalog round-trip is the same SWR cache the listed surface just
   // consumed, so this loop never pays a second upstream hit.
   //
-  // `getModels` already tolerated a per-upstream catalog miss via
-  // `Promise.allSettled`, so the listed surface for this same call survived
-  // any single upstream that rejected the catalog refresh. Mirror that
-  // contract here: a rejected `fetchUpstreamModelsCached` collapses to no
-  // addressable-only contribution from THAT upstream — its listed rows
-  // already came through `getModels` (or were dropped there for the same
-  // reason). Without this, a cold-start gateway with one transiently-down
-  // upstream would tank /v1/models entirely.
+  // A rejected per-upstream catalog refresh collapses to no addressable-only
+  // contribution from THAT upstream — its listed rows already came (or were
+  // dropped) through `getModels`. Mirrors the `Promise.allSettled` tolerance
+  // there so a transiently-down upstream cannot tank /v1/models on a
+  // cold-start gateway.
   const perUpstream = await Promise.allSettled(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];

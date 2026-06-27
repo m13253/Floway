@@ -82,29 +82,17 @@ const computeCatalog = async (
     const limit = entry.model.limits.max_context_window_tokens;
     if (typeof limit === 'number') slugContextWindow.set(entry.id, limit);
   }
-  // Listed-surface filter for the codex catalog itself: the codex client
-  // expects the surface it would have published in a regular /v1/models
-  // call, so addressable-but-not-listed forms intentionally do NOT enter
-  // this set.
+  // `registrySlugs` mirrors the listed catalog surface — the slugs codex
+  // would have seen in a regular /v1/models call. `addressableSet` is the
+  // broader set the resolver actually accepts (prefix alternates, Copilot
+  // variants), used only for alias-target availability.
   const registrySlugs = new Set(realModels.map(m => m.id));
-  // Alias-target availability is the broader question — a target reachable
-  // only via a prefix alternate or Copilot variant id still resolves at
-  // request time, so the codex catalog must keep its alias slug too.
   const addressableSet = new Set(addressable.map(entry => entry.id));
 
-  // Run the shared alias synthesizer so the codex catalog reads the same
-  // visible-alias surface that /v1/models, the dashboard, and Gemini do.
-  // Each entry's `aliasedFrom.targets` keeps every configured target — the
-  // synthesizer does not narrow to availability — so we still pick the
-  // first one in registry order here. Selection mode never matters for
-  // this static listing: a `random` alias would refuse to publish a
-  // stable context window, so the catalog uses first-available regardless
-  // of the alias's runtime selection.
-  //
-  // We keep both the alias's own announced limits (operator override OR
-  // the synthesizer's automatic intersection) AND the first routable
-  // target's window — the resolver below prefers the alias's announced
-  // value when the operator set it, fallback to the target's ceiling.
+  // Each alias entry survives in the codex catalog when at least one of
+  // its configured targets is currently addressable. `firstTargetId` is
+  // the fallback window source: selection mode is irrelevant here because
+  // the catalog must publish a single stable window.
   interface AliasCatalogInfo {
     readonly firstTargetId: string;
     readonly announcedContextWindow: number | undefined;
@@ -125,13 +113,12 @@ const computeCatalog = async (
     models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasCatalogInfo.has(m.slug)),
   };
 
-  // For an alias slug: prefer the alias's announced window — that's what
-  // the operator told /v1/models to publish, and the codex client reads
-  // this number for its own local gating (auto-compact, context-budget
-  // UX), so the two wire surfaces must agree on operator intent. Fallback
-  // to the first routable target's window when the alias has no announced
-  // limit (e.g. multi-target alias with no operator override and no agreed
-  // intersection). Plain (non-alias) slugs read straight off the registry.
+  // Alias slug: prefer the alias's announced window (operator override OR
+  // the synthesizer's automatic intersection) so codex's local gating —
+  // auto-compact, context-budget UX — agrees with what /v1/models told
+  // the operator's other tooling. Fallback to the first routable target's
+  // window when the alias publishes no window. Plain slugs read straight
+  // off the registry.
   const contextWindowOf: ContextWindowResolver = slug => {
     const info = aliasCatalogInfo.get(slug);
     if (info !== undefined) return info.announcedContextWindow ?? slugContextWindow.get(info.firstTargetId) ?? null;

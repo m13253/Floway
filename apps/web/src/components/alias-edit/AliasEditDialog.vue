@@ -159,15 +159,13 @@ const aliasLevelWarnings = computed(() => computeAliasLevelWarnings(
 const saving = ref(false);
 const saveError = ref<string | null>(null);
 
-// Save gate: name non-empty AND no collision with another alias AND ≥1
-// target AND every target id non-empty. The collision check excludes the
-// current record so an in-place edit of an unchanged name is allowed.
+// Collision check excludes the current record so an in-place edit of an
+// unchanged name is allowed.
 const validationError = computed<string | null>(() => {
   const trimmed = aliasName.value.trim();
   if (trimmed === '') return 'Alias id is required';
   const collisions = (aliasesStore.aliases.value ?? []).filter(a => a.name === trimmed && a.name !== props.record?.name);
   if (collisions.length > 0) return `An alias with id "${trimmed}" already exists`;
-  if (targets.value.length === 0) return 'At least one target is required';
   if (targets.value.some(t => t.target_model_id.trim() === '')) return 'Every target needs a model id';
   return null;
 });

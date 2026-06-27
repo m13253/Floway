@@ -8,11 +8,8 @@ import { directFetcher, type Fetcher, type InternalModel, type ModelProviderInst
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
-// Strip the execution-layer fields (`providers`, `endpoints`) off each
-// resolved catalog row so the assertions read against the public catalog
-// projection alone. Existed in production as `getInternalModels` until the
-// production code's sole consumer migrated to the addressable surface; the
-// test fixtures still want the projection, so it lives here now.
+// Test-local projection that strips execution-layer fields, leaving the
+// public-catalog shape the fixtures assert against.
 const getInternalModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,

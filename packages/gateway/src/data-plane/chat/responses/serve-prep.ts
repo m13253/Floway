@@ -78,13 +78,10 @@ export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
   | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ChatCandidate };
 
-// Runs the shared serve-side prep both `responsesServe.generate` and
-// `responsesServe.compact` need before dispatching to `responsesAttempt`:
-// expand any `previous_response_id`, enumerate candidates (which internally
-// runs alias resolution), overlay alias rules + stage the response header,
-// plan routing, stage the user input, and pick the first candidate. Returns
-// a rendered failure result when no candidate is viable so the caller can
-// surface it directly without re-deriving the model-error branch.
+// Shared serve-side prep for both `responsesServe.generate` and
+// `responsesServe.compact`. Returns a rendered failure result when no
+// candidate is viable so the caller can surface it directly without
+// re-deriving the model-error branch.
 export const prepareResponsesServePlan = async (args: {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;

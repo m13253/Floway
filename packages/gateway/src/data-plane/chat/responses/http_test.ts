@@ -13,16 +13,8 @@ import { directFetcher, type ProviderResponsesResult, type ResponsesAction, type
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
-// provider candidates it wants. The mock drains a queued `AliasResolution`
-// from `aliasResolutionQueue` (set up by `installRepo` for the alias-
-// rewrite tests below) and forwards it on the candidates return, so the
-// serve's downstream alias-rewrite + rule-overlay path runs end-to-end
-// against an injected resolution without standing up the real catalog
-// stack.
+// provider candidates it wants, with an optional queued alias resolution.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-// `lastSeenModel` captures the effective model id the serve passes downstream
-// — the alias rewrite (if any) applied. Tests assert against this to confirm
-// the alias mechanism drove the rewrite.
 const lastSeenModel: { value: string | null } = { value: null };
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();

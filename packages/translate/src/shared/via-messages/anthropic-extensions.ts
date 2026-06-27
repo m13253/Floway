@@ -2,8 +2,8 @@ import type { MessagesPayload, MessagesThinkingDisplay } from '@floway-dev/proto
 
 // Build a Messages `thinking` block from the Floway extension fields a
 // non-Messages inbound carries (`thinking_budget`, `adaptive_thinking`,
-// `reasoning_summary`). `adaptive_thinking: true` overrides `thinking_budget`
-// because the alias write-side validator enforces single-facet selection;
+// `reasoning_summary`). The alias write-side validator enforces single-facet
+// selection, so `adaptive_thinking` and `thinking_budget` should not co-occur;
 // when both still arrive the adaptive choice wins.
 //
 // The summary mapping collapses the OpenAI-style {auto|concise|detailed|
