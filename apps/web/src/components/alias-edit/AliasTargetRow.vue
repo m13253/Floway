@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// One target row inside the alias edit dialog.
-
 import { computed, ref, watch } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
@@ -97,9 +95,7 @@ const onBudgetChange = (raw: string) => {
   patchReasoning({ budget_tokens: Number(trimmed) });
 };
 
-// Suggestion lists for chat-rule comboboxes. Combobox accepts free-form
-// values; these arrays are the canonical presets the dashboard pins as
-// type-ahead hints.
+// Canonical presets pinned as type-ahead hints in the chat-rule comboboxes.
 const EFFORT_ITEMS = ['none', 'low', 'medium', 'high', 'xhigh'];
 const SUMMARY_ITEMS = ['auto', 'concise', 'detailed', 'none'];
 const VERBOSITY_ITEMS = ['low', 'medium', 'high'];

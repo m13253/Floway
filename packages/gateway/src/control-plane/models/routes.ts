@@ -89,11 +89,10 @@ export const controlPlaneModels = async (c: Context) => {
     };
     return c.json(response);
   } catch (e: unknown) {
-    // Empty-upstreams is a domain state, not an error, on the dashboard. The
-    // public /v1/models endpoint still surfaces it as a 502 to remote clients
-    // because they need to know the gateway is unconfigured — but the
-    // dashboard's Models tab should render an empty grid + the operator
-    // guidance message inline instead of flashing a 502 in devtools.
+    // Empty-upstreams is a domain state, not an error, on the dashboard:
+    // /v1/models still surfaces it as a 502 (remote clients need to know
+    // the gateway is unconfigured), but the Models tab renders an empty
+    // grid inline.
     if (e instanceof Error && e.message.startsWith('No upstream provider configured')) {
       return c.json({ object: 'list', has_more: false, first_id: null, last_id: null, data: [] });
     }

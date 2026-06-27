@@ -10,7 +10,6 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { createAliasBody, updateAliasBody } from '../schemas.ts';
 
-// New alias goes at the end of the sort order by default. Empty list → 0.
 const nextSortOrder = (existing: readonly ModelAliasRecord[]): number =>
   existing.reduce((acc, record) => Math.max(acc, record.sortOrder), -1) + 1;
 

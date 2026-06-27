@@ -81,8 +81,6 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 // Run the dump-accumulator's finalize tee on the outgoing Response. Every
 // inbound HTTP wrapper returns its response through this seam so the dump
 // pipeline applies uniformly across happy-path, error, and passthrough paths.
-// Gateway-staged response headers (today: `x-floway-alias`) ride along here
-// regardless of how the responder built the body.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
   for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
   return ctx.dump?.finalize(response) ?? response;

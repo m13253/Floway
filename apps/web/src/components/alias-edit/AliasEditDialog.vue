@@ -1,9 +1,4 @@
 <script setup lang="ts">
-// Editor for one alias (create or edit). Top form (name / display name /
-// kind / selection); a vertical stack of AliasTargetRow cards with an
-// "Add target" button; an Announced-metadata section; alias-level
-// warnings card; footer (visibility switch + Cancel / Save).
-
 import { computed, ref, watch } from 'vue';
 
 import AliasTargetRow from './AliasTargetRow.vue';
@@ -45,8 +40,6 @@ const kind = ref<AliasKind>(props.record?.kind ?? 'chat');
 const selection = ref<AliasSelection>(props.record?.selection ?? 'first-available');
 const visibleInModelsList = ref(props.record?.visible_in_models_list ?? true);
 
-// Create mode starts with one blank target so the operator immediately sees
-// a row to fill in.
 const targets = ref<AliasTarget[]>(
   props.record
     ? props.record.targets.map(t => ({ target_model_id: t.target_model_id, rules: { ...t.rules } as AliasTarget['rules'] }))
@@ -112,9 +105,8 @@ const setOverrideEnabled = (on: boolean) => {
   }
 };
 
-// The editor's `modelValue` source-of-truth: the override buffer when
-// the operator is editing, the live computed snapshot when not. In
-// auto mode the editor is read-only, so its emits are no-ops anyway.
+// Source-of-truth for the editor's `modelValue`: the override buffer when
+// the operator is editing, the live computed snapshot otherwise.
 const announcedEditorValue = computed<AnnouncedMetadata>(
   () => announcedOverride.value ?? computedAnnouncedMetadata.value,
 );

@@ -17,8 +17,6 @@ export const recordToWire = (record: ModelAliasRecord): ModelAlias => ({
   updated_at: record.updatedAt,
 });
 
-// Wire payload accepted by the create / update body schemas. `sort_order` is
-// optional; everything else is required.
 export interface ModelAliasWireInput {
   name: string;
   kind: AliasKind;

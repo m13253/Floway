@@ -29,9 +29,7 @@ export interface AliasResolution {
   readonly aliasName: string;
 }
 
-// Canonical wording for the alias-no-target-available 404. Called only
-// from inside the `AliasNoTargetAvailableError` constructor so wording
-// changes land in one place; consumers read `error.message` directly.
+// Canonical wording for the alias-no-target-available 404.
 const aliasNoTargetMessage = (params: { aliasName: string; targetCount: number }): string =>
   `alias '${params.aliasName}' has ${params.targetCount} target(s); none currently map to an enabled upstream binding`;
 

@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// One alias rendered as a two-line block in the Settings card. The action
-// cluster sits right-aligned; the leftmost slot is reserved for the
-// alias-level warning icon when one fires.
-
 import { computed } from 'vue';
 
 import type { ControlPlaneModel, ModelAlias } from '../../api/types.ts';
@@ -19,10 +15,6 @@ defineEmits<{
   delete: [];
 }>();
 
-// Operator-set `display_name` wins; otherwise fall back to the alias id
-// itself. The id is also stamped next to the title in mono, so an empty
-// display_name produces "alias-id (sans-serif) · alias-id (mono)" — same
-// visual idiom the chat playground uses for the active model.
 const title = computed(() => props.alias.display_name ?? props.alias.name);
 
 const KIND_LABELS: Record<ModelAlias['kind'], string> = {
@@ -41,8 +33,6 @@ const selectionLabel = computed(() => SELECTION_LABELS[props.alias.selection]);
 const targetCountLabel = computed(() => `${props.alias.targets.length} target${props.alias.targets.length === 1 ? '' : 's'}`);
 
 const aliasWarnings = computed(() => computeAliasLevelWarnings(props.alias, props.models));
-// Join messages with newlines so the tooltip stays a single visual block
-// when both shadow + no-target fire on the same alias.
 const aliasWarningTooltip = computed(() => aliasWarnings.value.map(w => w.message).join('\n'));
 </script>
 

@@ -2,19 +2,15 @@
 // gateway accepts — the union of the listed catalog surface and the
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
 // alternates and by each provider's `resolveRequestedModelId` redirect map.
-//
-// Why this exists: the listing-side availability check (alias-listing,
-// codex catalog) used strict literal id equality against the listed catalog,
-// while the request-time resolver routes through `enumerateModelInterpretations`
-// + `resolveRequestedModelId`. A target that the resolver accepts via a
-// prefix-variant or Copilot variant collapse therefore looked "unavailable"
-// to the listing. Recomputing the resolver-accepted surface against the
-// listed catalog gives every consumer one consistent answer.
+// Listing-side availability checks (alias-listing, codex catalog) must see
+// the same set the request-time resolver routes through
+// (`enumerateModelInterpretations` + `resolveRequestedModelId`); recomputing
+// it once here gives every consumer one consistent answer.
 //
 // Each entry carries the `ResolvedModel` the addressable id will route to,
-// so consumers (alias intersection, codex catalog, control-plane DTO) can
-// read `limits` / `chat` / `endpoints` directly off the entry without a
-// second registry round trip.
+// so consumers (alias intersection, codex catalog, control-plane DTO) read
+// `limits` / `chat` / `endpoints` directly off the entry without a second
+// registry round trip.
 
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { compareModelIds, getModels, listModelProviders } from './registry.ts';

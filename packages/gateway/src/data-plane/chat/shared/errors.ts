@@ -18,8 +18,6 @@ export type ChatServeFailure =
   // it.
   | { readonly kind: 'alias-no-target-available'; readonly message: string };
 
-// Lift `AliasNoTargetAvailableError` into a `ChatServeFailure` so the
-// existing failure renderer can surface it without special-casing.
 export const aliasFailureFromError = (error: AliasNoTargetAvailableError): Extract<ChatServeFailure, { kind: 'alias-no-target-available' }> => ({
   kind: 'alias-no-target-available',
   message: error.message,

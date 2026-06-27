@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Settings card listing every alias the operator has configured.
-
 import { computed } from 'vue';
 
 import AliasRow from './AliasRow.vue';
