@@ -101,12 +101,12 @@ describe('enumerateAddressableModelIds', () => {
     );
   });
 
-  test('returns no entries when no upstream is configured (callers handle the empty state)', async () => {
+  test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     clearInFlightForTesting();
 
-    const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
-    expect(surface.entries).toEqual([]);
+    await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground))
+      .rejects.toThrow('No upstream provider configured');
   });
 });

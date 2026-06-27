@@ -27,6 +27,7 @@
 // at the `loadModels` merge step.
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import type { AddressableIdEntry } from '../providers/addressable.ts';
 import { unionEndpoints } from '../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
@@ -34,7 +35,12 @@ import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
-  readonly realModels: readonly ResolvedModel[];
+  // Full addressable surface — both the listed catalog rows and the
+  // addressable-but-not-listed prefix/redirect forms each provider
+  // contributes. The synthesizer maps every alias target through this
+  // surface so a target that's only reachable via a prefix alternate or
+  // Copilot variant id still counts as available.
+  readonly addressableModelIds: readonly AddressableIdEntry[];
 }
 
 // The repo guarantees rule shape matches the row's `kind` (chat rows carry
@@ -195,10 +201,14 @@ const mergeWithOverride = (
   chat: override.chat ?? computed.chat,
 });
 
-const synthesizeOne = (alias: ModelAliasRecord, realModels: readonly ResolvedModel[]): PublicModel => {
-  const realById = new Map(realModels.map(m => [m.id, m] as const));
+const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly AddressableIdEntry[]): PublicModel => {
+  // Map every alias target through the full addressable surface, not just
+  // the listed catalog: a target reachable only via a prefix-addressable
+  // alternate or a provider-side redirect (Copilot variant id) is still
+  // available to the resolver, and the listing must agree.
+  const addressableById = new Map(addressableModelIds.map(entry => [entry.id, entry.model] as const));
   const availableTargets = alias.targets
-    .map(target => ({ target, real: realById.get(target.target_model_id) }))
+    .map(target => ({ target, real: addressableById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
 
   // Display name precedence: operator-set wins; otherwise derive from the
@@ -252,7 +262,7 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[] =>
   sortAliases(input.aliases)
     .filter(alias => alias.visibleInModelsList)
-    .map(alias => synthesizeOne(alias, input.realModels));
+    .map(alias => synthesizeOne(alias, input.addressableModelIds));
 
 // Compose real-model entries with visible alias entries into a single typed
 // list. Both data-plane `/v1/models` and the dashboard's `/api/models`
@@ -266,14 +276,20 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[]
 // array since alias rows do not bind to an upstream directly; the Gemini
 // `/v1beta/models` route maps into the upstream's `InternalModel` shape
 // before projecting to Gemini's wire form).
+//
+// `realModels` is the listed projection — what `/v1/models` and the
+// dashboard's default `/api/models` row stream emit. `addressableModelIds`
+// feeds the alias synthesizer's availability check; the merge step never
+// promotes addressable-but-not-listed ids to real-model rows.
 export const mergeAliasesIntoModels = <T>(input: {
   readonly realModels: readonly ResolvedModel[];
+  readonly addressableModelIds: readonly AddressableIdEntry[];
   readonly aliases: readonly ModelAliasRecord[];
   readonly mapReal: (model: ResolvedModel) => T;
   readonly wrapAlias: (entry: PublicModel) => T;
 }): T[] => {
-  const { realModels, aliases, mapReal, wrapAlias } = input;
-  const aliasEntries = synthesizeListedAliases({ aliases, realModels });
+  const { realModels, addressableModelIds, aliases, mapReal, wrapAlias } = input;
+  const aliasEntries = synthesizeListedAliases({ aliases, addressableModelIds });
   const aliasIds = new Set(aliasEntries.map(entry => entry.id));
   return [
     ...realModels.filter(model => !aliasIds.has(model.id)).map(mapReal),

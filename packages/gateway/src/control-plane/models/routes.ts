@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { mergeAliasesIntoModels } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { getModels } from '../../data-plane/providers/registry.ts';
+import { enumerateAddressableModelIds } from '../../data-plane/providers/addressable.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -41,22 +41,26 @@ export const controlPlaneModels = async (c: Context) => {
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const [models, aliases] = await Promise.all([
-      getModels(
+    const [addressable, aliases] = await Promise.all([
+      enumerateAddressableModelIds(
         effectiveUpstreamIdsFromContext(c),
         fetcherForUpstream,
         backgroundSchedulerFromContext(c),
       ),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
+    const realModels = addressable.entries
+      .filter(entry => entry.unlisted === undefined)
+      .map(entry => entry.model);
     const data = includeAliases
       ? mergeAliasesIntoModels({
-          realModels: models,
+          realModels,
+          addressableModelIds: addressable.entries,
           aliases,
           mapReal: toControlPlaneModel,
           wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
-      : models.map(toControlPlaneModel);
+      : realModels.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { synthesizeListedAliases } from './alias-listing.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
+import type { AddressableIdEntry } from '../providers/addressable.ts';
 import type { ResolvedModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
@@ -26,6 +27,17 @@ const realModel = (overrides: Partial<ResolvedModel> & { id: string }): Resolved
   ...overrides,
 });
 
+// Adapt the fixtures' "list of real models" view to the addressable surface
+// the synthesizer now consumes — every fixture entry is a listed catalog row.
+const listed = (models: readonly ResolvedModel[]): AddressableIdEntry[] =>
+  models.map(model => ({ id: model.id, unlisted: undefined, model }));
+
+// Test-only addressable surface that pretends a model is reachable through
+// a redirect (e.g. a Copilot variant id). The synthesizer should treat
+// such targets as available even though they never appear in the listed
+// catalog.
+const unlisted = (id: string, model: ResolvedModel): AddressableIdEntry => ({ id, unlisted: true, model });
+
 describe('synthesizeListedAliases', () => {
   test('single-target alias with a pinned reasoning.effort drops the effort block', () => {
     const aliases = [aliasFixture({
@@ -41,7 +53,7 @@ describe('synthesizeListedAliases', () => {
       },
     })];
 
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.id).toBe('gpt-fast');
     expect(entry.display_name).toBe('gpt-5.4 (low effort)');
     // The rule pins effort, so the announced metadata drops it — the
@@ -64,7 +76,7 @@ describe('synthesizeListedAliases', () => {
       id: 'gpt-5.4',
       chat: { reasoning: { budget_tokens: { min: 1024, max: 65536 } } },
     })];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -80,7 +92,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.id).toBe('smart-router');
     expect(entry.display_name).toBe('smart-router');
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
@@ -97,7 +109,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
       realModel({ id: 'b', chat: {} }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -113,7 +125,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['text', 'image'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
     // Every configured target — including the unavailable one — survives in aliasedFrom.
     expect(entry.aliasedFrom?.targets.map(t => t.target_model_id)).toEqual(['a', 'gone', 'b']);
@@ -122,7 +134,7 @@ describe('synthesizeListedAliases', () => {
   test('hidden alias is not emitted', () => {
     const aliases = [aliasFixture({ visibleInModelsList: false })];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    expect(synthesizeListedAliases({ aliases, realModels })).toEqual([]);
+    expect(synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) })).toEqual([]);
   });
 
   test('alias whose name collides with a real id is emitted (loadModels drops the duplicate real)', () => {
@@ -131,7 +143,7 @@ describe('synthesizeListedAliases', () => {
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
     })];
     const realModels = [realModel({ id: 'gpt-5.4', display_name: 'GPT 5.4' })];
-    const entries = synthesizeListedAliases({ aliases, realModels });
+    const entries = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe('gpt-5.4');
     expect(entries[0].aliasedFrom?.name).toBe('gpt-5.4');
@@ -142,7 +154,7 @@ describe('synthesizeListedAliases', () => {
       name: 'orphan',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    const [entry] = synthesizeListedAliases({ aliases, realModels: [] });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: [] });
     expect(entry.id).toBe('orphan');
     expect(entry.display_name).toBe('missing');
     expect(entry.chat).toBeUndefined();
@@ -157,7 +169,7 @@ describe('synthesizeListedAliases', () => {
       aliasFixture({ name: 'mid-b', sortOrder: 0 }),
     ];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    const ids = synthesizeListedAliases({ aliases, realModels }).map(entry => entry.id);
+    const ids = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) }).map(entry => entry.id);
     expect(ids).toEqual(['mid-a', 'mid-b', 'late']);
   });
 
@@ -173,7 +185,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'emb', kind: 'embedding' }),
       realModel({ id: 'chat', chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     // Only the chat target backs the metadata — the embedding row never
     // enters the intersection / narrowing path.
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
@@ -185,7 +197,7 @@ describe('synthesizeListedAliases', () => {
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
     })];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.display_name).toBe('My Fast GPT');
   });
 
@@ -203,7 +215,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
       realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -219,7 +231,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
       realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['medium', 'high'], default: 'medium' } } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.reasoning?.effort).toEqual({ supported: ['medium', 'high'], default: 'medium' });
   });
 
@@ -235,7 +247,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { adaptive: true } } }),
       realModel({ id: 'b', chat: { reasoning: { adaptive: true } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -251,7 +263,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', limits: { max_context_window_tokens: 128000, max_output_tokens: 16000 } }),
       realModel({ id: 'b', limits: { max_context_window_tokens: 200000 } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     // Both targets advertise max_context_window_tokens — emit the min.
     expect(entry.limits.max_context_window_tokens).toBe(128000);
     // Only `a` declares max_output_tokens, so it drops out.
@@ -273,7 +285,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', limits: { max_context_window_tokens: 128000 }, chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', limits: { max_context_window_tokens: 200000 }, chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     // The override carries the operator's pinned ceiling verbatim …
     expect(entry.limits).toEqual({ max_output_tokens: 8192 });
     // … while chat falls back to the rule-aware intersection.
@@ -291,7 +303,7 @@ describe('synthesizeListedAliases', () => {
     const realModels = [
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.chat).toEqual({ modalities: { input: ['text'], output: ['text'] } });
   });
 
@@ -309,7 +321,7 @@ describe('synthesizeListedAliases', () => {
       // Target b only serves the three chat endpoints.
       realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     // Union: every key surfaces. Resolver narrows to the supporting subset
     // at request time, so first-available / random stays sound per-endpoint.
     expect(entry.endpoints).toEqual({
@@ -332,7 +344,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'gen', kind: 'image', endpoints: { imagesGenerations: {} } }),
       realModel({ id: 'edit', kind: 'image', endpoints: { imagesEdits: {} } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, realModels });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
     expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
   });
 
@@ -341,7 +353,32 @@ describe('synthesizeListedAliases', () => {
       name: 'ghost',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    const [entry] = synthesizeListedAliases({ aliases, realModels: [] });
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: [] });
     expect(entry.endpoints).toEqual({});
+  });
+
+  test('an alias target reachable only via the addressable-but-not-listed surface counts as available', () => {
+    // A Copilot variant id like `claude-opus-4.7-high` collapses to the
+    // canonical public id `claude-opus-4-7` at the resolver layer. The
+    // listing now reads from the same addressable surface, so an alias
+    // that targets the variant id resolves to the canonical model and the
+    // synthesized entry inherits its catalog metadata.
+    const canonical = realModel({
+      id: 'claude-opus-4-7',
+      display_name: 'Claude Opus 4.7',
+      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+    });
+    const aliases = [aliasFixture({
+      name: 'fast-claude',
+      targets: [{ target_model_id: 'claude-opus-4.7-high', rules: {} }],
+    })];
+    const addressableModelIds = [
+      ...listed([canonical]),
+      unlisted('claude-opus-4.7-high', canonical),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds });
+    expect(entry.id).toBe('fast-claude');
+    expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
+    expect(entry.endpoints).toEqual({ chatCompletions: {}, messages: {}, responses: {} });
   });
 });

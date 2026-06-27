@@ -41,7 +41,7 @@ import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { synthesizeListedAliases } from '../models/alias-listing.ts';
-import { getModels } from '../providers/registry.ts';
+import { enumerateAddressableModelIds } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -65,17 +65,28 @@ const computeCatalog = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, realModels, aliases] = await Promise.all([
+  const [catalog, addressable, aliases] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    getModels(upstreamIds, fetcherForUpstream, scheduler),
+    enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
     getRepo().modelAliases.list(),
   ]);
+  const realModels = addressable.entries
+    .filter(entry => entry.unlisted === undefined)
+    .map(entry => entry.model);
   const slugContextWindow = new Map<string, number>();
   for (const m of realModels) {
     const limit = m.limits.max_context_window_tokens;
     if (typeof limit === 'number') slugContextWindow.set(m.id, limit);
   }
+  // Listed-surface filter for the codex catalog itself: the codex client
+  // expects the surface it would have published in a regular /v1/models
+  // call, so addressable-but-not-listed forms intentionally do NOT enter
+  // this set.
   const registrySlugs = new Set(realModels.map(m => m.id));
+  // Alias-target availability is the broader question — a target reachable
+  // only via a prefix alternate or Copilot variant id still resolves at
+  // request time, so the codex catalog must keep its alias slug too.
+  const addressableSet = new Set(addressable.entries.map(entry => entry.id));
 
   // Run the shared alias synthesizer so the codex catalog reads the same
   // visible-alias surface that /v1/models, the dashboard, and Gemini do.
@@ -95,10 +106,10 @@ const computeCatalog = async (
     readonly announcedContextWindow: number | undefined;
   }
   const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
-  for (const entry of synthesizeListedAliases({ aliases, realModels })) {
+  for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable.entries })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
-    const firstRoutable = aliasedFrom.targets.find(t => registrySlugs.has(t.target_model_id));
+    const firstRoutable = aliasedFrom.targets.find(t => addressableSet.has(t.target_model_id));
     if (firstRoutable === undefined) continue;
     aliasCatalogInfo.set(entry.id, {
       firstTargetId: firstRoutable.target_model_id,

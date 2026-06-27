@@ -51,13 +51,11 @@ export const enumerateAddressableModelIds = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<AddressableSurface> => {
-  const providers = await listModelProviders(upstreamFilter);
-  if (providers.length === 0) return { entries: [] };
-
-  // The canonical listed surface — the same rows the existing /v1/models
-  // and /api/models endpoints emit. Forms the listed half of the
-  // addressable surface.
+  // `getModels` throws the actionable "no upstream provider configured"
+  // message when the provider list is empty; surface it the same way here
+  // so /v1/models keeps its 502 + hint behavior on a brand-new gateway.
   const realModels = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
+  const providers = await listModelProviders(upstreamFilter);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];

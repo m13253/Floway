@@ -1,6 +1,6 @@
 import { mergeAliasesIntoModels } from './alias-listing.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
-import { getModels } from '../providers/registry.ts';
+import { enumerateAddressableModelIds } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
@@ -31,12 +31,20 @@ export const loadModels = async (
   scheduler: BackgroundScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<PublicModelsResponse> => {
-  const [realModels, aliases] = await Promise.all([
-    getModels(upstreamFilter, fetcherForUpstream, scheduler),
+  // The addressable surface already includes the listed projection — its
+  // entries-where-unlisted-is-absent are exactly the rows /v1/models
+  // historically served. Reusing the surface here avoids a second registry
+  // call for the alias-availability check.
+  const [addressable, aliases] = await Promise.all([
+    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
+  const realModels = addressable.entries
+    .filter(entry => entry.unlisted === undefined)
+    .map(entry => entry.model);
   const data = mergeAliasesIntoModels({
     realModels,
+    addressableModelIds: addressable.entries,
     aliases,
     mapReal: toPublicModel,
     wrapAlias: entry => entry,

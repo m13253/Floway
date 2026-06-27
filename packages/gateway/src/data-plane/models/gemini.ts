@@ -9,7 +9,7 @@ import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
-import { getModels } from '../providers/registry.ts';
+import { enumerateAddressableModelIds } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
@@ -74,15 +74,19 @@ const loadGeminiModels = async (
   scheduler: BackgroundScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<GeminiModel[]> => {
-  const [models, aliases] = await Promise.all([
-    getModels(upstreamFilter, fetcherForUpstream, scheduler),
+  const [addressable, aliases] = await Promise.all([
+    enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
+  const realModels = addressable.entries
+    .filter(entry => entry.unlisted === undefined)
+    .map(entry => entry.model);
   // Gemini surfaces chat-kind models only; filter both the real catalog and
   // the synthesized alias entries before the merge so the alias collision
   // step only ever weighs chat-on-chat.
   const merged = mergeAliasesIntoModels<InternalModel>({
-    realModels: models.filter(model => model.kind === 'chat'),
+    realModels: realModels.filter(model => model.kind === 'chat'),
+    addressableModelIds: addressable.entries.filter(entry => entry.model.kind === 'chat'),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
     mapReal: model => model,
     wrapAlias: entry => ({
