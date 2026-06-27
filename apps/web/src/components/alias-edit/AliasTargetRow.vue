@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
 import type { AliasKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
-import { Combobox, Switch, Tooltip } from '@floway-dev/ui';
+import { Combobox, Select, Tooltip } from '@floway-dev/ui';
 
 const target = defineModel<AliasTarget>({ required: true });
 
@@ -56,7 +56,26 @@ const patchReasoning = (patch: Partial<NonNullable<ChatAliasRules['reasoning']>>
 
 const setEffort = (raw: string) => patchReasoning({ effort: raw === '' ? undefined : raw });
 const setSummary = (raw: string) => patchReasoning({ summary: raw === '' ? undefined : raw });
-const setAdaptive = (on: boolean | undefined) => patchReasoning({ adaptive: on === true ? true : undefined });
+
+// Three-state adaptive control: `undefined` means "defer to the model";
+// `true` forces reasoning on; `false` forces it off. A Switch can't
+// represent the third state, so editing an existing record that had
+// adaptive=false would silently round-trip to undefined.
+type AdaptiveSelect = 'auto' | 'on' | 'off';
+const ADAPTIVE_OPTIONS: { value: AdaptiveSelect; label: string }[] = [
+  { value: 'auto', label: 'Auto (defer to model)' },
+  { value: 'on', label: 'On (force adaptive)' },
+  { value: 'off', label: 'Off (force non-adaptive)' },
+];
+const adaptiveSelect = computed<AdaptiveSelect>(() => {
+  const v = target.value.rules.reasoning?.adaptive;
+  if (v === true) return 'on';
+  if (v === false) return 'off';
+  return 'auto';
+});
+const setAdaptive = (raw: AdaptiveSelect | undefined) => {
+  patchReasoning({ adaptive: raw === 'on' ? true : raw === 'off' ? false : undefined });
+};
 const setVerbosity = (raw: string) => {
   const next = { ...target.value.rules };
   if (raw === '') delete next.verbosity;
@@ -203,13 +222,11 @@ const modelWarningTooltip = computed(() => modelWarnings.value.join('\n'));
 
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Adaptive reasoning</label>
-          <div class="flex h-9 items-center gap-2">
-            <Switch
-              :model-value="target.rules.reasoning?.adaptive === true"
-              @update:model-value="setAdaptive"
-            />
-            <span class="text-sm text-gray-300">Enable</span>
-          </div>
+          <Select
+            :model-value="adaptiveSelect"
+            :options="ADAPTIVE_OPTIONS"
+            @update:model-value="setAdaptive"
+          />
           <p v-if="warningFor('reasoning.adaptive')" class="mt-1 text-xs text-amber-300">{{ warningFor('reasoning.adaptive') }}</p>
         </div>
 
