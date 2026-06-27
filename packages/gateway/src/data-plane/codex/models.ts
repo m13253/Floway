@@ -85,30 +85,41 @@ const computeCatalog = async (
   // this static listing: a `random` alias would refuse to publish a
   // stable context window, so the catalog uses first-available regardless
   // of the alias's runtime selection.
-  const aliasFirstTarget = new Map<string, string>();
+  //
+  // We keep both the alias's own announced limits (operator override OR
+  // the synthesizer's automatic intersection) AND the first routable
+  // target's window — the resolver below prefers the alias's announced
+  // value when the operator set it, fallback to the target's ceiling.
+  interface AliasCatalogInfo {
+    readonly firstTargetId: string;
+    readonly announcedContextWindow: number | undefined;
+  }
+  const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
   for (const entry of synthesizeListedAliases({ aliases, realModels })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
     const firstRoutable = aliasedFrom.targets.find(t => registrySlugs.has(t.target_model_id));
-    if (firstRoutable !== undefined) aliasFirstTarget.set(entry.id, firstRoutable.target_model_id);
+    if (firstRoutable === undefined) continue;
+    aliasCatalogInfo.set(entry.id, {
+      firstTargetId: firstRoutable.target_model_id,
+      announcedContextWindow: entry.limits.max_context_window_tokens,
+    });
   }
 
   const filtered: CodexCatalog = {
-    models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasFirstTarget.has(m.slug)),
+    models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasCatalogInfo.has(m.slug)),
   };
 
-  // For an alias slug: redirect to the first routable target's window so
-  // the published number is one the gateway can honour. Plain (non-alias)
-  // slugs read straight off the registry. Operator-set overrides on the
-  // alias's announced metadata travel through `synthesizeListedAliases`
-  // into the alias entry's own limits — but the codex catalog needs the
-  // *target's* window here, not the alias's announced one, because
-  // `applyContextWindowFromRegistry` writes both `context_window` and
-  // `max_context_window` and the upstream binding only enforces the
-  // target's real ceiling.
+  // For an alias slug: prefer the alias's announced window — that's what
+  // the operator told /v1/models to publish, and the codex client reads
+  // this number for its own local gating (auto-compact, context-budget
+  // UX), so the two wire surfaces must agree on operator intent. Fallback
+  // to the first routable target's window when the alias has no announced
+  // limit (e.g. multi-target alias with no operator override and no agreed
+  // intersection). Plain (non-alias) slugs read straight off the registry.
   const contextWindowOf: ContextWindowResolver = slug => {
-    const firstTargetId = aliasFirstTarget.get(slug);
-    if (firstTargetId !== undefined) return slugContextWindow.get(firstTargetId) ?? null;
+    const info = aliasCatalogInfo.get(slug);
+    if (info !== undefined) return info.announcedContextWindow ?? slugContextWindow.get(info.firstTargetId) ?? null;
     return slugContextWindow.get(slug) ?? null;
   };
   return applyContextWindowFromRegistry(filtered, contextWindowOf);

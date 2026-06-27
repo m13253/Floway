@@ -476,6 +476,44 @@ describe('codex 1p namespace', () => {
       expect(autoReview?.max_context_window).toBe(272000);
     });
 
+    it('honors an operator-set announcedMetadata.limits.max_context_window_tokens override on an alias slug', async () => {
+      // /v1/models, /api/models, /v1beta/models all honor the operator's
+      // announced limits override. The codex 1p catalog reads the same
+      // value because the codex client uses `context_window` /
+      // `max_context_window` for its own local gating (auto-compact,
+      // context-budget UX) — operator intent has to agree across all
+      // wire surfaces.
+      const { apiKey, repo } = await setupAppTest();
+      await repo.modelAliases.insert({
+        name: 'codex-auto-review',
+        kind: 'chat',
+        selection: 'first-available',
+        displayName: 'Codex Auto Review',
+        visibleInModelsList: true,
+        targets: [{ target_model_id: 'gpt-5.4', rules: {} }],
+        announcedMetadata: { limits: { max_context_window_tokens: 64000 } },
+        sortOrder: 0,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
+      const app = buildCodexApp();
+      const body = await withMockedFetch(
+        copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
+        async () => {
+          const response = await app.request('/azure-api.codex/models', {
+            headers: { authorization: `Bearer ${apiKey.key}` },
+          });
+          expect(response.status).toBe(200);
+          return await response.json() as CodexModelsResponse;
+        },
+      );
+      const autoReview = body.models.find(m => m.slug === 'codex-auto-review');
+      // The operator pulled the alias's advertised window down to 64000;
+      // the target's true 272000 ceiling is irrelevant to the catalog.
+      expect(autoReview?.context_window).toBe(64000);
+      expect(autoReview?.max_context_window).toBe(64000);
+    });
+
     it('returns an empty catalog when the registry has no overlapping slugs', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
