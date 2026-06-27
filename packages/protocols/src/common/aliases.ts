@@ -24,27 +24,24 @@ export type AliasKind = 'chat' | 'embedding' | 'image';
 // When the pool is empty both strategies surface the same 404 to the caller.
 export type AliasSelection = 'random' | 'first-available';
 
-// Discrete reasoning-effort presets understood across upstreams. Typed as
-// `string` because the gateway forwards rule values verbatim and never
-// enum-gates them at the wire boundary; the dashboard pins the canonical
-// presets ('none' | 'low' | 'medium' | 'high' | 'xhigh') as combobox
-// suggestions so operators see the typical choices.
-export type ReasoningEffort = string;
+// Discrete reasoning-effort presets understood across upstreams. The literal
+// union surfaces the canonical presets to editor autocomplete while the
+// `(string & {})` arm keeps the type open — the gateway forwards rule values
+// verbatim and never enum-gates them at the wire boundary, so an operator
+// can pin any string the upstream understands.
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | (string & {});
 
 // Reasoning-summary verbosity hint emitted on the Responses / Chat surface.
-// String for the same forward-verbatim reason as `ReasoningEffort`;
-// canonical presets are 'auto' | 'concise' | 'detailed' | 'none'.
-export type ReasoningSummary = string;
+// Same open-literal shape as `ReasoningEffort`.
+export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none' | (string & {});
 
-// Output verbosity hint (OpenAI Responses `verbosity`). String for the same
-// forward-verbatim reason as `ReasoningEffort`; canonical presets are
-// 'low' | 'medium' | 'high'.
-export type Verbosity = string;
+// Output verbosity hint (OpenAI Responses `verbosity`). Same open-literal
+// shape as `ReasoningEffort`.
+export type Verbosity = 'low' | 'medium' | 'high' | (string & {});
 
-// Per-request service tier the upstream advertises. String for the same
-// forward-verbatim reason as `ReasoningEffort`; canonical presets are
-// 'default' | 'flex' | 'priority' | 'scale' | 'fast'.
-export type ServiceTier = string;
+// Per-request service tier the upstream advertises. Same open-literal shape
+// as `ReasoningEffort`.
+export type ServiceTier = 'default' | 'flex' | 'priority' | 'scale' | 'fast' | (string & {});
 
 // Rule overlay applied to a chat-kind alias target. Every field is optional;
 // an absent field leaves the inbound request value untouched. Rule values
