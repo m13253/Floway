@@ -138,7 +138,7 @@ describe('computeAliasLevelWarnings', () => {
     const warnings = computeAliasLevelWarnings(view('lonely', ['missing-a', 'missing-b']), catalog);
     expect(warnings).toEqual([{
       type: 'no-target',
-      message: 'No target currently resolves under your upstream access.',
+      message: 'No target resolves to any model on this gateway.',
     }]);
   });
 

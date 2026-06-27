@@ -153,17 +153,18 @@ const computeNoTargetWarning = (
   alias: AliasView,
   models: readonly ControlPlaneModel[] | null | undefined,
 ): AliasNoTargetWarning | null => {
-  // The addressable surface (the input store fetches with
-  // `include_unlisted=true`) is the source of truth for routability.
-  // Loading state — models is null — should not fire the warning, or the
-  // dashboard flashes a yellow icon on every alias during startup.
+  // The store reads `/api/models?gateway_wide=true&include_unlisted=true`,
+  // so this `models` array represents every id the data-plane resolver
+  // would accept on the entire gateway — not the admin's per-account
+  // view. Loading state — models is null — should not fire the warning,
+  // or the dashboard flashes a yellow icon on every alias during startup.
   if (models === null || models === undefined) return null;
   const addressableIds = new Set(models.filter(m => m.aliasedFrom === undefined).map(m => m.id));
   const reachable = alias.targets.some(t => addressableIds.has(t.target_model_id));
   if (reachable) return null;
   return {
     type: 'no-target',
-    message: 'No target currently resolves under your upstream access.',
+    message: 'No target resolves to any model on this gateway.',
   };
 };
 
