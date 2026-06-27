@@ -40,6 +40,25 @@ describe('computeCatalog', () => {
     expect(out.models[1].priority).toBe(2);
   });
 
+  test('multi-segment model-prefix publicId still bundle-matches via the trailing leaf', () => {
+    // The model-prefix feature (packages/provider/src/model-prefix.ts) lets
+    // operators republish an upstream model under a path-shaped prefix —
+    // `openrouter/gpt-5.5`, `vendor/sub/region/gpt-5.5`. By the time the
+    // public id reaches computeCatalog the prefix is already baked in, so
+    // bundle-matching falls out of the segment splitter: every `/`-separated
+    // segment of the publicId is checked against the bundled slug map, and
+    // the trailing unprefixed leaf is the last one tried. The invariant
+    // relies on MODEL_PREFIX_REGEX requiring a trailing slash on every
+    // prefix — if that ever changes, leaf-match stops being free.
+    const out = computeCatalog(bundled, [chat('vendor/sub/region/gpt-5.5', 'Sub-region GPT-5.5', 200000)]);
+    expect(out.models).toHaveLength(1);
+    const e = out.models[0];
+    expect(e.slug).toBe('vendor/sub/region/gpt-5.5');   // slug overridden to the prefixed publicId
+    expect(e.display_name).toBe('Sub-region GPT-5.5');
+    expect(e.priority).toBe(1);                          // priority comes from bundled gpt-5.5
+    expect((e as Record<string, unknown>).extra).toBe('keep');
+  });
+
   test('multiple bundled-matching ids of the same bundled slug coexist', () => {
     const out = computeCatalog(bundled, [chat('gpt-5.5'), chat('openrouter/gpt-5.5:nitro')]);
     expect(out.models).toHaveLength(2);
