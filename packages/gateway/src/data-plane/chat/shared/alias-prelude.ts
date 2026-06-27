@@ -1,6 +1,6 @@
 import { type ChatServeFailure, aliasFailureFromError } from './errors.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { ALIAS_RESPONSE_HEADER } from '../../model-aliases/apply.ts';
+import { ALIAS_RESPONSE_HEADER } from '../../model-aliases/header.ts';
 import { AliasNoTargetAvailableError, type AliasResolution } from '../../model-aliases/resolve.ts';
 import { resolveModelCandidates } from '../../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';

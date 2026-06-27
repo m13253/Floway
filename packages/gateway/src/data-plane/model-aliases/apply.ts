@@ -7,11 +7,6 @@ import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
-// Per-request response header that names the alias the inbound id resolved
-// through. Downstream observability ties together "client asked for X" /
-// "upstream saw Y" via this header.
-export const ALIAS_RESPONSE_HEADER = 'x-floway-alias';
-
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 

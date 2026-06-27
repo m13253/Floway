@@ -23,7 +23,7 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
-import { ALIAS_RESPONSE_HEADER } from '../model-aliases/apply.ts';
+import { ALIAS_RESPONSE_HEADER } from '../model-aliases/header.ts';
 import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
 import { resolveModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
