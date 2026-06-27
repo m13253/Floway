@@ -80,6 +80,25 @@ describe('synthesizeListedAliases', () => {
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
+  test('multi-target alias drops budget_tokens when one target declares only min and another only max', () => {
+    // A half-declared block (e.g. publishing `{ min }` without max) would
+    // advertise a capability some target does not report. The intersection
+    // must collapse to undefined, matching how `effort` / `adaptive` /
+    // `mandatory` already behave.
+    const aliases = [aliasFixture({
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const realModels = [
+      realModel({ id: 'a', chat: { reasoning: { budget_tokens: { min: 1024 } } } }),
+      realModel({ id: 'b', chat: { reasoning: { budget_tokens: { max: 65536 } } } }),
+    ];
+    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    expect(entry.chat?.reasoning).toBeUndefined();
+  });
+
   test('multi-target alias intersects chat.modalities across every target', () => {
     const aliases = [aliasFixture({
       name: 'smart-router',

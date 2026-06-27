@@ -72,13 +72,13 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
     if (budgetChats.length === reasoningChats.length) {
       const mins = budgetChats.map(c => c.reasoning!.budget_tokens!.min).filter((v): v is number => v !== undefined);
       const maxes = budgetChats.map(c => c.reasoning!.budget_tokens!.max).filter((v): v is number => v !== undefined);
-      const min = mins.length === budgetChats.length ? Math.max(...mins) : undefined;
-      const max = maxes.length === budgetChats.length ? Math.min(...maxes) : undefined;
-      if (!(min !== undefined && max !== undefined && min > max)) {
-        const budget: NonNullable<NonNullable<ChatModelInfo['reasoning']>['budget_tokens']> = {};
-        if (min !== undefined) budget.min = min;
-        if (max !== undefined) budget.max = max;
-        if (min !== undefined || max !== undefined) reasoning.budget_tokens = budget;
+      // Both min and max must be all-declared — a half-declared block
+      // would claim a capability some target does not report. Mirrors the
+      // gateway-side rule.
+      if (mins.length === budgetChats.length && maxes.length === budgetChats.length) {
+        const min = Math.max(...mins);
+        const max = Math.min(...maxes);
+        if (min <= max) reasoning.budget_tokens = { min, max };
       }
     }
 

@@ -113,15 +113,17 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
     if (budgetChats.length === reasoningChats.length) {
       const mins = budgetChats.map(c => c.reasoning!.budget_tokens!.min).filter((v): v is number => v !== undefined);
       const maxes = budgetChats.map(c => c.reasoning!.budget_tokens!.max).filter((v): v is number => v !== undefined);
-      const min = mins.length === budgetChats.length ? Math.max(...mins) : undefined;
-      const max = maxes.length === budgetChats.length ? Math.min(...maxes) : undefined;
-      // Drop the budget block entirely when the intersected window is
-      // empty (every caller would otherwise see a contradictory range).
-      if (!(min !== undefined && max !== undefined && min > max)) {
-        const budget: NonNullable<NonNullable<ChatModelInfo['reasoning']>['budget_tokens']> = {};
-        if (min !== undefined) budget.min = min;
-        if (max !== undefined) budget.max = max;
-        if (min !== undefined || max !== undefined) reasoning.budget_tokens = budget;
+      // Require BOTH min and max to be all-declared, mirroring how
+      // `effort`, `adaptive`, and `mandatory` all collapse the moment one
+      // target leaves a leaf undeclared. A half-declared block (e.g.
+      // `{ min }` with no max) would advertise a capability some target
+      // does not actually report.
+      if (mins.length === budgetChats.length && maxes.length === budgetChats.length) {
+        const min = Math.max(...mins);
+        const max = Math.min(...maxes);
+        // Drop the budget block when the intersected window is empty —
+        // a contradictory range is worse than no advertisement.
+        if (min <= max) reasoning.budget_tokens = { min, max };
       }
     }
 
