@@ -46,7 +46,10 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
   if (modalityChats.length === chats.length) {
     const input = intersectArrays(modalityChats.map(c => c.modalities!.input));
     const output = intersectArrays(modalityChats.map(c => c.modalities!.output));
-    if (input.length > 0 || output.length > 0) result.modalities = { input, output };
+    // Both halves must survive — `{ input: ['text'], output: [] }`
+    // would advertise a chat model that consumes input but produces
+    // nothing. Mirrors the gateway-side rule.
+    if (input.length > 0 && output.length > 0) result.modalities = { input, output };
   }
 
   const reasoningChats = chats.filter(c => c.reasoning !== undefined);
