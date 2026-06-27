@@ -1,5 +1,5 @@
-import { responsesInterceptors } from './interceptors/index.ts';
 import { containsCompactionTrigger } from './interceptors/compact-shim.ts';
+import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
