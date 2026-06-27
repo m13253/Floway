@@ -23,9 +23,7 @@ export const realModelIdsOfKind = (
 ): string[] =>
   (models ?? []).filter(m => m.aliasedFrom === undefined && m.kind === kind).map(m => m.id);
 
-// One warning attached to a specific chat rule field. The field key matches
-// the form's `data-field` attribute so the dialog can render the warning
-// directly under the input it annotates.
+// One warning attached to a specific chat rule field.
 export interface AliasRuleWarning {
   field: 'reasoning.effort' | 'reasoning.budget_tokens' | 'reasoning.adaptive' | 'reasoning.summary' | 'verbosity' | 'serviceTier';
   message: string;
