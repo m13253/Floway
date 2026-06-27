@@ -13,7 +13,7 @@
 
 import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, PublicModelLimits } from '../../api/types.ts';
 
-const chatRules = (target: AliasTarget): ChatAliasRules => target.rules as ChatAliasRules;
+const chatRules = (target: AliasTarget): ChatAliasRules => target.rules;
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];

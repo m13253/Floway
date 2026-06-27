@@ -23,9 +23,7 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
-import { ALIAS_RESPONSE_HEADER } from '../model-aliases/header.ts';
-import { AliasNoTargetAvailableError } from '../model-aliases/resolve.ts';
-import { resolveModelCandidates } from '../providers/registry.ts';
+import { resolveCandidatesAndApplyAlias } from '../model-aliases/prelude.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelEndpointKey, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -136,26 +134,21 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // upstreams, with the unprefixed interpretation pushed before the
     // prefixed one within a single upstream. The first candidate wins.
     // See resolve.ts for the alias-resolves-once-above-prefix-routing
-    // contract; `resolveModelCandidates` runs it and surfaces the result
-    // on `aliasResolution`.
-    let resolution;
-    try {
-      resolution = await resolveModelCandidates({
-        modelName: model,
-        upstreamIds: ctx.upstreamIds,
-        scheduler: ctx.backgroundScheduler,
-        currentColo: ctx.currentColo,
-        pickTarget: endpoints => endpoints[endpointKey] !== undefined ? endpointKey : null,
-      });
-    } catch (e) {
-      if (e instanceof AliasNoTargetAvailableError) {
+    // contract; `resolveCandidatesAndApplyAlias` runs it, stages the
+    // `x-floway-alias` response header on every alias-touched path
+    // (including the 404), and surfaces a rendered failure when the
+    // alias resolver has no routable target.
+    const resolved = await resolveCandidatesAndApplyAlias({
+      ctx,
+      modelName: model,
+      pickTarget: endpoints => endpoints[endpointKey] !== undefined ? endpointKey : null,
+      renderAliasFailure: failure => {
         ctx.dump?.error('gateway');
-        return passthroughApiError(c, e.message, 404);
-      }
-      throw e;
-    }
-    const { candidates, sawModel, failedUpstreams, aliasResolution } = resolution;
-    if (aliasResolution !== null) ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
+        return passthroughApiError(c, failure.message, 404);
+      },
+    });
+    if (resolved.kind === 'failure') return resolved.result;
+    const { candidates, sawModel, failedUpstreams } = resolved;
     if (!sawModel) {
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);

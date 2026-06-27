@@ -1,5 +1,3 @@
-import type { AliasNoTargetAvailableError } from '../../model-aliases/resolve.ts';
-
 // Failures a protocol can render before reaching an upstream; unexpected
 // throws bubble as-is. `failedUpstreams` on model-{missing,unsupported}
 // carries the upstream names whose catalog fetch threw during this
@@ -17,11 +15,6 @@ export type ChatServeFailure =
   // wording the Error class already built, so renderers do not re-derive
   // it.
   | { readonly kind: 'alias-no-target-available'; readonly message: string };
-
-export const aliasFailureFromError = (error: AliasNoTargetAvailableError): Extract<ChatServeFailure, { kind: 'alias-no-target-available' }> => ({
-  kind: 'alias-no-target-available',
-  message: error.message,
-});
 
 class ChatServeFailureError extends Error {
   readonly failure: ChatServeFailure;

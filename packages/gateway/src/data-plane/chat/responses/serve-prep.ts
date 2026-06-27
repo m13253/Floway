@@ -2,7 +2,7 @@ import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
 import { applyChatRulesToResponses } from '../../model-aliases/apply.ts';
-import { resolveCandidatesAndApplyAlias } from '../shared/alias-prelude.ts';
+import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
