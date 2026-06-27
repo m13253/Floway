@@ -180,3 +180,53 @@ test('passthrough-serve: response header allow-list forwards expected headers an
     },
   );
 });
+
+test('passthrough-serve: alias resolves to no routable target — 404 envelope + x-floway-alias header', async () => {
+  // Mirrors the four chat-protocol serve_test cases: when the alias
+  // resolver throws `AliasNoTargetAvailableError`, the shared prelude
+  // converts it to a passthrough-shaped 404 and stages the
+  // `x-floway-alias` correlation header. No upstream call should fire.
+  const { apiKey, repo } = await setupAppTest();
+  await registerEmbeddingsUpstream(repo);
+  // Seed an alias whose only target id does not exist in any upstream
+  // catalog, so the resolver builds an empty available pool and throws.
+  await repo.modelAliases.insert({
+    name: 'embed-fast',
+    kind: 'embedding',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'unknown-embed', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      }
+      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
+        throw new Error('passthrough-serve: upstream must not be called when alias has no routable target');
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'embed-fast', input: 'hi' }),
+      });
+
+      assertEquals(response.status, 404);
+      assertEquals(response.headers.get('x-floway-alias'), 'embed-fast');
+      const body = await response.json() as { error: { message: string; type: string } };
+      assertEquals(body.error.type, 'api_error');
+      // The canonical wording carries the alias name + configured count.
+      assertEquals(body.error.message.includes("alias 'embed-fast'"), true);
+    },
+  );
+});
