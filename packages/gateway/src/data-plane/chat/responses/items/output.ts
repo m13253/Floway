@@ -1,5 +1,5 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
-import type { StatefulResponsesStore, ResponsesSnapshotMode } from './store.ts';
+import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -24,17 +24,27 @@ import type { ChatTargetApi } from '@floway-dev/provider';
 // (Copilot's encrypted blob, OpenAI's `resp_*`, the server-tool runtime's
 // internal `resp_shim_*` placeholder) is discarded at this seam — we never
 // persist or surface an upstream-owned response id.
+//
+// Snapshot mode is decided by observing the output stream: when any output
+// item carries `type === 'compaction'` (or its wire alias
+// `compaction_summary` — Codex's protocol pins them as the same variant via
+// `#[serde(alias = "compaction_summary")]`), the turn's output is a
+// self-contained compaction envelope and the snapshot mode is `'replace'`;
+// otherwise `'append'`. This captures every shape that produces a
+// compaction-shape envelope — the native `/v1/responses/compact` endpoint,
+// a `compaction_trigger` input on `/v1/responses` (Codex's RemoteCompactionV2),
+// and the server-side `context_management` `compact_threshold` mode — without
+// each path needing its own gateway-side detector.
 export const wrapResponsesOutputForStorage = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
     readonly upstream: string;
-    readonly snapshotMode: ResponsesSnapshotMode;
     readonly targetApi: ChatTargetApi;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, upstream, snapshotMode, targetApi, responseId } = args;
+  const { store, upstream, targetApi, responseId } = args;
   const upstreamToStored = new Map<string, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
@@ -89,6 +99,7 @@ export const wrapResponsesOutputForStorage = async function* (
   // type, so we look the type up before re-invoking idMapper.
   const seenItemTypes = new Map<string, string>();
   const finalized = new Set<string>();
+  let sawCompactionItem = false;
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
@@ -121,6 +132,7 @@ export const wrapResponsesOutputForStorage = async function* (
       if (upstreamId === null) { yield frame; continue; }
       seenItemTypes.set(upstreamId, event.item.type);
       const newId = idMapper(upstreamId, event.item.type);
+      if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
       if (!finalized.has(upstreamId)) {
         finalized.add(upstreamId);
         await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
@@ -132,6 +144,7 @@ export const wrapResponsesOutputForStorage = async function* (
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const output: ResponsesInputItem[] = [];
       for (const item of event.response.output) {
+        if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = itemId(item);
         if (upstreamId === null) { output.push(item as unknown as ResponsesInputItem); continue; }
         seenItemTypes.set(upstreamId, item.type);
@@ -151,12 +164,10 @@ export const wrapResponsesOutputForStorage = async function* (
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
       // ordering matches a synchronous emit.
-      if (snapshotMode !== 'none') {
-        try {
-          await store.commitSnapshot(responseId, snapshotMode);
-        } catch (error) {
-          console.error('Failed to persist stored Responses snapshot:', error);
-        }
+      try {
+        await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
+      } catch (error) {
+        console.error('Failed to persist stored Responses snapshot:', error);
       }
       yield rewritten;
       return;
@@ -187,6 +198,14 @@ const itemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
+
+// `compaction` and `compaction_summary` are the same wire variant — Codex's
+// protocol declares the latter as a serde alias for the former (see
+// https://github.com/openai/codex/blob/main/codex-rs/protocol/src/models.rs).
+// An output stream carrying either is a self-contained compaction envelope
+// and replaces the conversation history.
+const isCompactionItemType = (type: string): boolean =>
+  type === 'compaction' || type === 'compaction_summary';
 
 // Expands a non-streaming compact result into the same frame sequence a live
 // upstream would emit: every output item as bare added/done pairs (no inner

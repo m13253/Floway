@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { isStoredResponsesItemId } from './format.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './output.ts';
-import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking, type StatefulResponsesBacking } from './store.ts';
+import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking, type StatefulResponsesBacking, type StatefulResponsesStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../repo/types.ts';
@@ -53,14 +53,13 @@ const TEST_RESPONSE_ID = 'resp_test123';
 const wrap = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   overrides: Parameters<typeof makeStore>[0] = {},
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; responseId?: string } = {},
+  extra: { targetApi?: 'responses' | 'messages' | 'chat-completions'; responseId?: string } = {},
 ) => {
   const store = makeStore(overrides);
   return {
     events: wrapResponsesOutputForStorage(frames, {
       store,
       upstream: 'up_native',
-      snapshotMode: extra.snapshotMode ?? 'none',
       targetApi: extra.targetApi ?? 'responses',
       responseId: extra.responseId ?? TEST_RESPONSE_ID,
     }),
@@ -70,12 +69,11 @@ const wrap = (
 
 const wrapWithStore = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
-  store: ReturnType<typeof createResponsesHttpStore>,
-  extra: { snapshotMode?: 'none' | 'append' | 'replace'; targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string; responseId?: string } = {},
+  store: StatefulResponsesStore,
+  extra: { targetApi?: 'responses' | 'messages' | 'chat-completions'; upstream?: string; responseId?: string } = {},
 ) => wrapResponsesOutputForStorage(frames, {
   store,
   upstream: extra.upstream ?? 'up_native',
-  snapshotMode: extra.snapshotMode ?? 'none',
   targetApi: extra.targetApi ?? 'responses',
   responseId: extra.responseId ?? TEST_RESPONSE_ID,
 });
@@ -205,7 +203,18 @@ test('insert failure does not sink the stream', async () => {
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {
     const original = messageItem('raw_msg_native', 'hello');
-    const store = createResponsesHttpStore(apiKeyId, undefined);
+    // The controlled repo holds insertMany pending until told to resolve.
+    // To keep this test focused on item-insert failure handling, configure
+    // the store without snapshotWrites so the terminal frame does not
+    // re-trigger the controlled insertMany via the snapshot commit path.
+    const repoBacking = new RepoStatefulResponsesBacking(() => repo);
+    const store = new LayeredStatefulResponsesStore({
+      apiKeyId,
+      reads: [repoBacking],
+      itemWrites: [{ backing: repoBacking, durable: true }],
+      snapshotWrites: [],
+      stageInputs: false,
+    });
     const iterator = wrapWithStore(framesFrom([
       { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
       { type: 'response.output_item.done', output_index: 0, item: original },
@@ -365,56 +374,152 @@ test('private payload registered on the request is attached to the persisted row
   assertEquals(row.payload?.private, privateBlob);
 });
 
-// --- snapshotMode tests ---
+// --- snapshot-mode derivation tests ---
+//
+// Wrap derives the snapshot mode by observing the output stream: a
+// `compaction` or its `compaction_summary` wire alias surfaces `'replace'`,
+// any other shape surfaces `'append'`. The mode is asserted directly on
+// `store.commitSnapshot` rather than via repo state because the store
+// configuration ('append' vs 'replace') flows into the snapshot's itemIds
+// shape — itemIds is a downstream consequence we don't need to re-test here.
 
-test('snapshotMode=none: no snapshot written after terminal event', async () => {
+const spyCommitSnapshot = (store: ReturnType<typeof createResponsesHttpStore>) =>
+  vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
+
+test('derives snapshotMode=append when no compaction item appears in output', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const original = messageItem('raw_msg_snap_none', 'hi');
+  const original = messageItem('raw_msg_append', 'hi');
+  const store = createResponsesHttpStore(apiKeyId, undefined);
+  const commitSpy = spyCommitSnapshot(store);
+
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
+  ]), store, { responseId: 'resp_append' });
+
+  await collectEvents(events);
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][0], 'resp_append');
+  assertEquals(commitSpy.mock.calls[0][1], 'append');
+});
+
+test('derives snapshotMode=replace from a streamed compaction output item', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  // `compaction` is an input-shaped item type the protocol's `ResponsesOutputItem`
+  // union does not declare; cast through the assertion so the event payload
+  // mirrors what a real upstream emits on the wire.
+  const compactionItem = {
+    type: 'compaction',
+    id: 'cmp_streamed',
+    encrypted_content: 'ENC',
+  } as unknown as ResponsesOutputItem;
+  const store = createResponsesHttpStore(apiKeyId, undefined);
+  const commitSpy = spyCommitSnapshot(store);
+
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: compactionItem },
+    { type: 'response.completed', response: { ...response([compactionItem]), object: 'response.compaction' } },
+  ]), store, { responseId: 'resp_replace_streamed' });
+
+  await collectEvents(events);
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'replace');
+});
+
+test('derives snapshotMode=replace from a streamed compaction_summary alias item', async () => {
+  // Codex's protocol pins `compaction_summary` as a serde alias for
+  // `compaction` (https://github.com/openai/codex/blob/main/codex-rs/protocol/src/models.rs);
+  // wrap treats either literal as a compaction-shape envelope.
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const summaryItem = {
+    type: 'compaction_summary',
+    id: 'cmp_summary',
+    encrypted_content: 'ENC',
+  } as unknown as ResponsesOutputItem;
+  const store = createResponsesHttpStore(apiKeyId, undefined);
+  const commitSpy = spyCommitSnapshot(store);
+
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: summaryItem },
+    { type: 'response.completed', response: { ...response([summaryItem]), object: 'response.compaction' } },
+  ]), store, { responseId: 'resp_replace_summary' });
+
+  await collectEvents(events);
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'replace');
+});
+
+test('derives snapshotMode=replace when the compaction item only appears in the terminal envelope', async () => {
+  // The non-streaming compact path runs through `syntheticEventsFromResult`,
+  // which emits the compaction item via generic `output_item.added`/`done`
+  // pairs. A fully non-streaming upstream that surfaces the item only in
+  // `response.completed.output[]` — without any preceding `output_item.done`
+  // — must still trigger `'replace'`. This covers that terminal-envelope-only
+  // case.
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const compactionItem = {
+    type: 'compaction',
+    id: 'cmp_terminal_only',
+    encrypted_content: 'ENC',
+  } as unknown as ResponsesOutputItem;
+  const store = createResponsesHttpStore(apiKeyId, undefined);
+  const commitSpy = spyCommitSnapshot(store);
+
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.completed', response: { ...response([compactionItem]), object: 'response.compaction' } },
+  ]), store, { responseId: 'resp_replace_terminal' });
+
+  await collectEvents(events);
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'replace');
+});
+
+test('snapshot is committed under the gateway-minted id', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const original = messageItem('raw_msg_snap', 'hi');
   const store = createResponsesHttpStore(apiKeyId, undefined);
 
   const events = wrapWithStore(framesFrom([
     { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_none' } },
-  ]), store, { snapshotMode: 'none' });
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
+  ]), store, { responseId: 'resp_snap_id' });
 
   await collectEvents(events);
-  const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_none');
+  const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_id');
+  assert(snapshot !== null, 'expected snapshot to be written under Floway-minted id');
+  assertEquals(snapshot.id, 'resp_snap_id');
+});
+
+test('no snapshot is written when the store has no snapshotWrites configured', async () => {
+  // Cross-protocol stores (`createNonResponsesSourceStore`) ship with an
+  // empty `snapshotWrites` configuration; commitSnapshot is then a no-op
+  // at the store-write layer, so the wrap layer's unconditional call has
+  // no externally observable effect.
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const repoBacking = new RepoStatefulResponsesBacking(() => repo);
+  const noSnapshotStore = new LayeredStatefulResponsesStore({
+    apiKeyId,
+    reads: [repoBacking],
+    itemWrites: [{ backing: repoBacking, durable: true }],
+    snapshotWrites: [],
+    stageInputs: false,
+  });
+  const original = messageItem('raw_msg_no_snap', 'hi');
+
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
+  ]), noSnapshotStore, { responseId: 'resp_no_snap' });
+
+  await collectEvents(events);
+  const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_no_snap');
   assertEquals(snapshot, null);
-});
-
-test('snapshotMode=append: snapshot written after terminal event', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const original = messageItem('raw_msg_snap_append', 'hi');
-  const store = createResponsesHttpStore(apiKeyId, undefined);
-
-  const events = wrapWithStore(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
-  ]), store, { snapshotMode: 'append', responseId: 'resp_snap_append' });
-
-  await collectEvents(events);
-  const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_append');
-  assert(snapshot !== null, 'expected snapshot to be written under Floway-minted id');
-  assertEquals(snapshot.id, 'resp_snap_append');
-});
-
-test('snapshotMode=replace: snapshot written after terminal event', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const original = messageItem('raw_msg_snap_replace', 'hi');
-  const store = createResponsesHttpStore(apiKeyId, undefined);
-
-  const events = wrapWithStore(framesFrom([
-    { type: 'response.output_item.done', output_index: 0, item: original },
-    { type: 'response.completed', response: { ...response([original]), id: 'resp_upstream_ignored' } },
-  ]), store, { snapshotMode: 'replace', responseId: 'resp_snap_replace' });
-
-  await collectEvents(events);
-  const snapshot = await repo.responsesSnapshots.lookup(apiKeyId, 'resp_snap_replace');
-  assert(snapshot !== null, 'expected snapshot to be written under Floway-minted id');
-  assertEquals(snapshot.id, 'resp_snap_replace');
 });
 
 test('snapshot commit error does not sink the stream', async () => {
@@ -445,7 +550,7 @@ test('snapshot commit error does not sink the stream', async () => {
     const events = wrapWithStore(framesFrom([
       { type: 'response.output_item.done', output_index: 0, item: original },
       { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_fail' } },
-    ]), faultyStore, { snapshotMode: 'append' });
+    ]), faultyStore);
 
     const collected = await collectEvents(events);
     // Stream should complete despite snapshot failure

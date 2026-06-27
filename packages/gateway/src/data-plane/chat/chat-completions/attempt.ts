@@ -54,7 +54,7 @@ export const chatCompletionsAttempt = {
         return await traverseTranslation(
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.binding.upstreamModel.id }),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, snapshotMode: 'none', headers: invocation.headers }),
+          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, headers: invocation.headers }),
         );
       }
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);

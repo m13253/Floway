@@ -22,6 +22,11 @@ const itemTypePrefixes = {
   tool_search_call: 'ts',
   tool_search_output: 'tso',
   compaction: 'cmp',
+  // `compaction_summary` is the Codex-side wire alias for `compaction` (the
+  // protocol declares them as one variant via `#[serde(alias = ...)]`); both
+  // mint the same `cmp_` prefix so a row written under either spelling
+  // round-trips through `isStoredResponsesItemId`.
+  compaction_summary: 'cmp',
   image_generation_call: 'ig',
   code_interpreter_call: 'ci',
   local_shell_call: 'lsh',

@@ -64,7 +64,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, snapshotMode: 'none', headers: invocation.headers,
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
           }),
         );
       }

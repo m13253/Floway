@@ -58,7 +58,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, snapshotMode: 'none', headers: invocation.headers,
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
           }),
         );
       }
