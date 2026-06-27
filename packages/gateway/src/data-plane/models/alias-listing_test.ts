@@ -149,17 +149,12 @@ describe('synthesizeListedAliases', () => {
     expect(entries[0].aliasedFrom?.name).toBe('gpt-5.4');
   });
 
-  test('no available targets still emits an entry with no chat metadata', () => {
+  test('no available targets means the alias is hidden from the listing (resolver still returns 404 for the alias itself)', () => {
     const aliases = [aliasFixture({
       name: 'orphan',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: [] });
-    expect(entry.id).toBe('orphan');
-    expect(entry.display_name).toBe('missing');
-    expect(entry.chat).toBeUndefined();
-    expect(entry.cost).toBeUndefined();
-    expect(entry.aliasedFrom?.targets).toEqual([{ target_model_id: 'missing', rules: {} }]);
+    expect(synthesizeListedAliases({ aliases, addressableModelIds: [] })).toEqual([]);
   });
 
   test('sorts entries by (sort_order, name) so listing order stays stable', () => {
@@ -348,13 +343,12 @@ describe('synthesizeListedAliases', () => {
     expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
   });
 
-  test('endpoints is an empty map on the entry when no target is currently available', () => {
+  test('endpoints is an empty list (no entry emitted) when no target is currently available', () => {
     const aliases = [aliasFixture({
       name: 'ghost',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: [] });
-    expect(entry.endpoints).toEqual({});
+    expect(synthesizeListedAliases({ aliases, addressableModelIds: [] })).toEqual([]);
   });
 
   test('an alias target reachable only via the addressable-but-not-listed surface counts as available', () => {

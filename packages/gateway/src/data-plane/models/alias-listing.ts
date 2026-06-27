@@ -168,11 +168,8 @@ const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
 // alias's currently-available targets. Caller decides whether to use
 // the result directly or overlay it under an operator override.
 const computeAutomaticMetadata = (
-  alias: ModelAliasRecord,
   availableTargets: readonly { target: AliasTarget; real: ResolvedModel }[],
 ): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => {
-  if (availableTargets.length === 0) return { limits: {}, chat: undefined };
-
   const limits = intersectLimits(availableTargets.map(({ real }) => real.limits));
 
   const effectiveChats = availableTargets
@@ -201,7 +198,13 @@ const mergeWithOverride = (
   chat: override.chat ?? computed.chat,
 });
 
-const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly AddressableIdEntry[]): PublicModel => {
+// Returns null when every configured target falls outside the caller's
+// addressable surface — an alias with no reachable target has no listing
+// row, because the catalog should never advertise an id the resolver
+// would 404 on. The alias itself stays addressable through
+// `resolveAlias`, which surfaces `AliasNoTargetAvailableError` at request
+// time. Callers (`synthesizeListedAliases`) filter the nulls out.
+const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly AddressableIdEntry[]): PublicModel | null => {
   // Map every alias target through the full addressable surface, not just
   // the listed catalog: a target reachable only via a prefix-addressable
   // alternate or a provider-side redirect (Copilot variant id) is still
@@ -211,6 +214,8 @@ const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly Ad
     .map(target => ({ target, real: addressableById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
 
+  if (availableTargets.length === 0) return null;
+
   // Display name precedence: operator-set wins; otherwise derive from the
   // sole target's id + rules when single-target; multi-target falls back to
   // the alias's own name because no single target represents the alias.
@@ -218,7 +223,7 @@ const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly Ad
     ? composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules)
     : alias.name);
 
-  const computed = computeAutomaticMetadata(alias, availableTargets);
+  const computed = computeAutomaticMetadata(availableTargets);
   const { limits, chat } = alias.announcedMetadata !== null
     ? mergeWithOverride(computed, alias.announcedMetadata)
     : computed;
@@ -228,11 +233,8 @@ const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly Ad
   // the resolver's request-time pool narrows to targets that serve the
   // inbound endpoint and the first-available / random pick happens
   // within that narrowed pool. Operator can't override endpoints (they
-  // follow the target set, not a stored override). Empty (`{}`) when no
-  // target is currently available — the field stays present.
-  const endpoints = availableTargets.length > 0
-    ? unionEndpoints(availableTargets.map(({ real }) => real.endpoints))
-    : {};
+  // follow the target set, not a stored override).
+  const endpoints = unionEndpoints(availableTargets.map(({ real }) => real.endpoints));
 
   const entry: PublicModel = {
     id: alias.name,
@@ -262,7 +264,8 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[] =>
   sortAliases(input.aliases)
     .filter(alias => alias.visibleInModelsList)
-    .map(alias => synthesizeOne(alias, input.addressableModelIds));
+    .map(alias => synthesizeOne(alias, input.addressableModelIds))
+    .filter((entry): entry is PublicModel => entry !== null);
 
 // Compose real-model entries with visible alias entries into a single typed
 // list. Both data-plane `/v1/models` and the dashboard's `/api/models`
