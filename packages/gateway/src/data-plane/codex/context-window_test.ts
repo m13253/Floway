@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CodexCatalog } from './catalog.ts';
-import { applyContextWindowFromRegistry } from './context-window.ts';
+import { applyContextWindowFromRegistry, CONSERVATIVE_DEFAULT_CONTEXT_WINDOW } from './context-window.ts';
 
 describe('applyContextWindowFromRegistry', () => {
   const buildCatalog = (): CodexCatalog => ({
@@ -35,9 +35,12 @@ describe('applyContextWindowFromRegistry', () => {
     });
   });
 
-  it('passes a slug through unchanged when the resolver has no value for it', () => {
+  it('falls back to the conservative default when the resolver has no value for a slug', () => {
     const out = applyContextWindowFromRegistry(buildCatalog(), () => null);
-    expect(out.models).toEqual(buildCatalog().models);
+    for (const model of out.models) {
+      expect(model.context_window).toBe(CONSERVATIVE_DEFAULT_CONTEXT_WINDOW);
+      expect(model.max_context_window).toBe(CONSERVATIVE_DEFAULT_CONTEXT_WINDOW);
+    }
   });
 
   it('does not mutate the input catalog', () => {

@@ -32,8 +32,11 @@ export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
   // surface effort pickers for models that don't support effort-tiered reasoning.
   const supportedReasoning = model.chat?.reasoning?.effort?.supported ?? [];
   const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
-  const contextWindow = model.limits.max_context_window_tokens;
 
+  // `context_window` / `max_context_window` are left off here — every entry's
+  // window (including the conservative fallback for missing registry values)
+  // is the responsibility of `applyContextWindowFromRegistry` in
+  // context-window.ts, which is the single writer for the field.
   const entry: CatalogModel = {
     slug: model.id,
     display_name: model.display_name ?? model.id,
@@ -69,10 +72,6 @@ export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
     auto_compact_token_limit: null,
   };
 
-  if (contextWindow !== undefined) {
-    entry.context_window = contextWindow;
-    entry.max_context_window = contextWindow;
-  }
   if (model.chat?.reasoning?.effort?.default !== undefined) {
     entry.default_reasoning_level = model.chat.reasoning.effort.default;
   }
