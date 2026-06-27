@@ -175,10 +175,18 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   // append a synthetic terminal user message that nudges the model into
   // producing the summary. Harmless on OpenAI-style upstreams, which accept
   // assistant-terminal conversations but happily honor a final user prompt.
+  //
+  // Wrap the nudge in `<system-reminder>…</system-reminder>` — Claude Code's
+  // documented convention for injecting synthetic system-level context into
+  // a `user`-role message without it reading as a literal user instruction.
+  // Claude models are trained to recognize the marker as an out-of-band
+  // reminder; on non-Claude upstreams the wrapper is a benign opaque tag
+  // they ignore. See https://github.com/anthropics/claude-code/issues/52018
+  // (the report on system-reminder semantics) for the convention's reach.
   const terminalUserMessage: ResponsesInputItem = {
     type: 'message',
     role: 'user',
-    content: [{ type: 'input_text', text: 'Produce the handoff summary now per the instructions above.' }],
+    content: [{ type: 'input_text', text: '<system-reminder>Produce the handoff summary now per the instructions above.</system-reminder>' }],
   };
   const inputForSummarization = [...historyItems, terminalUserMessage];
 
