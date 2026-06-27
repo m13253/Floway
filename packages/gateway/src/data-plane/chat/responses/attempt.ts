@@ -32,13 +32,13 @@ export interface ResponsesAttemptInvokeArgs {
 }
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
-// The interceptor chain owns the action through `invocation.action` and may
-// flip it (the responses-compact-shim pivots 'compact'→'generate' for the
-// inner dispatch on non-responses targets and restores it on the way out, so
-// envelope-drain still selects the compact branch); post-chain we read
-// `invocation.action` to decide whether to drain the event stream into a
-// single compaction envelope (compact branch) or to hand it back as a
-// streaming `ExecuteResult` (generate branch).
+// Envelope-drain branches on the caller's intent (`action` passed by value),
+// not on `invocation.action`. Interceptors are free to mutate `ctx.action`
+// to steer inner dispatch — and, by the project's interceptor convention,
+// they do not restore on the way out — so post-chain `invocation.action`
+// reflects whatever the last writer left it at. The shape of the result we
+// hand back is the caller's contract; keying off the caller's value is the
+// only place that contract lives.
 //
 // The module-boundary invariant `action='compact' ⇒ targetApi='responses'`
 // at dispatch time is enforced inside `dispatchResponses` — its `case
@@ -92,12 +92,15 @@ export const responsesAttempt = {
     if (chainResult.type !== 'events') return chainResult;
 
     const responseId = createStoredResponseId();
-    if (invocation.action === 'compact') {
-      // Drain the events into a single envelope and return the value branch
-      // so the http compact endpoint can JSON-encode it directly. Storage
-      // still runs over the synthesized event stream so the snapshot is
-      // committed under the same id the client will see — wrap detects the
-      // `compaction` output item and writes a `'replace'` snapshot.
+    if (action === 'compact') {
+      // The caller entered through /v1/responses/compact (or serve.compact).
+      // Drain the chain's events — whether they came from a native /compact
+      // wire or from the responses-compact-shim's synthesized envelope —
+      // into a single result envelope so the http layer can JSON-encode it
+      // directly. Storage still runs over the synthesized event stream so
+      // the snapshot is committed under the same id the client will see —
+      // wrap detects the `compaction` output item and writes a `'replace'`
+      // snapshot.
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
       await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
         store,

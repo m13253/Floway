@@ -35,8 +35,10 @@
 //      history. Call `run()` to drive the chain through the normal generate
 //      path; collect the resulting summary text; pack a single user-role
 //      message containing the summary into a synthetic
-//      `response.compaction` envelope; re-tag `invocation.action` back to
-//      'compact' so the gateway's post-chain envelope-drain branch fires.
+//      `response.compaction` envelope. Mutations of `ctx.payload` /
+//      `ctx.action` are one-way per the project's interceptor convention;
+//      attempt.invoke does not consume the post-chain `ctx` for its result
+//      shape (it keys envelope-drain off the caller's intent action).
 //
 // Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding
 // or fail the array-of-objects-with-string-types schema below) round-trip
@@ -153,7 +155,6 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
 
 const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
-  const originalAction = ctx.action;
 
   // Materialize the user-supplied input (string or array) into Responses items,
   // then strip compaction_trigger so the upstream sees a plain generate turn
@@ -190,21 +191,13 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
     store: false,
   };
   // Pivot the action so the inner dispatch routes to the upstream's
-  // generate wire instead of its compact wire.
+  // generate wire instead of its compact wire. The mutation is one-way:
+  // the project's interceptor convention is that every `ctx.*` write
+  // propagates downstream and is never restored on the way out. Post-chain
+  // consumers keep their own captured copies of inputs they care about.
   ctx.action = 'generate';
 
-  let upstreamResult: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
-  try {
-    upstreamResult = await run();
-  } finally {
-    ctx.payload = originalPayload;
-    // Re-tag the action to what it was on entry so the gateway's post-chain
-    // envelope-drain branch in attempt.invoke fires off the synthesized
-    // events. For the native `/responses/compact` path that is 'compact';
-    // for the `compaction_trigger`-on-generate path it stays 'generate' and
-    // the events fall through to the streaming branch.
-    ctx.action = originalAction;
-  }
+  const upstreamResult = await run();
 
   if (upstreamResult.type !== 'events') {
     // api-error / internal-error from the upstream propagate so the client

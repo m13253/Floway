@@ -141,9 +141,11 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   // Inner action seen by the upstream is 'generate'.
   assertEquals(seenAction, 'generate');
-  // Outer ctx.action is re-tagged 'compact' so attempt.invoke's post-chain
-  // envelope-drain branch picks the synthesized result.
-  assertEquals(inv.action, 'compact');
+  // The pivot is one-way per the project's interceptor convention: outer
+  // ctx.action stays 'generate' after the run. attempt.invoke keys
+  // envelope-drain on the caller's intent action (captured by value), so
+  // leaving invocation.action='generate' does not change the result shape.
+  assertEquals(inv.action, 'generate');
   // Payload pivoted: SUMMARIZATION_PROMPT injected, store:false, the
   // original history retained (compaction_trigger items would be stripped
   // but there are none here).
