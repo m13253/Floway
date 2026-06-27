@@ -13,24 +13,24 @@ const stripKeys = (
   body: Record<string, unknown>,
   keys: readonly string[],
   targetProtocol: string,
-  trace: SanitizeTraceCtx | undefined,
+  trace: SanitizeTraceCtx,
 ): void => {
   for (const key of keys) {
     if (key in body) {
       delete body[key];
-      trace?.emit({ field: key, targetProtocol });
+      trace.emit({ field: key, targetProtocol });
     }
   }
 };
 
-export const sanitizeForChatCompletionsUpstream = (body: Record<string, unknown>, trace?: SanitizeTraceCtx): void => {
+export const sanitizeForChatCompletionsUpstream = (body: Record<string, unknown>, trace: SanitizeTraceCtx): void => {
   stripKeys(body, FLOWAY_EXTENSION_FIELDS.chatCompletions, 'chat-completions', trace);
 };
 
-export const sanitizeForResponsesUpstream = (body: Record<string, unknown>, trace?: SanitizeTraceCtx): void => {
+export const sanitizeForResponsesUpstream = (body: Record<string, unknown>, trace: SanitizeTraceCtx): void => {
   stripKeys(body, FLOWAY_EXTENSION_FIELDS.responses, 'responses', trace);
 };
 
-export const sanitizeForMessagesUpstream = (body: Record<string, unknown>, trace?: SanitizeTraceCtx): void => {
+export const sanitizeForMessagesUpstream = (body: Record<string, unknown>, trace: SanitizeTraceCtx): void => {
   stripKeys(body, FLOWAY_EXTENSION_FIELDS.messages, 'messages', trace);
 };

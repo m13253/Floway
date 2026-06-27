@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import {
+  createSanitizeTraceCtx,
   sanitizeForChatCompletionsUpstream,
   sanitizeForMessagesUpstream,
   sanitizeForResponsesUpstream,
@@ -44,9 +45,9 @@ test('sanitizeForChatCompletionsUpstream strips Floway extensions and leaves nat
   assertEquals(droppedFields, ['reasoning_summary', 'thinking_budget']);
 });
 
-test('sanitizeForResponsesUpstream strips extensions without a trace context', () => {
+test('sanitizeForResponsesUpstream strips extensions when fed the default per-request trace', () => {
   const body: Record<string, unknown> = { adaptive_thinking: true, thinking_budget: 4096 };
-  sanitizeForResponsesUpstream(body);
+  sanitizeForResponsesUpstream(body, createSanitizeTraceCtx());
   assertEquals(body, {});
 });
 
