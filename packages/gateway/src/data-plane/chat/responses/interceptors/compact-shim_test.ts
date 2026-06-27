@@ -141,9 +141,13 @@ test('compact + flag on: pivots to generate, drives upstream summarization, retu
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   // Inner action seen by the upstream is 'generate'.
   assertEquals(seenAction, 'generate');
-  // Outer ctx.action is re-tagged 'compact' so attempt.invoke picks the
-  // value-branch result + snapshot=replace.
-  assertEquals(inv.action, 'compact');
+  // The pivot is one-way: outer ctx.action stays 'generate' after the run.
+  // attempt.invoke keys envelope-drain on the caller's intent action (passed
+  // by value), so leaving invocation.action='generate' doesn't change the
+  // result shape — and it lets attempt assert that
+  // `invocation.action === 'compact'` post-chain implies
+  // `targetApi === 'responses'`.
+  assertEquals(inv.action, 'generate');
   // Payload pivoted: SUMMARIZATION_PROMPT injected, store:false, the
   // original history retained (compaction_trigger items would be stripped
   // but there are none here).
