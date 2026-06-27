@@ -134,6 +134,7 @@ test('generate native success wraps the upstream event stream once', async () =>
   const candidate = makeCandidate(callResponses);
   const ctx = makeGatewayCtx();
   const store = createResponsesHttpStore(API_KEY_ID, true);
+  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
 
   const result = await responsesAttempt.generate({
     payload: makePayload(),
@@ -153,28 +154,38 @@ test('generate native success wraps the upstream event stream once', async () =>
   assertEquals(callResponses.mock.calls.length, 1);
   assertEquals(wrapSpy.mock.calls.length, 1);
   const wrapArgs = wrapSpy.mock.calls[0][1];
-  assertEquals(wrapArgs.snapshotMode, 'append');
   assertEquals(wrapArgs.upstream, 'up_test');
   assertEquals(wrapArgs.targetApi, 'responses');
+  // The upstream emitted no compaction-shape item, so wrap derived 'append'.
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'append');
 
   wrapSpy.mockRestore();
 });
 
-test('generate path with a compaction_trigger in input forwards snapshotMode=replace (Codex CLI RemoteCompactionV2)', async () => {
-  // Codex CLI's RemoteCompactionV2 performs compaction over `/v1/responses`
-  // itself by appending a `compaction_trigger` to the input — `action`
-  // stays 'generate' at the HTTP entry, but the upstream returns a
-  // compaction envelope and a later `previous_response_id` must resolve to
-  // only the compaction output, not the prior snapshot + staged inputs.
-  // The attempt's generate branch therefore has to detect the trigger and
-  // pick snapshotMode='replace'.
+test('generate derives snapshotMode=replace when the upstream emits a compaction output item', async () => {
+  // A direct `/v1/responses` generate carrying a `compaction_trigger` input
+  // (Codex's RemoteCompactionV2) — or a `context_management` `compact_threshold`
+  // turn that triggers server-side compaction — yields a compaction-shape
+  // output envelope on the wire. Wrap observes that output and derives a
+  // 'replace' snapshot regardless of how the request was framed.
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
+  const compactionItem = {
+    type: 'compaction',
+    id: 'cmp_trigger',
+    encrypted_content: 'ENC',
+  };
+  const compactionResponse: ResponsesResult = {
+    ...makeResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as ResponsesResult['output'],
+  };
   const completedEvent: ResponsesStreamEvent = {
     type: 'response.completed',
     sequence_number: 0,
-    response: makeResponsesResult(),
+    response: compactionResponse,
   };
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true,
@@ -184,15 +195,17 @@ test('generate path with a compaction_trigger in input forwards snapshotMode=rep
   }));
 
   const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
+
   const result = await responsesAttempt.generate({
     payload: makePayload({
       input: [
         { type: 'message', role: 'user', content: 'kept message' },
-        { type: 'compaction_trigger' },
       ],
     }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    store,
     candidate,
     headers: new Headers(),
   });
@@ -202,7 +215,8 @@ test('generate path with a compaction_trigger in input forwards snapshotMode=rep
   await collectEvents(result.events);
 
   assertEquals(wrapSpy.mock.calls.length, 1);
-  assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'replace');
 
   wrapSpy.mockRestore();
 });
@@ -281,7 +295,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   wrapSpy.mockRestore();
 });
 
-test('compact action drives a replace-mode snapshot off the synthesized envelope', async () => {
+test('compact reshapes the trigger turn into a result and derives snapshotMode=replace from the synthesized envelope', async () => {
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
 
@@ -289,7 +303,8 @@ test('compact action drives a replace-mode snapshot off the synthesized envelope
   // the `action: 'compact'` branch of `provider.callResponses` does the
   // Copilot compaction_trigger reshape internally — so the attempt receives
   // a ResponsesResult, expands it into synthetic frames, and wraps the
-  // output for storage.
+  // output for storage. The synthesized envelope carries a `compaction`
+  // output item; wrap observes it and derives the 'replace' snapshot.
   const compactionItem = {
     type: 'compaction' as const,
     id: 'cmp_1',
@@ -309,6 +324,8 @@ test('compact action drives a replace-mode snapshot off the synthesized envelope
   });
 
   const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
   const result = await responsesAttempt.invoke({
     payload: makePayload({
       input: [
@@ -317,7 +334,7 @@ test('compact action drives a replace-mode snapshot off the synthesized envelope
     }),
     action: 'compact',
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    store,
     candidate,
     headers: new Headers(),
   });
@@ -332,10 +349,11 @@ test('compact action drives a replace-mode snapshot off the synthesized envelope
   assert(isStoredResponseId(result.result.id));
 
   // wrap-output-storage runs exactly once on the synthesized compaction
-  // events, with snapshotMode='replace'.
+  // events; the compaction item in the output drives commitSnapshot('replace').
   assertEquals(wrapSpy.mock.calls.length, 1);
-  assertEquals(wrapSpy.mock.calls[0][1].snapshotMode, 'replace');
   assertEquals(wrapSpy.mock.calls[0][1].targetApi, 'responses');
+  assertEquals(commitSpy.mock.calls.length, 1);
+  assertEquals(commitSpy.mock.calls[0][1], 'replace');
 
   wrapSpy.mockRestore();
 });

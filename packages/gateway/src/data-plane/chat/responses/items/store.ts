@@ -52,16 +52,19 @@ export interface LayeredStatefulResponsesStoreOptions {
 
 // How a Responses turn should commit its snapshot:
 //   - 'append'  : conversation continuation — previous snapshot + this turn's
-//                 input + this turn's output. Default for /responses generate.
+//                 input + this turn's output. Default for a normal generate.
 //   - 'replace' : the turn's output IS the new conversation — drop prior
-//                 history and the stitched-in input. Used by /responses/compact
-//                 so that referencing the compact response via
-//                 previous_response_id replays only the retained messages +
-//                 the encrypted compaction blob, not the original full history.
+//                 history and the stitched-in input. Used when the output is
+//                 a self-contained compaction envelope so referencing this
+//                 response via `previous_response_id` replays only the
+//                 retained messages + the encrypted compaction blob, not the
+//                 original full history.
 //
-// Whether a snapshot is actually persisted is owned by the store's
-// `snapshotWrites` list: empty (HTTP `store=false`, no-op cross-protocol
-// store) makes `commitSnapshot` a no-op regardless of the mode passed in.
+// The mode is derived inside `wrapResponsesOutputForStorage` by observing the
+// output stream, so callers do not pass it. Skipping the snapshot entirely is
+// expressed at the store layer via an empty `snapshotWrites` configuration
+// (see `createNonResponsesSourceStore` and the `store=false` branch of
+// `createResponsesHttpStore`).
 export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
@@ -273,12 +276,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private async stageInputItem(item: ResponsesInputItem): Promise<void> {
     // `compaction_trigger` is a per-request control signal, not content:
     // payload-free, idless, never persisted in codex's own rollout/history,
-    // and never re-sent on subsequent turns. The copilot provider's compact
-    // branch is the only thing that appends one (on the wire, to drive the
-    // `/responses` endpoint into compaction mode), so the trigger never
-    // arrives back through the staging path on any subsequent turn anyway.
-    // Skipping it also keeps `createStoredResponsesItemId` from minting a
-    // prefix for a type that never needs one.
+    // and never re-sent on subsequent turns. The output of such a turn is a
+    // self-contained `compaction` envelope which wrap detects and commits as
+    // snapshot mode 'replace', so this row would have no reader. Skipping it
+    // also keeps `createStoredResponsesItemId` from minting a prefix for a
+    // type that never needs one.
     if (item.type === 'compaction_trigger') return;
 
     if (item.type === 'item_reference') {
@@ -627,23 +629,6 @@ export const createResponsesWsSession = (apiKeyId: string | null): {
     },
   };
 };
-
-// For cross-protocol callers (Messages/Gemini/ChatCompletions translating
-// into Responses): the outer protocol's attempt has already resolved any
-// store-backed item references against its own store and inlined them into
-// the translated payload, so the inner Responses call needs neither reads
-// nor writes. Forwarding the outer store instead would persist
-// Responses-shape rows and snapshots into the outer protocol's store —
-// orphan rows the outer protocol's reader has no path to consume.
-export const createNoOpResponsesStore = (apiKeyId: string | null): StatefulResponsesStore =>
-  new LayeredStatefulResponsesStore({
-    apiKeyId,
-    reads: [],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-    shouldStorePayload: false,
-  });
 
 const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {
   const rows = target.get(hash) ?? [];

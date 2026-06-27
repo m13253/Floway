@@ -4,7 +4,7 @@ import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
-import { createNoOpResponsesStore, type StatefulResponsesStore } from '../responses/items/store.ts';
+import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
@@ -62,7 +62,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store: createNoOpResponsesStore(store.apiKeyId), candidate, headers: invocation.headers,
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
           }),
         );
       }

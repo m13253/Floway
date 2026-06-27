@@ -1,11 +1,10 @@
-import { containsCompactionTrigger } from './interceptors/compact-shim.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
-import type { ResponsesSnapshotMode, StatefulResponsesStore } from './items/store.ts';
+import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
@@ -18,7 +17,8 @@ import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
+import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
@@ -32,22 +32,29 @@ export interface ResponsesAttemptInvokeArgs {
 }
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
-// The interceptor chain owns the action through `invocation.action` and can
-// flip it (the responses-compact-shim turns 'compact' into 'generate' so the
-// inner call summarizes against SUMMARIZATION_PROMPT, then re-tags
-// `invocation.action` back to 'compact' before returning). Post-chain the
-// final `invocation.action` is what drives snapshot mode ('replace' for
-// compact, 'append' for generate — with one exception: a generate call whose
-// input still carries a `compaction_trigger` is Codex CLI's RemoteCompactionV2
-// path, semantically a compact even though the action stayed 'generate', so
-// the snapshot reduces to the compaction output alone — see
-// `containsCompactionTrigger` in interceptors/compact-shim.ts). Where those
-// writes actually land — durable repo, WS session memory, or nowhere — is
-// fully owned by the store factory the caller supplied (see
-// items/store.ts factories).
+// The interceptor chain owns the action through `invocation.action` and may
+// flip it; post-chain we read `invocation.action` to decide whether to drain
+// the event stream into a single compaction envelope (compact branch) or to
+// hand it back as a streaming `ExecuteResult` (generate branch).
+//
+// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
+// which derives the snapshot mode by observing the output stream — `'replace'`
+// when any output item is a compaction (the three convergence cases:
+// native `/v1/responses/compact`, a `compaction_trigger` input on
+// `/v1/responses` reshaped by the upstream, and the server-side
+// `context_management` `compact_threshold` mode), `'append'` otherwise.
+// "Don't write" is expressed by the store itself: cross-protocol translation
+// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
+// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
+// no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers } = args;
+    // Read the caller's intent `action` (NOT `invocation.action`) — the guard
+    // runs pre-chain, before any interceptor can flip the value.
+    if (action === 'compact' && candidate.targetApi !== 'responses') {
+      throw new Error(`responsesAttempt.invoke(action='compact') requires targetApi='responses', got '${candidate.targetApi}'`);
+    }
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
@@ -79,23 +86,17 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    // Snapshot mode is steered by the post-chain action recorded on the
-    // invocation. Interceptors that mutate the action (compact-shim flips
-    // 'compact'→'generate' for the inner call and back to 'compact' for the
-    // outer result) therefore steer storage end-to-end. The generate branch
-    // has one extra wrinkle handled below — a trigger item that survived
-    // the chain forces a 'replace' snapshot.
     const responseId = createStoredResponseId();
     if (invocation.action === 'compact') {
       // Drain the events into a single envelope and return the value branch
       // so the http compact endpoint can JSON-encode it directly. Storage
       // still runs over the synthesized event stream so the snapshot is
-      // committed under the same id the client will see.
+      // committed under the same id the client will see — wrap detects the
+      // `compaction` output item and writes a `'replace'` snapshot.
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
       await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
         store,
         upstream: candidate.binding.upstream,
-        snapshotMode: 'replace',
         targetApi: 'responses',
         responseId,
       }));
@@ -115,12 +116,10 @@ export const responsesAttempt = {
     // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
     // is committed under the same id so the next turn's
     // `previous_response_id` lookup is guaranteed to hit.
-    const snapshotMode: ResponsesSnapshotMode = containsCompactionTrigger(normalized.input) ? 'replace' : 'append';
     return eventResult(
       wrapResponsesOutputForStorage(chainResult.events, {
         store,
         upstream: candidate.binding.upstream,
-        snapshotMode,
         targetApi: candidate.targetApi,
         responseId,
       }),
@@ -134,10 +133,11 @@ export const responsesAttempt = {
   },
 
   // Narrowing wrapper for cross-protocol translation callers
-  // (Messages/Gemini/ChatCompletions translating into Responses). They want
-  // an `ExecuteResult` and never hit the compact path — pass `action:
-  // 'generate'` implicitly, narrow the value branch out as a contract
-  // violation.
+  // (Messages/Gemini/ChatCompletions translating into Responses) and the
+  // native HTTP/WS generate entry — both always run in generate mode and
+  // want the ExecuteResult branch. The compact branch is a contract
+  // violation here; an interceptor that pivoted generate→compact would
+  // surface as a throw, not a silent shape mismatch.
   generate: async (args: Omit<ResponsesAttemptInvokeArgs, 'action'>): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const result = await responsesAttempt.invoke({ ...args, action: 'generate' });
     if (result.type === 'result') {
@@ -224,7 +224,7 @@ const dispatchResponses = async (
   }
   case 'messages':
     if (invocation.action === 'compact') {
-      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='messages' — the responses-compact-shim is responsible for pivoting compact→generate before dispatch`);
+      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='messages' (filtered by serve-prep)`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -238,7 +238,7 @@ const dispatchResponses = async (
     );
   case 'chat-completions':
     if (invocation.action === 'compact') {
-      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='chat-completions' — the responses-compact-shim is responsible for pivoting compact→generate before dispatch`);
+      throw new Error(`responsesAttempt: action='compact' is unreachable on targetApi='chat-completions' (filtered by serve-prep)`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -256,13 +256,9 @@ const dispatchResponses = async (
 
 // Lowers a `ProviderResponsesResult` into the chain's
 // ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> currency. The compact
-// branch is non-streaming: the provider returns the compaction envelope as
-// a value (Azure, Codex, and custom upstreams call native
-// `/responses/compact`; Copilot rebuilds it from a `compaction_trigger`
-// turn), so we synthesize the canonical event frames here instead of
-// pretending the result came from an SSE body. Every downstream interceptor
-// then sees the same event-stream contract regardless of which action the
-// provider executed.
+// branch synthesizes SSE frames from the envelope so every downstream
+// interceptor sees the same event-stream contract regardless of which action
+// the provider executed.
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
   candidate: ProviderCandidate,
