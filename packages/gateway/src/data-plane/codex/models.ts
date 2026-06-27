@@ -70,7 +70,7 @@ const computeCatalog = async (
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
     getRepo().modelAliases.list(),
   ]);
-  const realModels = listedRealModels(addressable.entries);
+  const realModels = listedRealModels(addressable);
   const slugContextWindow = new Map<string, number>();
   for (const m of realModels) {
     const limit = m.limits.max_context_window_tokens;
@@ -84,7 +84,7 @@ const computeCatalog = async (
   // Alias-target availability is the broader question — a target reachable
   // only via a prefix alternate or Copilot variant id still resolves at
   // request time, so the codex catalog must keep its alias slug too.
-  const addressableSet = new Set(addressable.entries.map(entry => entry.id));
+  const addressableSet = new Set(addressable.map(entry => entry.id));
 
   // Run the shared alias synthesizer so the codex catalog reads the same
   // visible-alias surface that /v1/models, the dashboard, and Gemini do.
@@ -104,7 +104,7 @@ const computeCatalog = async (
     readonly announcedContextWindow: number | undefined;
   }
   const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
-  for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable.entries })) {
+  for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
     const firstRoutable = aliasedFrom.targets.find(t => addressableSet.has(t.target_model_id));

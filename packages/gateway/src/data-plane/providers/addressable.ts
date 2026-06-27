@@ -37,10 +37,6 @@ export interface AddressableIdEntry {
   readonly model: ResolvedModel;
 }
 
-export interface AddressableSurface {
-  readonly entries: readonly AddressableIdEntry[];
-}
-
 // Project the listed (real-catalog) `ResolvedModel`s out of an addressable
 // surface — every listing caller wants this same slice to feed
 // `mergeAliasesIntoModels`'s `realModels` arg.
@@ -56,7 +52,7 @@ export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<AddressableSurface> => {
+): Promise<readonly AddressableIdEntry[]> => {
   // `getModels` throws the actionable "no upstream provider configured"
   // message when the provider list is empty; surface it the same way here
   // so /v1/models keeps its 502 + hint behavior on a brand-new gateway.
@@ -136,5 +132,5 @@ export const enumerateAddressableModelIds = async (
 
   // Stable id ordering matches the listed surface so consumers can rely on
   // a single comparator across both halves.
-  return { entries: entries.sort((a, b) => compareModelIds(a.id, b.id)) };
+  return entries.sort((a, b) => compareModelIds(a.id, b.id));
 };

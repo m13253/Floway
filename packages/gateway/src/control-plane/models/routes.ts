@@ -64,16 +64,16 @@ export const controlPlaneModels = async (c: Context) => {
       ),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
-    const realModels = listedRealModels(addressable.entries);
+    const realModels = listedRealModels(addressable);
     const unlistedRows = includeUnlisted
-      ? addressable.entries
+      ? addressable
           .filter(entry => entry.unlisted === true)
           .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
       : [];
     const listedRows = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
-          addressableModelIds: addressable.entries,
+          addressableModelIds: addressable,
           aliases,
           mapReal: toControlPlaneModel,
           wrapAlias: entry => ({ ...entry, upstreams: [] }),

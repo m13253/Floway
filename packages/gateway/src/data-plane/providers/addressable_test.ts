@@ -27,7 +27,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
-        expect(surface.entries.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
+        expect(surface.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
           { id: 'shared-model', unlisted: undefined },
         ]);
       },
@@ -56,7 +56,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
-        const byId = new Map(surface.entries.map(e => [e.id, e]));
+        const byId = new Map(surface.map(e => [e.id, e]));
         expect(byId.get('cust/gpt-5.4')?.unlisted).toBeUndefined();
         expect(byId.get('gpt-5.4')?.unlisted).toBe(true);
         // The addressable-only entry still resolves to the same `ResolvedModel`
@@ -89,7 +89,7 @@ describe('enumerateAddressableModelIds', () => {
       },
       async () => {
         const surface = await enumerateAddressableModelIds(null, () => directFetcher, noBackground);
-        const byId = new Map(surface.entries.map(e => [e.id, e]));
+        const byId = new Map(surface.map(e => [e.id, e]));
         // The canonical merged id is the listed entry.
         expect(byId.get('claude-opus-4-7')?.unlisted).toBeUndefined();
         // Both raw variants are addressable-but-not-listed, redirecting to

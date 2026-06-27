@@ -39,10 +39,10 @@ export const loadModels = async (
     enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const realModels = listedRealModels(addressable.entries);
+  const realModels = listedRealModels(addressable);
   const data = mergeAliasesIntoModels({
     realModels,
-    addressableModelIds: addressable.entries,
+    addressableModelIds: addressable,
     aliases,
     mapReal: toPublicModel,
     wrapAlias: entry => entry,
