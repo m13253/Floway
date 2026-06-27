@@ -1,4 +1,5 @@
 import { responsesInterceptors } from './interceptors/index.ts';
+import { containsCompactionTrigger } from './interceptors/compact-shim.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -40,12 +41,15 @@ export interface ResponsesAttemptInvokeArgs {
 // hand back is the caller's contract; keying off the caller's value is the
 // only place that contract lives.
 //
-// The module-boundary invariant `action='compact' ⇒ targetApi='responses'`
+// The module-boundary invariant `compact-shaped ⇒ targetApi='responses'`
 // at dispatch time is enforced inside `dispatchResponses` — its `case
 // 'messages'` and `case 'chat-completions'` branches throw if they receive
-// `invocation.action === 'compact'`. That position is structurally correct:
-// the throw fires pre-upstream-call, lives inside the chain (not after the
-// interceptor finally blocks), and stays independent of the shim's presence.
+// either `invocation.action === 'compact'` or a `compaction_trigger` in
+// input (the same OR the shim's `isCompactShaped` engages on, so the safety
+// net catches every shape the shim was supposed to intercept). That
+// position is structurally correct: the throw fires pre-upstream-call,
+// lives inside the chain (not after the interceptor finally blocks), and
+// stays independent of the shim's presence.
 //
 // Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
 // which derives the snapshot mode by observing the output stream — `'replace'`
@@ -231,12 +235,15 @@ const dispatchResponses = async (
     return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
   }
   case 'messages':
-    if (invocation.action === 'compact') {
+    if (invocation.action === 'compact' || containsCompactionTrigger(invocation.payload.input)) {
       // The responses-compact-shim is structurally required on non-responses
-      // targets and pivots ctx.action to 'generate' before reaching here;
-      // landing inside this case with action='compact' means the shim
-      // disengaged or was wired out of the chain.
-      throw new Error(`responsesAttempt: action='compact' reached dispatch on targetApi='messages' — the responses-compact-shim must engage and pivot the action`);
+      // targets and treats both action='compact' and a `compaction_trigger`
+      // in input as compact-shaped — on either path it pivots the request
+      // into a generate turn against SUMMARIZATION_PROMPT and strips the
+      // trigger before reaching here. Landing inside this case with either
+      // signal still present means the shim disengaged or was wired out of
+      // the chain.
+      throw new Error(`responsesAttempt: compact-shaped request reached dispatch on targetApi='messages' — the responses-compact-shim must engage`);
     }
     return await traverseTranslation(
       invocation.payload,
@@ -249,8 +256,8 @@ const dispatchResponses = async (
       }),
     );
   case 'chat-completions':
-    if (invocation.action === 'compact') {
-      throw new Error(`responsesAttempt: action='compact' reached dispatch on targetApi='chat-completions' — the responses-compact-shim must engage and pivot the action`);
+    if (invocation.action === 'compact' || containsCompactionTrigger(invocation.payload.input)) {
+      throw new Error(`responsesAttempt: compact-shaped request reached dispatch on targetApi='chat-completions' — the responses-compact-shim must engage`);
     }
     return await traverseTranslation(
       invocation.payload,
