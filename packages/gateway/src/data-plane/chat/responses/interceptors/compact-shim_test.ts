@@ -4,7 +4,7 @@ import { expandShimCompactionItems, withResponsesCompactShim } from './compact-s
 import type { ResponsesInvocation } from './types.ts';
 import { encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';

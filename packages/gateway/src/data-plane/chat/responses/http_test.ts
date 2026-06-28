@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
+import { createStoredResponsesItemId, isStoredResponseId } from '../items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';

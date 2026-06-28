@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';

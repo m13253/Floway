@@ -1,9 +1,9 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
-import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
-import * as outputModule from './items/output.ts';
-import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
+import { createStoredResponsesItemId, isStoredResponseId } from '../items/format.ts';
+import * as outputModule from '../items/output.ts';
+import { createResponsesHttpStore, createNonResponsesSourceStore } from '../items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';

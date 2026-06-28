@@ -1,4 +1,4 @@
-import { createResponsesHttpStore } from './items/store.ts';
+import { createResponsesHttpStore } from '../items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';

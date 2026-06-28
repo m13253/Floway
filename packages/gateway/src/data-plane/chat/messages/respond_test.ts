@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';

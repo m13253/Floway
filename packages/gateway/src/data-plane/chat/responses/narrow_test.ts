@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId } from './items/format.ts';
-import { createNonResponsesSourceStore } from './items/store.ts';
+import { createStoredResponsesItemId } from '../items/format.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { narrowResponsesByItemAffinity } from './narrow.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';

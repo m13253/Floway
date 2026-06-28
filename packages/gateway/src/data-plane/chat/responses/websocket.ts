@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { createResponsesWsSession } from './items/store.ts';
+import { createResponsesWsSession } from '../items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';

@@ -1,8 +1,8 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
-import type { ChatServeFailure } from '../../shared/errors.ts';
+import type { StoredResponsesItem } from '../../../repo/types.ts';
+import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

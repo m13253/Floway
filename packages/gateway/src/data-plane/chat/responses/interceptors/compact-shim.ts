@@ -48,7 +48,7 @@
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { syntheticEventsFromResult } from '../items/output.ts';
+import { syntheticEventsFromResult } from '../../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';

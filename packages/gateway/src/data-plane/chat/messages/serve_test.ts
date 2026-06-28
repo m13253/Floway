@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';

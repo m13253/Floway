@@ -4,7 +4,7 @@ import type { ChatGatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState, recordPerformance, recordUsage } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 

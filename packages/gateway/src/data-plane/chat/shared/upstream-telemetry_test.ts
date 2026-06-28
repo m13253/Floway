@@ -4,7 +4,7 @@ import type { ChatGatewayCtx } from './gateway-ctx.ts';
 import { withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';

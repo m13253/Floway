@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
-import { createStoredResponsesItemId } from './items/format.ts';
-import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from './items/store.ts';
+import { createStoredResponsesItemId } from '../items/format.ts';
+import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';

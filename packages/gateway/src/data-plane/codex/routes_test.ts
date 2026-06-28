@@ -6,7 +6,7 @@ import { mountCodexRoutes } from './routes.ts';
 import { app as gatewayApp } from '../../app.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
-import { isStoredResponseId } from '../chat/responses/items/format.ts';
+import { isStoredResponseId } from '../chat/items/format.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };

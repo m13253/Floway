@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';

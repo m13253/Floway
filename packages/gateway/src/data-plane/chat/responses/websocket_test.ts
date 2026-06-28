@@ -1,7 +1,7 @@
 import type { ExecutionContext } from 'hono';
 import { test } from 'vitest';
 
-import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { hashResponsesItemContent, isStoredResponseId } from '../items/format.ts';
 import { app } from '../../../app.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';

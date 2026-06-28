@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import type { ResponsesInvocation } from './types.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';

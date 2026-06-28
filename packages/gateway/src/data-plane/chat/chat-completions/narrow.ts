@@ -1,4 +1,4 @@
-import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
+import { classifyResponsesItemAffinity } from '../items/affinity.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';

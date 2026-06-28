@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult } from '@floway-dev/provider';

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-to-user.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';

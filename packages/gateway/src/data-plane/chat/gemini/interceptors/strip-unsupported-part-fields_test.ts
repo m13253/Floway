@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { stripUnsupportedPartFields } from './strip-unsupported-part-fields.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';

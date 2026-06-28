@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { messagesAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
