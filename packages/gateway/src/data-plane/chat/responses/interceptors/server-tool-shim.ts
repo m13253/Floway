@@ -262,7 +262,7 @@ const restoreEchoedToolChoice = (
   toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | undefined => {
-  if (typeof toolChoice !== 'object' || toolChoice === null || toolChoice.type !== 'function') return toolChoice;
+  if (typeof toolChoice !== 'object' || toolChoice === null || toolChoice?.type !== 'function') return toolChoice;
   for (const entry of active) {
     if (entry.canonicalHostedTool === undefined) continue;
     if (toolChoice.name !== entry.toolName) continue;

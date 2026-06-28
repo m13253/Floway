@@ -39,6 +39,8 @@ import type {
   ResponsesPayload,
   ResponsesResult,
   ResponsesStreamEvent,
+  ResponsesTool,
+  ResponsesToolChoice,
   ResponsesWebSearchAction,
 } from '@floway-dev/protocols/responses';
 import { directFetcher, type EventResult, type ExecuteResult } from '@floway-dev/provider';
