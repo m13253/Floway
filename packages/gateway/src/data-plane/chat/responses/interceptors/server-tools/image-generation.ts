@@ -94,7 +94,7 @@ export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is Respon
 // (all `'auto'`) signal "backend decides" rather than concrete values
 // the model needs. Preserving the client's raw shape keeps the echo
 // round-trip minimal — anything the client didn't send stays absent.
-export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesTool | undefined =>
+export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHostedTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
@@ -311,7 +311,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (_canonical: ResponsesTool, name: string): ResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (_canonical: ResponsesHostedTool, name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:

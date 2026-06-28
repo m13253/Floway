@@ -7,7 +7,7 @@ import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
-  ResponsesHostedToolType,
+  ResponsesHostedTool,
   ResponsesInputItem,
   ResponsesOutputItem,
   ResponsesPayload,
@@ -114,8 +114,8 @@ export type ServerToolDispatcher = (args: {
 // tool object is available to canonicalize.
 export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
-  canonicalize: (raw: ResponsesTool) => ResponsesTool | undefined;
-  buildFunctionTool: (canonical: ResponsesTool, toolName: string) => ResponsesTool;
+  canonicalize: (raw: ResponsesTool) => ResponsesHostedTool | undefined;
+  buildFunctionTool: (canonical: ResponsesHostedTool, toolName: string) => ResponsesTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -148,7 +148,7 @@ type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   // request rewrite. Present iff `hasHostedTool` is true; used to
   // restore upstream's echoed function tool (and `tool_choice`) back to
   // the hosted form on the synthesized envelope.
-  canonicalHostedTool: ResponsesTool | undefined;
+  canonicalHostedTool: ResponsesHostedTool | undefined;
 };
 
 // How a single upstream turn ended, as observed while consuming its
@@ -243,11 +243,10 @@ const rewriteHostedToolChoice = (
   toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | undefined => {
-  const choiceType = typeof toolChoice === 'object' && toolChoice !== null && typeof toolChoice.type === 'string' ? toolChoice.type : undefined;
-  if (choiceType === undefined) return toolChoice;
+  if (toolChoice === undefined || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
     if (!entry.hasHostedTool) continue;
-    if (entry.hosted?.hostedTypes.includes(choiceType) === true) return { type: 'function', name: entry.toolName };
+    if (entry.hosted?.hostedTypes.includes(toolChoice.type) === true) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
 };
@@ -262,11 +261,11 @@ const restoreEchoedToolChoice = (
   toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | undefined => {
-  if (typeof toolChoice !== 'object' || toolChoice === null || toolChoice?.type !== 'function') return toolChoice;
+  if (toolChoice === undefined || typeof toolChoice === 'string' || toolChoice.type !== 'function') return toolChoice;
   for (const entry of active) {
     if (entry.canonicalHostedTool === undefined) continue;
     if (toolChoice.name !== entry.toolName) continue;
-    return { type: entry.canonicalHostedTool.type as ResponsesHostedToolType };
+    return { type: entry.canonicalHostedTool.type };
   }
   return toolChoice;
 };
@@ -316,9 +315,9 @@ const rewriteToolsForHostedShim = (
   tools: readonly ResponsesTool[],
   hosted: ServerToolHostedDispatch,
   toolName: string,
-): { rewritten: ResponsesTool[]; canonicalHostedTool: ResponsesTool | undefined } => {
+): { rewritten: ResponsesTool[]; canonicalHostedTool: ResponsesHostedTool | undefined } => {
   const rewritten: ResponsesTool[] = [];
-  let canonicalHostedTool: ResponsesTool | undefined = undefined;
+  let canonicalHostedTool: ResponsesHostedTool | undefined = undefined;
   for (const raw of tools) {
     const canonical = hosted.canonicalize(raw);
     if (canonical !== undefined) {
@@ -983,7 +982,7 @@ export const withResponsesServerToolShim = (
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const hasHostedTool = prepared.hosted !== undefined && currentTools.some(t => prepared.hosted!.canonicalize(t) !== undefined);
-    let canonicalHostedTool: ResponsesTool | undefined = undefined;
+    let canonicalHostedTool: ResponsesHostedTool | undefined = undefined;
     if (hasHostedTool && prepared.hosted !== undefined) {
       const rewrite = rewriteToolsForHostedShim(currentTools, prepared.hosted, toolName);
       canonicalHostedTool = rewrite.canonicalHostedTool;

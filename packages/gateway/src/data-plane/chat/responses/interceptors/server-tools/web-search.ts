@@ -65,10 +65,10 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
 const buildShimFunctionTool = (
-  canonical: ResponsesTool,
+  canonical: ResponsesHostedTool,
   name: string,
 ): ResponsesFunctionTool => {
-  const userLocation = isHostedWebSearchTool(canonical) ? canonical.user_location : undefined;
+  const userLocation = canonical.user_location;
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -153,7 +153,7 @@ export const isHostedWebSearchTool = (tool: ResponsesTool): tool is ResponsesHos
 //   `return_token_budget` default `'default'` and
 //   `search_content_types` default `['text']` — observed verbatim in
 //   Copilot's `/responses` echo for `tools: [{type: 'web_search'}]`.
-export const canonicalizeWebSearchTool = (raw: ResponsesTool): ResponsesTool | undefined => {
+export const canonicalizeWebSearchTool = (raw: ResponsesTool): ResponsesHostedTool | undefined => {
   if (!isHostedWebSearchTool(raw)) return undefined;
   const canonical: ResponsesHostedTool = {
     type: raw.type,
