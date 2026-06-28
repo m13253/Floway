@@ -100,14 +100,17 @@ Inputs:
   unrestricted; empty list = no providers visible). The cap is the
   intersection of per-user and per-api-key allow-lists; unknown ids raise
   a configuration error rather than silently narrowing.
-- `inboundKind` — `chat` / `embedding` / `image` / `completion`,
-  determined by the inbound endpoint, not by the inbound payload.
+- `inboundKind` — `chat` / `embedding` / `image`, determined by the
+  inbound endpoint, not by the inbound payload. `/v1/completions` reuses
+  the `chat` kind and narrows further via its endpoint-key predicate
+  (`endpoints.completions !== undefined`).
 
 Steps:
 
 1. **List the visible providers** through `listModelProviders(upstreamIds)`
-   in configured `sort_order`. Empty list → throw a
-   "no upstream provider configured" error before any lookup.
+   in configured `sort_order`. An empty list yields zero candidates with
+   `sawModel: false`; the caller's failure renderer surfaces the resulting
+   `model-missing` 404 without a separate throw at this layer.
 2. **Enumerate interpretations** for the inbound id across the visible
    providers (Addressable Surfaces above). One inbound id expands into
    zero, one, or two interpretations per provider.
@@ -179,7 +182,10 @@ the attempt code:
 - `/v1/messages` generate: `messages` > `responses` > `chat-completions`.
 - `/v1/messages` countTokens: `messages` only.
 - `/v1/responses` generate: `responses` > `messages` > `chat-completions`.
-- `/v1/responses/compact`: `responses` only.
+- `/v1/responses/compact`: `responses` > `messages` > `chat-completions`.
+  Non-responses targets are reached through the responses-compact-shim
+  interceptor, which pivots the action and synthesizes the compact
+  envelope from a generate-shaped turn.
 - `/v1/chat/completions`: `chat-completions` > `messages` > `responses`.
 - `/v1beta/models/{m}:generateContent` and `:streamGenerateContent`:
   `chat-completions` > `messages` > `responses` (Gemini is always served
@@ -192,11 +198,11 @@ dispatches on for that candidate (native call or translation, as the
 TRANSLATION document specifies).
 
 A picker returning `null` means the candidate cannot serve the current
-operation. Attempt treats this exactly like an attempt-level failure —
-control falls to the next candidate in the planner's ordering. The same
-failover path handles upstream-side rejection of a candidate that the
-picker accepted; the only difference is that null-pick failover happens
-before any wire call.
+operation. `planChatCandidates` drops these candidates before they reach
+the planner, so the attempt loop sees only viable items. The same
+ordered list is what the planner reorders by routing affinity; per-
+attempt failover (upstream-side rejection of a candidate the picker
+accepted) reuses that same ordered list one step further down.
 
 Passthrough endpoints (`/v1/embeddings`, `/v1/images/*`, `/v1/completions`)
 follow the same rule with a single-key predicate
