@@ -67,7 +67,7 @@ describe('enumerateProviderCandidates', () => {
     assertEquals(sawModel, true);
   });
 
-  test('provider with binding yields a candidate regardless of endpoint shape', async () => {
+  test('provider yields a candidate regardless of endpoint shape', async () => {
     // Resolution is kind-aware and endpoint-blind: a chat-kind model with
     // only `chatCompletions` set is a candidate at this layer. Whether the
     // serve's preference table accepts it is the planner's job.
