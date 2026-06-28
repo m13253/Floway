@@ -276,6 +276,46 @@ test('enumerateProviderCandidates does not retry when the inbound id has no date
   );
 });
 
+test('enumerateProviderCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
+  // The dated suffix fallback is a SECOND attempt, gated on the first
+  // attempt finding nothing. When the upstream catalog already lists the
+  // dated id verbatim, the first attempt wins and the stripped form
+  // never enters the candidate list.
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(
+    buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://custom.example.com',
+        authStyle: 'bearer',
+        apiKey: 'sk-custom',
+        endpoints: { messages: {} },
+      },
+    }),
+  );
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({
+          object: 'list',
+          data: [
+            { id: 'claude-sonnet-4-5' },
+            { id: 'claude-sonnet-4-5-20251101' },
+          ],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'claude-sonnet-4-5-20251101', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      assertEquals(resolved.candidates.length, 1);
+      assertEquals(resolved.candidates[0]?.model.id, 'claude-sonnet-4-5-20251101');
+    },
+  );
+});
+
 test('resolveModelForProvider only loads the selected provider catalog', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
