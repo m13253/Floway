@@ -338,15 +338,9 @@ export const collectInterpretationOutcomes = async (
   return { resolutions, failedUpstreams };
 };
 
-// Inbound id forms ending in an 8-digit dated suffix (`-YYYYMMDD`) are a
-// compatibility shape: vendor clients sometimes pin to a release date even
-// though the gateway's merged catalog only carries the base id. When the
-// initial resolution finds no match for such an id, the resolver strips
-// the suffix and retries against the full provider list once. The retry
-// runs the same interpretation + outcome fan-out, so the stripped id is
-// exposed to every visible upstream in the same enumeration order as the
-// original attempt. Failed catalog fetches across the two attempts dedupe
-// into a single `failedUpstreams` list for the caller's renderer.
+// Eight-digit dated suffix on the inbound id — a vendor-pin shape some
+// clients use. When the first resolution misses, the resolver strips
+// the suffix and retries once. See RESOLUTION.md.
 const DATED_SUFFIX = /-\d{8}$/;
 
 export const resolveInterpretationsAcrossProviders = async (

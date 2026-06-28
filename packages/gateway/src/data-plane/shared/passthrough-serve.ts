@@ -97,22 +97,15 @@ interface PassthroughServeContext {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly sourceApi: PassthroughServeApiName;
-  // Already-validated public model id the client requested. The helper
-  // resolves it against the provider registry; if no upstream serves the
-  // id with the requested kind, the client sees a 404 with the standard
-  // wording.
+  // Already-validated public model id from the request body.
   readonly model: string;
-  // The model kind this endpoint serves. The resolver filters candidates
-  // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
-  // the "model exists but doesn't support this endpoint" 400.
+  // Model kind this endpoint serves; the resolver kind-filters before
+  // the per-binding endpoint check.
   readonly kind: ModelKind;
   readonly modelServesEndpoint: (model: UpstreamModel) => boolean;
-  // Performs the upstream HTTP call for the chosen (provider, model) pair.
-  // Any throw here is preserved and becomes a 502 with the internal-debug
-  // envelope — exceptions thrown from the actual fetch must not be silently
-  // swallowed. `opts` carries the per-call hooks the gateway threads in
-  // (the recordUpstreamLatency wrapper for the upstream_success metric);
-  // the callback forwards it verbatim to the chosen provider call method.
+  // Performs the upstream HTTP call. A throw becomes a 502 with the
+  // internal-debug envelope; `opts` carries the per-call hooks
+  // (recordUpstreamLatency, fetcher, waitUntil, headers).
   readonly call: (provider: ModelProviderInstance, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }
@@ -127,15 +120,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    // The shared resolver returns every candidate of the requested kind:
-    // unprefixed + prefixed addressable surfaces fan out across upstreams,
-    // a dated-suffix retry catches `-YYYYMMDD` ids the catalog only lists
-    // in base form, and the kind filter rejects models of the wrong
-    // family before they reach `modelServesEndpoint`. Iteration order
-    // follows configured sort_order across upstreams, with the unprefixed
-    // interpretation pushed before the prefixed one within a single
-    // upstream. The first candidate whose `modelServesEndpoint` is true
-    // wins.
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
@@ -145,10 +129,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
-      // `sawModel === false` means no upstream catalog knew the inbound id
-      // at all (404); `sawModel === true` with zero candidates means the
-      // id is known but every match was the wrong kind for this endpoint
-      // (400), which mirrors the per-candidate-endpoint-miss case below.
+      // sawModel=false: unknown id (404). sawModel=true: wrong kind (400).
       return sawModel
         ? passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400)
         : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
