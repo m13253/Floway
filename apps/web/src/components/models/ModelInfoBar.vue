@@ -72,6 +72,32 @@ const selectionLabel = computed<string | null>(() => {
   return `selection: ${a.selection}`;
 });
 
+// Provider badges this row renders. Real models advertise their own
+// `upstreams` bindings directly. Alias rows have an empty `upstreams`
+// list on the wire (the server intentionally lifts upstream info to
+// the targets) — compute the de-duped union of the caller-reachable
+// targets' bindings here so the alias surfaces the same provider-badge
+// shape every real-model row does. Each binding is further filtered
+// against the cap: a target may sit on three upstreams of which only
+// one is currently in cap; only the in-cap one is the provider the
+// resolver would actually route to.
+const effectiveUpstreams = computed<readonly { kind: ControlPlaneModel['upstreams'][number]['kind']; id: string; name: string }[]>(() => {
+  if (props.model.aliasedFrom === undefined) return props.model.upstreams;
+  if (props.catalog === undefined) return [];
+  const cap = props.cap ?? null;
+  const seen = new Set<string>();
+  const out: ControlPlaneModel['upstreams'] = [];
+  for (const target of reachableTargets(props.model, props.catalog, cap)) {
+    for (const binding of target.upstreams) {
+      if (cap !== null && !cap.includes(binding.id)) continue;
+      if (seen.has(binding.id)) continue;
+      seen.add(binding.id);
+      out.push(binding);
+    }
+  }
+  return out;
+});
+
 // Single-target aliases render one badge per rule; multi-target aliases
 // collapse to "<field>: varies" for any field whose values disagree across
 // targets. Each badge carries an explicit `field` key so the bucket walk
@@ -107,7 +133,7 @@ const ruleBadges = computed<{ label: string }[]>(() => {
         </div>
         <div class="flex flex-wrap gap-1.5 mt-2">
           <span
-            v-for="binding in model.upstreams"
+            v-for="binding in effectiveUpstreams"
             :key="binding.id"
             class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
             :class="providerBadgeClass(binding.kind)"
