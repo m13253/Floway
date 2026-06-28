@@ -99,12 +99,14 @@ export const OPTIONAL_FLAGS = [
   // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
   // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
   // subscription endpoint reads the placeholder block itself to attribute
-  // billing.
+  // billing. So strip it on every non-Anthropic upstream (it would only
+  // pollute their prompt-cache key) and keep it only on `claude-code`,
+  // where the same block is what bills the request against the user's plan.
   {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',
-    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for copilot/azure/custom — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for claude-code, where the same block is the input Anthropic uses to bill the request against the user's plan.",
-    defaultFor: ['copilot', 'azure', 'custom'],
+    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for every upstream kind except `claude-code` — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for `claude-code`, where the same block is the input Anthropic uses to bill the request against the user's plan.",
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => p !== 'claude-code'),
   },
 ] as const satisfies readonly Flag[];
 

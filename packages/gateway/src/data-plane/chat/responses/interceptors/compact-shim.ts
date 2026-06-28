@@ -118,7 +118,7 @@ const extractTextFromResult = (result: ResponsesResult): string => {
   return parts.join('');
 };
 
-const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult): ResponsesResult => {
+const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
   const summaryItem: ResponsesInputItem = {
     type: 'message',
     role: 'user',
@@ -146,7 +146,7 @@ const buildCompactionEnvelope = (summaryText: string, upstream: ResponsesResult)
     output: [
       {
         type: 'compaction',
-        id: `cmp_${crypto.randomUUID()}`,
+        id: cmpId,
         encrypted_content: encryptedContent,
       },
     ] as unknown as ResponsesResult['output'],
@@ -216,7 +216,16 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
 
   const collected = await collectResponsesProtocolEventsToResult(upstreamResult.events);
   const summaryText = extractTextFromResult(collected);
-  const synthesized = buildCompactionEnvelope(summaryText, collected);
+  // The minted compaction id is gateway-internal — the upstream never issued
+  // it. Register it as synthetic so `wrapResponsesOutputForStorage` stores
+  // the row with `upstreamId: null`, which keeps `classifyStoredResponsesAffinity`
+  // from treating a future echo of this compaction as a forcing reference that
+  // pins routing to whichever upstream happened to run the summarization turn.
+  // (For non-responses targets the targetApi check already suppresses
+  // ownership; this also covers the responses-target + flag-on engagement.)
+  const cmpId = `cmp_${crypto.randomUUID()}`;
+  ctx.store.addSyntheticItem(cmpId);
+  const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
   return {
     ...upstreamResult,
