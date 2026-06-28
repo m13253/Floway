@@ -14,7 +14,7 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 
 // Mock the candidates seam so each test hands the http entry exactly the
 // provider candidates it wants. Mirrors the pattern from serve_test.ts.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean ; readonly failedUpstreams: readonly string[] }[] = [];
 const seenModels: string[] = [];
 vi.mock('../../providers/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
@@ -34,7 +34,7 @@ const { responsesHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel , failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
