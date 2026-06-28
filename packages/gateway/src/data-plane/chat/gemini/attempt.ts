@@ -38,10 +38,10 @@ export const geminiAttempt = {
     const { payload, ctx, store, candidate, targetApi, headers } = args;
     const invocation: GeminiInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiInterceptors, async () => {
-      // Gemini has no native upstream target today — every targetApi we
-      // pick is reached via translation. The dispatch threads each branch
-      // through `traverseTranslation` so each inner attempt owns its own
-      // interceptor chain and rewrite.
+      // Gemini has no native upstream target today — every target we
+      // pick is reached via translation. The dispatch threads each
+      // branch through `traverseTranslation` so each inner attempt owns
+      // its own interceptor chain and rewrite.
       const transCtx = {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,

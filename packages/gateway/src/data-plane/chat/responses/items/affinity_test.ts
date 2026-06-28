@@ -15,9 +15,7 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 const API_KEY_ID = 'key_affinity_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ChatPlanItem => {
-  const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
-  });
+  const model = stubUpstreamModel();
   return {
     candidate: {
       provider: {
@@ -26,10 +24,10 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Cha
         name: upstream,
         disabledPublicModelIds: [],
         modelPrefix: null,
-        provider: modelProvider,
+        provider: stubProvider({ getProvidedModels: () => Promise.resolve([model]) }),
         supportsResponsesItemReference,
       },
-      model: stubUpstreamModel(),
+      model,
       fetcher: directFetcher,
     },
     targetApi: 'responses',
