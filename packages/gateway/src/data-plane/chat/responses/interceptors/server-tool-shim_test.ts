@@ -4610,7 +4610,7 @@ const consumeTurn = async (
 ): Promise<DrainResult> => {
   const records: DispatchRecord[] = [];
   return await drain(
-    consumeTurnStreaming(frames, state, isFirstTurn, new Map([[SHIM_TOOL_NAME, recordingDispatcher(records)]]), loopState()),
+    consumeTurnStreaming(frames, state, isFirstTurn, new Map([[SHIM_TOOL_NAME, recordingDispatcher(records)]]), loopState(), []),
     records,
   );
 };
@@ -4673,6 +4673,7 @@ test('consumeTurn throws when upstream response.created has no model field (no c
     true,
     new Map([[SHIM_TOOL_NAME, recordingDispatcher([])]]),
     loopState(),
+    [],
   );
   let thrown: unknown;
   try {
@@ -4866,6 +4867,7 @@ test('consumeTurn synthesizes response.failed when upstream terminates without c
       true,
       new Map([[SHIM_TOOL_NAME, recordingDispatcher(records)]]),
       loopState(),
+      [],
     ),
     records,
   );
@@ -5540,6 +5542,7 @@ test('consumeTurnStreaming yields forwarded frames before upstream completes', a
     true,
     new Map([[SHIM_TOOL_NAME, recordingDispatcher(records)]]),
     loopState(),
+    [],
   );
 
   const first = await iter.next();
@@ -5585,6 +5588,7 @@ test('dispatcher start frames yield IN-LINE at function_call.done (shim call slo
       true,
       new Map([[SHIM_TOOL_NAME, dispatcher]]),
       loopState(),
+      [],
     ),
     records,
   );
@@ -5627,6 +5631,7 @@ test('shim call output_index is reserved at output_item.added so interleaved ite
       true,
       new Map([[SHIM_TOOL_NAME, dispatcher]]),
       loopState(),
+      [],
     ),
     records,
   );

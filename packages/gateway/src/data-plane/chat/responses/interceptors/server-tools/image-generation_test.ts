@@ -209,7 +209,7 @@ test('prepareImageGenerationConfig decodes an inline mask once but rejects a fil
 // ── buildImageGenerationFunctionTool ──
 
 test('buildImageGenerationFunctionTool exposes only an optional prompt and is non-strict', () => {
-  const tool = buildImageGenerationFunctionTool(SHIM_TOOL_NAME);
+  const tool = buildImageGenerationFunctionTool({ type: 'image_generation' }, SHIM_TOOL_NAME);
   assertEquals(tool.type, 'function');
   assertEquals(tool.name, SHIM_TOOL_NAME);
   assertEquals(tool.strict, false);
