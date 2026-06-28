@@ -1,6 +1,6 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
-import { planMessagesRouting } from './routing.ts';
+import { narrowMessagesByItemAffinity } from './narrow.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
@@ -34,7 +34,7 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, store });
+    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
@@ -63,7 +63,7 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, store });
+    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream

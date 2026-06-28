@@ -27,7 +27,7 @@ export const throwChatServeFailure = (failure: ChatServeFailure): never => {
 export const tryCatchChatServeFailure = (error: unknown): ChatServeFailure | null =>
   error instanceof ChatServeFailureError ? error.failure : null;
 
-// Type guard for the routing planners' `T[] | ChatServeFailure` return
+// Type guard for the narrowing planners' `T[] | ChatServeFailure` return
 // shape. `Array.isArray` does narrow this union in most TS versions, but
 // not all — using a named predicate keeps the call sites readable and
 // independent of that quirk.

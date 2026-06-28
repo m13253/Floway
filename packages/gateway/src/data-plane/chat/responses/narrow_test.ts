@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createStoredResponsesItemId } from './items/format.ts';
 import { createNonResponsesSourceStore } from './items/store.ts';
-import { planResponsesRouting } from './routing.ts';
+import { narrowResponsesByItemAffinity } from './narrow.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
@@ -64,7 +64,7 @@ test('payload with no stored references passes candidates through unchanged', as
   await insertRows([]);
   const candidates = [candidate('up_a'), candidate('up_b')];
 
-  const decision = await planResponsesRouting({
+  const decision = await narrowResponsesByItemAffinity({
     payload: payload([{ type: 'message', role: 'user', content: 'hello' }]),
     candidates,
     store: createNonResponsesSourceStore(API_KEY_ID),
@@ -81,7 +81,7 @@ test('item_reference forcing an upstream absent from candidates fails routing', 
     storedRow({ id, itemType: 'compaction', upstreamId: 'up_a', upstreamItemId: 'raw_cmp_a' }),
   ]);
 
-  const decision = await planResponsesRouting({
+  const decision = await narrowResponsesByItemAffinity({
     payload: payload([{ type: 'item_reference', id }]),
     candidates: [candidate('up_b')],
     store: createNonResponsesSourceStore(API_KEY_ID),

@@ -1,6 +1,6 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
-import { planChatCompletionsRouting } from './routing.ts';
+import { narrowChatCompletionsByItemAffinity } from './narrow.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
@@ -27,7 +27,7 @@ export const chatCompletionsServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
-    const decision = await planChatCompletionsRouting({ payload, candidates: viable, store });
+    const decision = await narrowChatCompletionsByItemAffinity({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderChatCompletionsFailure(decision);
 
     // Any non-throwing attempt result — events, api-error, or

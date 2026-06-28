@@ -44,7 +44,7 @@ const rewriteItemForCandidate = (
   }
 
   // Owned reasoning is bound to the upstream that produced it; drop it when
-  // routing elsewhere.
+  // narrowing elsewhere.
   if (row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return null;
 
   if (row.upstreamId === candidate.provider.upstream && row.upstreamItemId) {

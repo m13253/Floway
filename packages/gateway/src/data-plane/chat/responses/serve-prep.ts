@@ -1,7 +1,7 @@
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
-import { planResponsesRouting } from './routing.ts';
+import { narrowResponsesByItemAffinity } from './narrow.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
@@ -63,7 +63,7 @@ export const expandPreviousResponseId = async (
 
 // Materializes the user-supplied input (string or array) into Responses items
 // and stages them so the snapshot picks them up alongside the prior history
-// and this turn's output. Mirrors the contract the routing/affinity walk
+// and this turn's output. Mirrors the contract the affinity walk
 // already honors via `loadInputItems` — staging is the write-side companion.
 const stageUserInputItems = async (input: ResponsesPayload['input'], store: StatefulResponsesStore): Promise<void> => {
   const items: ResponsesInputItem[] = typeof input === 'string'
@@ -79,7 +79,7 @@ export type ResponsesServePlan =
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
-// expand any `previous_response_id`, enumerate candidates, plan routing,
+// expand any `previous_response_id`, enumerate candidates, narrow by item affinity,
 // stage the user input, and pick the first candidate. Returns a rendered
 // failure result when no candidate is viable so the caller can surface it
 // directly without re-deriving the model-error branch.
@@ -98,12 +98,12 @@ export const prepareResponsesServePlan = async (args: {
     currentColo: ctx.currentColo,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
-  const decision = await planResponsesRouting({ payload: prepared, candidates: viable, store });
+  const decision = await narrowResponsesByItemAffinity({ payload: prepared, candidates: viable, store });
   if (isChatServeFailure(decision)) return { kind: 'failure', result: renderResponsesFailure(decision) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
   // up the new user items in addition to the prior snapshot history.
-  // Runs after routing so any `item_reference` in user-supplied input has
+  // Runs after narrowing so any `item_reference` in user-supplied input has
   // its target row loaded by the affinity walk.
   await stageUserInputItems(payload.input, store);
 
