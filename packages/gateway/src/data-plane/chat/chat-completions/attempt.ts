@@ -5,25 +5,21 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ChatTargetApi, type ExecuteResult } from '@floway-dev/provider';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { type ExecuteResult } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/chat/completions` prefers a native Chat Completions target, then the
 // translated Messages path, then the translated Responses path.
-export const pickChatCompletionsTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.chatCompletions ? 'chat-completions'
-    : endpoints.messages ? 'messages'
-      : endpoints.responses ? 'responses'
-        : null;
+export const chatCompletionsTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
 
 export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
@@ -36,8 +32,7 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, candidate, headers } = args;
-    const targetApi = pickChatCompletionsTarget(candidate.model.endpoints);
-    if (targetApi === null) throw new Error('chatCompletionsAttempt.generate: serve passed a candidate the picker rejects');
+    const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: ChatCompletionsInvocation = {

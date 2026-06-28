@@ -1,4 +1,4 @@
-import { messagesAttempt, pickMessagesGenerateTarget, pickMessagesCountTokensTarget } from './attempt.ts';
+import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
@@ -33,7 +33,7 @@ export const messagesServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => pickMessagesGenerateTarget(c.model.endpoints) !== null);
+    const viable = candidates.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await planMessagesRouting({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'generate');
 
@@ -62,7 +62,7 @@ export const messagesServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => pickMessagesCountTokensTarget(c.model.endpoints) !== null);
+    const viable = candidates.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await planMessagesRouting({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'countTokens');
 

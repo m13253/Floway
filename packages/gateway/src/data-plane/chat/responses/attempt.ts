@@ -10,13 +10,13 @@ import { recordPerformanceLatency, requireRecordedDurationMs } from '../../share
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
@@ -25,11 +25,7 @@ import { translateResponsesViaChatCompletions, translateResponsesViaMessages } f
 // `/v1/responses` (generate and compact share the same picker) prefers a
 // native Responses target, then the translated Messages path, then the
 // translated Chat Completions path.
-export const pickResponsesTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.responses ? 'responses'
-    : endpoints.messages ? 'messages'
-      : endpoints.chatCompletions ? 'chat-completions'
-        : null;
+export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
 
 export interface ResponsesAttemptInvokeArgs {
   readonly payload: ResponsesPayload;
@@ -80,8 +76,7 @@ export interface ResponsesAttemptInvokeArgs {
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, action, ctx, store, candidate, headers } = args;
-    const targetApi = pickResponsesTarget(candidate.model.endpoints);
-    if (targetApi === null) throw new Error('responsesAttempt.invoke: serve passed a candidate the picker rejects');
+    const targetApi = responsesTarget.pick(candidate.model.endpoints);
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
