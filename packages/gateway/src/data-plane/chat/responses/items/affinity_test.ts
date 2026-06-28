@@ -6,7 +6,8 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ChatPlanItem } from '../../shared/candidates.ts';
+import type { ProviderCandidate } from '../../shared/candidates.ts';
+import { isChatServeFailure } from '../../shared/errors.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
@@ -14,23 +15,20 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 
 const API_KEY_ID = 'key_affinity_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ChatPlanItem => {
+const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
   const model = stubUpstreamModel();
   return {
-    candidate: {
-      provider: {
-        upstream,
-        providerKind: 'custom',
-        name: upstream,
-        disabledPublicModelIds: [],
-        modelPrefix: null,
-        provider: stubProvider({ getProvidedModels: () => Promise.resolve([model]) }),
-        supportsResponsesItemReference,
-      },
-      model,
-      fetcher: directFetcher,
+    provider: {
+      upstream,
+      providerKind: 'custom',
+      name: upstream,
+      disabledPublicModelIds: [],
+      modelPrefix: null,
+      provider: stubProvider({ getProvidedModels: () => Promise.resolve([model]) }),
+      supportsResponsesItemReference,
     },
-    targetApi: 'responses',
+    model,
+    fetcher: directFetcher,
   };
 };
 
@@ -65,7 +63,7 @@ const storedRow = (
 
 const classifyItems = async (
   sourceItems: readonly ResponsesInputItem[],
-  candidates: readonly ChatPlanItem[],
+  candidates: readonly ProviderCandidate[],
 ) => {
   const store = createNonResponsesSourceStore(API_KEY_ID);
   return await classifyResponsesItemAffinity({
@@ -86,11 +84,9 @@ test('missing stored item_reference returns item-not-found failure', async () =>
 
   const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') {
-    assertEquals(result.failure.kind, 'item-not-found');
-    if (result.failure.kind === 'item-not-found') assertEquals(result.failure.itemId, id);
-  }
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'item-not-found');
+  if (result.kind === 'item-not-found') assertEquals(result.itemId, id);
 });
 
 test('invalid stored item_reference ids are not looked up as stored rows', async () => {
@@ -101,8 +97,8 @@ test('invalid stored item_reference ids are not looked up as stored rows', async
 
   const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'item-not-found');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'item-not-found');
 });
 
 test('metadata-only item_reference without upstream affinity rejects instead of routing', async () => {
@@ -113,8 +109,8 @@ test('metadata-only item_reference without upstream affinity rejects instead of 
 
   const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'item-not-found');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'item-not-found');
 });
 
 test('metadata-only item_reference with upstream affinity but no upstream item id rejects as not found', async () => {
@@ -125,8 +121,8 @@ test('metadata-only item_reference with upstream affinity but no upstream item i
 
   const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'item-not-found');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'item-not-found');
 });
 
 test('empty references pass through all candidates unchanged', async () => {
@@ -134,8 +130,8 @@ test('empty references pass through all candidates unchanged', async () => {
 
   const result = await classifyItems([], [candidate('up_a'), candidate('up_b')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('non-affinity items (no id, no encrypted_content) pass through candidates unchanged', async () => {
@@ -144,8 +140,8 @@ test('non-affinity items (no id, no encrypted_content) pass through candidates u
 
   const result = await classifyItems(items, [candidate('up_a'), candidate('up_b')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('duplicate stored ids dedupe preferred upstreams by last occurrence', async () => {
@@ -163,8 +159,8 @@ test('duplicate stored ids dedupe preferred upstreams by last occurrence', async
   ], [candidate('up_b'), candidate('up_a')]);
 
   // up_a appears last so it should be sorted first; up_b second
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('mixed portable upstreams are ordered by reverse last occurrence before remaining candidates', async () => {
@@ -180,8 +176,8 @@ test('mixed portable upstreams are ordered by reverse last occurrence before rem
     { type: 'reasoning', id: second, summary: [{ type: 'summary_text', text: 'second' }] },
   ], [candidate('up_c'), candidate('up_a'), candidate('up_b')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_b', 'up_a', 'up_c']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_b', 'up_a', 'up_c']);
 });
 
 test('conflicting compaction forcing upstreams reject the request', async () => {
@@ -197,8 +193,8 @@ test('conflicting compaction forcing upstreams reject the request', async () => 
     { type: 'compaction', id: second },
   ] as ResponsesInputItem[], [candidate('up_a'), candidate('up_b')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'routing-unavailable');
 });
 
 test('row item type must match source item type', async () => {
@@ -211,8 +207,8 @@ test('row item type must match source item type', async () => {
     { type: 'message', id: reasoningId, role: 'assistant', content: 'visible message' },
   ] as ResponsesInputItem[], [candidate('up_a')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'routing-unavailable');
 });
 
 test('metadata-only item_reference rejects when the origin upstream does not support item_reference', async () => {
@@ -223,11 +219,9 @@ test('metadata-only item_reference rejects when the origin upstream does not sup
 
   const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a', false)]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') {
-    assertEquals(result.failure.kind, 'item-not-found');
-    if (result.failure.kind === 'item-not-found') assertEquals(result.failure.itemId, id);
-  }
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'item-not-found');
+  if (result.kind === 'item-not-found') assertEquals(result.itemId, id);
 });
 
 test('forcing upstream with no matching candidate rejects as routing-unavailable', async () => {
@@ -240,8 +234,8 @@ test('forcing upstream with no matching candidate rejects as routing-unavailable
     { type: 'compaction', id } as ResponsesInputItem,
   ], [candidate('up_b')]);
 
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
+  if (!isChatServeFailure(result)) throw new Error('expected failure');
+  assertEquals(result.kind, 'routing-unavailable');
 });
 
 test('id-less reasoning is matched by encrypted_content hash and prefers its owning upstream', async () => {
@@ -254,8 +248,8 @@ test('id-less reasoning is matched by encrypted_content hash and prefers its own
   const items = [{ type: 'reasoning', summary: [], encrypted_content: enc }] as unknown as ResponsesInputItem[];
   const result = await classifyItems(items, [candidate('up_b'), candidate('up_a')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('id-less encrypted_content duplicate hash keeps the freshest stored row for affinity', async () => {
@@ -269,8 +263,8 @@ test('id-less encrypted_content duplicate hash keeps the freshest stored row for
   const items = [{ type: 'reasoning', summary: [], encrypted_content: enc }] as unknown as ResponsesInputItem[];
   const result = await classifyItems(items, [candidate('up_old'), candidate('up_new')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_new', 'up_old']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_new', 'up_old']);
 });
 
 test('id-less compaction is matched by encrypted_content hash and forces its owning upstream', async () => {
@@ -283,12 +277,12 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
   const items = [{ type: 'compaction', encrypted_content: enc }] as unknown as ResponsesInputItem[];
 
   const resultWithOwner = await classifyItems(items, [candidate('up_b'), candidate('up_a')]);
-  assertEquals(resultWithOwner.kind, 'success');
-  if (resultWithOwner.kind === 'success') assertEquals(resultWithOwner.candidates.map(c => c.candidate.provider.upstream), ['up_a']);
+  if (isChatServeFailure(resultWithOwner)) throw new Error(`expected success, got failure: ${resultWithOwner.kind}`);
+  assertEquals(resultWithOwner.map(c => c.provider.upstream), ['up_a']);
 
   const resultWithoutOwner = await classifyItems(items, [candidate('up_b')]);
-  assertEquals(resultWithoutOwner.kind, 'failure');
-  if (resultWithoutOwner.kind === 'failure') assertEquals(resultWithoutOwner.failure.kind, 'routing-unavailable');
+  if (!isChatServeFailure(resultWithoutOwner)) throw new Error('expected failure');
+  assertEquals(resultWithoutOwner.kind, 'routing-unavailable');
 });
 
 test('id-less encrypted_content with no stored match is a benign passthrough with all candidates', async () => {
@@ -297,6 +291,6 @@ test('id-less encrypted_content with no stored match is a benign passthrough wit
 
   const result = await classifyItems(items, [candidate('up_a'), candidate('up_b')]);
 
-  assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
+  if (isChatServeFailure(result)) throw new Error(`expected success, got failure: ${result.kind}`);
+  assertEquals(result.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });

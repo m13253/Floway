@@ -13,18 +13,30 @@ import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ChatTargetApi, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+
+// `/v1/messages` generate prefers a native Messages target, then the
+// translated Responses path, then the translated Chat Completions path.
+export const pickMessagesGenerateTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
+  endpoints.messages ? 'messages'
+    : endpoints.responses ? 'responses'
+      : endpoints.chatCompletions ? 'chat-completions'
+        : null;
+
+// `count_tokens` has no translation path — only a native Messages target
+// satisfies the operation.
+export const pickMessagesCountTokensTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
+  endpoints.messages ? 'messages' : null;
 
 export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
@@ -33,21 +45,17 @@ export interface MessagesAttemptCountTokensArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
-  readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, targetApi, headers } = args;
+    const { payload, ctx, store, candidate, headers } = args;
+    const targetApi = pickMessagesGenerateTarget(candidate.model.endpoints);
+    if (targetApi === null) throw new Error('messagesAttempt.generate: serve passed a candidate the picker rejects');
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
-    const invocation: MessagesInvocation = {
-      payload: rewritten.payload,
-      candidate,
-      targetApi,
-      headers,
-    };
+    const invocation: MessagesInvocation = { payload: rewritten.payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
@@ -58,14 +66,14 @@ export const messagesAttempt = {
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, 'messages', ctx, recorder);
       }
       if (targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, targetApi, headers: invocation.headers,
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -74,7 +82,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaChatCompletions(p, { model: candidate.model.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, targetApi, headers: invocation.headers,
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -83,22 +91,16 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, targetApi, headers } = args;
-    if (targetApi !== 'messages') {
-      throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${targetApi}'`);
-    }
+    const { payload, ctx, store, candidate, headers } = args;
+    const targetApi = pickMessagesCountTokensTarget(candidate.model.endpoints);
+    if (targetApi === null) throw new Error('messagesAttempt.countTokens: serve passed a candidate the picker rejects');
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) {
       // count_tokens has no streaming envelope; surface the rewrite-time
       // failure as a synthetic PlainResult carrying the same body.
       return { type: 'plain', status: rewritten.failure.status, headers: rewritten.failure.headers, body: rewritten.failure.body };
     }
-    const invocation: MessagesInvocation = {
-      payload: rewritten.payload,
-      candidate,
-      targetApi,
-      headers,
-    };
+    const invocation: MessagesInvocation = { payload: rewritten.payload, candidate, targetApi, headers };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;

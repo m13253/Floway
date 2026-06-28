@@ -6,32 +6,30 @@ import { planResponsesRouting } from './routing.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ChatPlanItem } from '../shared/candidates.ts';
+import type { ProviderCandidate } from '../shared/candidates.ts';
+import { isChatServeFailure } from '../shared/errors.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_routing_test';
 
-const candidate = (upstream: string): ChatPlanItem => {
+const candidate = (upstream: string): ProviderCandidate => {
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
-    candidate: {
-      provider: {
-        upstream,
-        providerKind: 'custom',
-        name: upstream,
-        disabledPublicModelIds: [],
-        modelPrefix: null,
-        provider: modelProvider,
-        supportsResponsesItemReference: true,
-      },
-      model: stubUpstreamModel(),
-      fetcher: directFetcher,
+    provider: {
+      upstream,
+      providerKind: 'custom',
+      name: upstream,
+      disabledPublicModelIds: [],
+      modelPrefix: null,
+      provider: modelProvider,
+      supportsResponsesItemReference: true,
     },
-    targetApi: 'responses',
+    model: stubUpstreamModel(),
+    fetcher: directFetcher,
   };
 };
 
@@ -72,11 +70,9 @@ test('payload with no stored references passes candidates through unchanged', as
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(decision.kind, 'success');
-  if (decision.kind === 'success') {
-    assertEquals(decision.candidates.length, candidates.length);
-    assertEquals(decision.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
-  }
+  if (isChatServeFailure(decision)) throw new Error(`expected success, got failure: ${decision.kind}`);
+  assertEquals(decision.length, candidates.length);
+  assertEquals(decision.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('item_reference forcing an upstream absent from candidates fails routing', async () => {
@@ -91,8 +87,6 @@ test('item_reference forcing an upstream absent from candidates fails routing', 
     store: createNonResponsesSourceStore(API_KEY_ID),
   });
 
-  assertEquals(decision.kind, 'failure');
-  if (decision.kind === 'failure') {
-    assertEquals(decision.failure.kind, 'routing-unavailable');
-  }
+  if (!isChatServeFailure(decision)) throw new Error('expected failure');
+  assertEquals(decision.kind, 'routing-unavailable');
 });
