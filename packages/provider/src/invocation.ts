@@ -8,17 +8,9 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 
-// One (provider, model) pair the resolver matched against an inbound id,
-// plus the per-request `Fetcher` minted for the provider's upstream. The
-// pair is the smallest unit the dispatch layer needs to make a wire call:
-// `provider.provider.callXxx(model, body, ...)`. Every field the dispatch
-// layer needs (upstream id, upstream name, provider kind, capability
-// flags, model id, providerData, endpoints) is read directly off
-// `provider.*` and `model.*`.
-//
-// Resolution narrows by `model.kind` only — choosing the inbound target
-// protocol from `model.endpoints` is the attempt layer's job, not part of
-// the candidate.
+// One (provider, model) pair the resolver matched, plus the per-request
+// `Fetcher` for the provider's upstream. The smallest unit dispatch
+// needs to make a wire call.
 export interface ProviderCandidate {
   readonly provider: ModelProviderInstance;
   readonly model: UpstreamModel;
@@ -27,11 +19,9 @@ export interface ProviderCandidate {
 
 // Per-protocol invocation shape passed to interceptors. Carries the
 // source-shape request body (mutable, so the body can be cleaned), the
-// candidate the attempt is dispatching against, the chat target protocol
-// the attempt picked for this candidate, and a mutable `Headers` instance
-// carried into the boundary chain — so workarounds that only need to set
-// or drop a header stay at the owning interceptor boundary instead of
-// widening the provider call signature.
+// candidate the attempt is dispatching against, the chat target
+// protocol the attempt picked, and a mutable `Headers` bag interceptors
+// use to set or drop wire headers.
 export interface MessagesInvocation {
   payload: MessagesPayload;
   readonly candidate: ProviderCandidate;
