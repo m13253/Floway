@@ -46,7 +46,6 @@ export interface ModelProviderInstance {
   modelPrefix: ModelPrefixConfig | null;
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
-  resolveRequestedModelId?(modelId: string): string | undefined;
 }
 
 export interface ProviderCallResult {
