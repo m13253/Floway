@@ -414,6 +414,12 @@ export interface ResponsesResult {
   error: { message: string; code: string; type?: string } | null;
   // https://developers.openai.com/api/reference/resources/responses/methods/create
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
+  // Request params echoed back on the response body. The `Response`
+  // schema in OpenAI's openapi.yaml composes `ResponseProperties`, which
+  // declares both fields; observed upstream echoes (Copilot, Azure)
+  // confirm they're populated with server-enriched defaults.
+  tools?: ResponsesTool[];
+  tool_choice?: ResponsesToolChoice;
   usage?: {
     input_tokens: number;
     output_tokens: number;
