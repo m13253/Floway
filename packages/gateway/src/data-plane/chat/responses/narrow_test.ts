@@ -38,7 +38,7 @@ const candidate = (upstream: string): ProviderCandidate => {
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider: modelProvider,
+      instance: modelProvider,
       supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel(),

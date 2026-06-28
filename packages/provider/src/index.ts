@@ -43,8 +43,8 @@ export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } fro
 
 export type {
   CatalogModel,
-  ModelProvider,
-  ModelProviderInstance,
+  ProviderInstance,
+  Provider,
   ProviderCallResult,
   ProviderResponsesResult,
   ProviderStreamResult,

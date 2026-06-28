@@ -24,7 +24,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider: stubProvider({ getProvidedModels: () => Promise.resolve([model]) }),
+      instance: stubProvider({ getProvidedModels: () => Promise.resolve([model]) }),
       supportsResponsesItemReference,
     },
     model,

@@ -228,7 +228,7 @@ const dispatchResponses = async (
       // provider can decide for itself (every provider's streaming call
       // forces stream=true anyway).
       const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      const providerResult = await candidate.provider.provider.callResponses(
+      const providerResult = await candidate.provider.instance.callResponses(
         candidate.model,
         body,
         invocation.action,
@@ -238,7 +238,7 @@ const dispatchResponses = async (
       return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
     }
     const { model: _model, ...body } = invocation.payload;
-    const providerResult = await candidate.provider.provider.callResponses(
+    const providerResult = await candidate.provider.instance.callResponses(
       candidate.model,
       body,
       invocation.action,

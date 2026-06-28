@@ -4,7 +4,7 @@ import { enumerateProviderCandidates } from './candidates.ts';
 import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, enumerateModelInterpretations, getModels, listModelProviders, resolveModelForProvider } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
-import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
+import { directFetcher, type Provider } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
@@ -642,13 +642,13 @@ test('enumerateProviderCandidates: healthy upstream still resolves alongside a r
   );
 });
 
-const fakeProvider = (over: Partial<ModelProviderInstance>): ModelProviderInstance => ({
+const fakeProvider = (over: Partial<Provider>): Provider => ({
   upstream: 'u',
   providerKind: 'custom',
   name: 'fake',
   disabledPublicModelIds: [],
   modelPrefix: null,
-  provider: stubProvider(),
+  instance: stubProvider(),
   supportsResponsesItemReference: false,
   ...over,
 });
@@ -666,7 +666,7 @@ describe('enumerateModelInterpretations', () => {
 
   // Project each interpretation to (upstream, lookupId) for a compact
   // structural assertion.
-  const shape = (out: readonly { provider: ModelProviderInstance; lookupId: string }[]) =>
+  const shape = (out: readonly { provider: Provider; lookupId: string }[]) =>
     out.map(({ provider, lookupId }) => ({ upstream: provider.upstream, lookupId }));
 
   test('bare-id request enumerates only upstreams that accept the bare form', () => {

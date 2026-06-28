@@ -2,7 +2,7 @@ import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { CatalogModel, Fetcher, ModelProviderInstance, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { CatalogModel, Fetcher, Provider, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -15,7 +15,7 @@ interface ProviderModelsResult {
   // Reverse index: every upstream instance that emitted an entry under the
   // given public id, in enumeration order. The control-plane catalog
   // endpoint reads this to render `upstreams: [{kind, id, name}]` per row.
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>;
+  upstreamsByPublicId: Map<string, Provider[]>;
   sawSuccess: boolean;
   lastError: unknown;
   // Upstream names whose catalog fetch rejected this round, in the same
@@ -26,7 +26,7 @@ interface ProviderModelsResult {
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
 
-type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
+type ProviderFactory = (record: UpstreamRecord) => Provider | Promise<Provider>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
@@ -37,7 +37,7 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   ollama: createOllamaProvider,
 };
 
-export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
+export const createProviderInstance = (record: UpstreamRecord): Provider | Promise<Provider> =>
   providerFactories[record.kind](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
@@ -46,7 +46,7 @@ export const createProviderInstance = (record: UpstreamRecord): ModelProviderIns
 // leak. Pass `null` to deliberately request every enabled upstream.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
-): Promise<ModelProviderInstance[]> => {
+): Promise<Provider[]> => {
   const upstreams = await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   const knownIds = new Set<string>();
@@ -73,7 +73,7 @@ export const listModelProviders = async (
     selection = [...enabledById.values()];
   }
 
-  const providers: ModelProviderInstance[] = [];
+  const providers: Provider[] = [];
   for (const upstream of selection) {
     const factory = providerFactories[upstream.kind];
     providers.push(await factory(upstream));
@@ -108,8 +108,8 @@ const catalogFromUpstreamModel = (upstreamModel: UpstreamModel): CatalogModel =>
 // upstream chips without re-walking the catalog.
 const mergeIntoCatalog = (
   byId: Map<string, CatalogModel>,
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>,
-  instance: ModelProviderInstance,
+  upstreamsByPublicId: Map<string, Provider[]>,
+  instance: Provider,
   surfacedModel: UpstreamModel,
   publicId: string,
 ): void => {
@@ -129,12 +129,12 @@ const mergeIntoCatalog = (
 };
 
 const collectProviderModels = async (
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, CatalogModel>();
-  const upstreamsByPublicId = new Map<string, ModelProviderInstance[]>();
+  const upstreamsByPublicId = new Map<string, Provider[]>();
   let sawSuccess = false;
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
@@ -144,7 +144,7 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: ModelProviderInstance) =>
+  const fetchOne = (instance: Provider) =>
     fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstream),
@@ -246,7 +246,7 @@ export const getModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ models: CatalogModel[]; upstreamsByPublicId: Map<string, ModelProviderInstance[]> }> => {
+): Promise<{ models: CatalogModel[]; upstreamsByPublicId: Map<string, Provider[]> }> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
@@ -267,11 +267,11 @@ export const getModels = async (
 export interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
-  provider: ModelProviderInstance;
+  provider: Provider;
 }
 
 export interface ModelInterpretation {
-  provider: ModelProviderInstance;
+  provider: Provider;
   // The bare id to query the upstream's catalog with. Equals the inbound
   // model id for the unprefixed surface; equals `inbound.slice(prefix.length)`
   // for the prefixed surface.
@@ -285,7 +285,7 @@ export interface ModelInterpretation {
 // The unprefixed interpretation is always pushed first when both apply.
 export const enumerateModelInterpretations = (
   modelId: string,
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
 ): ModelInterpretation[] => {
   const out: ModelInterpretation[] = [];
   for (const provider of providers) {
@@ -345,7 +345,7 @@ const DATED_SUFFIX = /-\d{8}$/;
 
 export const resolveInterpretationsAcrossProviders = async (
   modelId: string,
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
@@ -372,7 +372,7 @@ export const resolveInterpretationsAcrossProviders = async (
 };
 
 export const resolveModelForProvider = async (
-  instance: ModelProviderInstance,
+  instance: Provider,
   modelId: string,
   fetcher: Fetcher,
   scheduler: BackgroundScheduler,

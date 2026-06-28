@@ -34,7 +34,7 @@ const candidate = (upstream: string): ProviderCandidate => {
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider: modelProvider,
+      disabledPublicModelIds: [], modelPrefix: null, instance: modelProvider,
       supportsResponsesItemReference: true,
     },
     model: upstreamModel,

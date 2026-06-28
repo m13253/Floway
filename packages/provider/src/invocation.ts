@@ -1,6 +1,6 @@
 import type { UpstreamModel } from './model.ts';
 import type { Fetcher } from './options.ts';
-import type { ModelProviderInstance, ResponsesAction } from './provider.ts';
+import type { Provider, ResponsesAction } from './provider.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -12,7 +12,7 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // `Fetcher` for the provider's upstream. The smallest unit dispatch
 // needs to make a wire call.
 export interface ProviderCandidate {
-  readonly provider: ModelProviderInstance;
+  readonly provider: Provider;
   readonly model: UpstreamModel;
   readonly fetcher: Fetcher;
 }

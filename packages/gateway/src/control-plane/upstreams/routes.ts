@@ -396,7 +396,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
     // the auto rows without re-deriving endpoints from capabilities.
     assertOllamaUpstreamRecord(record);
     const instance = createOllamaProvider(record);
-    const models = await instance.provider.getProvidedModels(directFetcher);
+    const models = await instance.instance.getProvidedModels(directFetcher);
     const data = models.map(model => {
       const upstreamModelId = model.providerData as string;
       const config: Record<string, unknown> = {

@@ -34,7 +34,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
     provider: {
       upstream: 'test-upstream', providerKind: 'custom', name: 'test',
       disabledPublicModelIds: [], modelPrefix: null,
-      provider: {} as never, supportsResponsesItemReference: false,
+      instance: {} as never, supportsResponsesItemReference: false,
     },
     model: {
       id: 'm', limits: {}, kind: 'chat',

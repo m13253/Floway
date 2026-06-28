@@ -66,7 +66,7 @@ const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<Response
       name: 'up_test',
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider,
+      instance: provider,
       supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel(),
@@ -375,7 +375,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_test', providerKind: 'custom', name: 'up_test',
-      disabledPublicModelIds: [], modelPrefix: null, provider: messagesProvider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider, supportsResponsesItemReference: true,
     },
     model: upstreamModel,
     fetcher: directFetcher,

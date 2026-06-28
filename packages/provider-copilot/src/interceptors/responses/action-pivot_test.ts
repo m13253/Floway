@@ -65,7 +65,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
   clearInProcessCopilotTokenCache();
 
   const instance = await createCopilotProvider(upstream);
-  const provider = instance.provider;
+  const provider = instance.instance;
 
   let responsesBody: Record<string, unknown> | undefined;
   await withMockedFetch(

@@ -18,7 +18,7 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   modelKey,
-  cost: candidate.provider.provider.getPricingForModelKey(modelKey),
+  cost: candidate.provider.instance.getPricingForModelKey(modelKey),
 });
 
 // Per-call UpstreamCallOptions for the chosen candidate; see

@@ -27,7 +27,7 @@ import { enumerateProviderCandidates } from '../providers/candidates.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { ModelProviderInstance, ProviderCallResult, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
+import type { Provider, ProviderCallResult, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -106,7 +106,7 @@ interface PassthroughServeContext {
   // Performs the upstream HTTP call. A throw becomes a 502 with the
   // internal-debug envelope; `opts` carries the per-call hooks
   // (recordUpstreamLatency, fetcher, waitUntil, headers).
-  readonly call: (provider: ModelProviderInstance, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  readonly call: (provider: Provider, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }
 
@@ -152,7 +152,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         model: candidate.model.id,
         upstream: candidate.provider.upstream,
         modelKey,
-        cost: candidate.provider.provider.getPricingForModelKey(modelKey),
+        cost: candidate.provider.instance.getPricingForModelKey(modelKey),
       };
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,

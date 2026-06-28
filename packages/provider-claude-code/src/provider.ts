@@ -12,19 +12,19 @@ import {
   defaultsForProvider,
   getProviderRepo,
   resolveEffectiveFlags,
-  type ModelProvider,
-  type ModelProviderInstance,
+  type ProviderInstance,
+  type Provider,
   type ProviderStreamResult,
   type UpstreamRecord,
 } from '@floway-dev/provider';
 
-export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
+export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<Provider> => {
   assertClaudeCodeUpstreamRecord(record);
   assertClaudeCodeUpstreamState(record.state);
 
   const enabledFlags = resolveEffectiveFlags(defaultsForProvider('claude-code'), [record.flagOverrides]);
 
-  const provider: ModelProvider = {
+  const provider: ProviderInstance = {
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`
@@ -104,7 +104,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
-    provider,
+    instance: provider,
     supportsResponsesItemReference: false,
   };
 };

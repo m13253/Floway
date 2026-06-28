@@ -50,7 +50,7 @@ Catalog assembly returns two artefacts together:
 - `models: CatalogModel[]` — public-id-keyed metadata (`InternalModel`
   fields plus the merged `endpoints`). `toPublicModel` projects each row
   onto the wire DTO at `/v1/models` and `/models`.
-- `upstreamsByPublicId: Map<string, ModelProviderInstance[]>` — every
+- `upstreamsByPublicId: Map<string, Provider[]>` — every
   upstream instance that emitted an entry under the given public id, in
   enumeration order. Resolution reads this to know which upstreams can
   serve a given inbound id without re-walking the catalog.
@@ -154,7 +154,7 @@ and `providerData`), and the dispatch layer reads from there.
 
 ```ts
 interface ProviderCandidate {
-  readonly provider: ModelProviderInstance;
+  readonly provider: Provider;
   readonly model: UpstreamModel;
   readonly fetcher: Fetcher;
 }

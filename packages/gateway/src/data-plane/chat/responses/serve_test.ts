@@ -104,7 +104,7 @@ const makeCandidate = (overrides: {
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider,
+      instance: provider,
       supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel(),
@@ -418,7 +418,7 @@ test('generate falls through translate-out to messages target', async () => {
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_m', providerKind: 'custom', name: 'up_m',
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel({ endpoints: { messages: {} } }),
     fetcher: directFetcher,
@@ -466,7 +466,7 @@ test('generate falls through translate-out to chat-completions target', async ()
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_c', providerKind: 'custom', name: 'up_c',
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
     fetcher: directFetcher,

@@ -109,7 +109,7 @@ const callChatCompletionsAsExecuteResult = async (
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
-  const providerResult = await candidate.provider.provider.callChatCompletions(
+  const providerResult = await candidate.provider.instance.callChatCompletions(
     candidate.model,
     body,
     ctx.abortSignal,

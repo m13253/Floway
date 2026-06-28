@@ -53,7 +53,7 @@ export const messagesAttempt = {
       if (targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
         const recorder = createUpstreamLatencyRecorder();
-        const providerResult = await candidate.provider.provider.callMessages(
+        const providerResult = await candidate.provider.instance.callMessages(
           candidate.model,
           body,
           ctx.abortSignal,
@@ -97,7 +97,7 @@ export const messagesAttempt = {
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
-      const { response } = await candidate.provider.provider.callMessagesCountTokens(
+      const { response } = await candidate.provider.instance.callMessagesCountTokens(
         candidate.model,
         body,
         ctx.abortSignal,

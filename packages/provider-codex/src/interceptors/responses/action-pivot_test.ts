@@ -86,11 +86,11 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
     throw new Error(`unexpected fetch ${url}`);
   });
 
-  const instance = await createCodexProvider(baseRecord);
+  const provider = await createCodexProvider(baseRecord);
   // Generate-shaped body — carries tools, reasoning, temperature, etc. None
   // of these are allowed on /responses/compact. The pivot above flips action
   // to 'compact'; the terminal must narrow the body before sending upstream.
-  const result = await instance.provider.callResponses(
+  const result = await provider.instance.callResponses(
     { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],

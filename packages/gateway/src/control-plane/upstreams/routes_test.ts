@@ -1789,7 +1789,7 @@ test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a se
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as {
-        id: string; provider: string;
+        id: string; kind: string;
         config: { accounts: Array<{ email: string | null; accountUuid: string }> };
         state: { accounts: Array<{ tokenKind: string; refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> };
       };
