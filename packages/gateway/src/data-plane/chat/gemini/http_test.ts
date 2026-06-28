@@ -12,7 +12,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean ; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../providers/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
@@ -30,7 +30,7 @@ const { geminiHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_gemini_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel , failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
