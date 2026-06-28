@@ -1,12 +1,13 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
-import { narrowChatCompletionsByItemAffinity } from './narrow.ts';
 import { enumerateModelCandidates } from '../../providers/candidates.ts';
+import { classifyResponsesItemAffinity } from '../items/affinity.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
+import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface ChatCompletionsServeGenerateArgs {
   readonly payload: ChatCompletionsPayload;
@@ -25,7 +26,12 @@ export const chatCompletionsServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
-    const decision = await narrowChatCompletionsByItemAffinity({ payload, candidates: viable, ctx });
+    const decision = await classifyResponsesItemAffinity({
+      sourceItems: payload.messages,
+      view: chatCompletionsViaResponsesItemsView,
+      store: ctx.store,
+      candidates: viable,
+    });
     if (isChatServeFailure(decision)) return renderChatCompletionsFailure(decision);
 
     // Any non-throwing attempt result — events, api-error, or

@@ -1,12 +1,13 @@
 import { geminiAttempt, geminiGenerateTarget, geminiCountTokensTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
-import { narrowGeminiByItemAffinity } from './narrow.ts';
 import { enumerateModelCandidates } from '../../providers/candidates.ts';
+import { classifyResponsesItemAffinity } from '../items/affinity.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
+import { geminiViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface GeminiServeGenerateArgs {
   readonly payload: GeminiPayload;
@@ -36,7 +37,12 @@ export const geminiServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
-    const decision = await narrowGeminiByItemAffinity({ payload, candidates: viable, ctx });
+    const decision = await classifyResponsesItemAffinity({
+      sourceItems: payload.contents ?? [],
+      view: geminiViaResponsesItemsView,
+      store: ctx.store,
+      candidates: viable,
+    });
     if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
@@ -65,7 +71,12 @@ export const geminiServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await narrowGeminiByItemAffinity({ payload, candidates: viable, ctx });
+    const decision = await classifyResponsesItemAffinity({
+      sourceItems: payload.contents ?? [],
+      view: geminiViaResponsesItemsView,
+      store: ctx.store,
+      candidates: viable,
+    });
     if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
