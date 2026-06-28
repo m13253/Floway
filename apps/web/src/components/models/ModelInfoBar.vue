@@ -28,29 +28,46 @@ const formatTokenLimit = (n: number) => {
   return n.toString();
 };
 
-// Truncate to the first three with a "+N more" tail to keep the badge
-// readable for aliases that fan out to a long fallback chain.
-const aliasOfLabel = computed<string | null>(() => {
+// Shape used by the alias-of badge AND the selection badge to read the
+// caller-cap-aware reachable subset. `null` when the row is not an alias
+// or no catalog was supplied — both badges then go dormant.
+const aliasReach = computed<{ total: number; reachable: number; sole: ControlPlaneModel | null } | null>(() => {
   const a = props.model.aliasedFrom;
   if (!a) return null;
-  const ids = a.targets.map(t => t.target_model_id);
-  if (ids.length <= 3) return `alias of: ${ids.join(', ')}`;
-  return `alias of: ${ids.slice(0, 3).join(', ')} +${ids.length - 3} more`;
+  if (props.catalog === undefined) {
+    // No catalog → "everything configured is reachable" (the row was
+    // rendered in isolation, no cap context to apply).
+    return { total: a.targets.length, reachable: a.targets.length, sole: null };
+  }
+  const reachable = reachableTargets(props.model, props.catalog, props.cap ?? null);
+  return {
+    total: a.targets.length,
+    reachable: reachable.length,
+    sole: reachable.length === 1 ? reachable[0] : null,
+  };
 });
 
-// For an alias row in the playground: how many configured targets
-// resolve to a real model the caller can route to under the current
-// effective cap. Only renders when the consumer supplied `catalog`
-// and `cap` props — the Models page tile (no cap context) hides this
-// badge entirely. `cap === null` means "no restriction" and the badge
-// renders as N/N. Targets pointing at ids the catalog cannot resolve
-// (typo, removed model) count as unreachable, mirroring the data-plane
-// resolver.
-const reachableTargetSummary = computed<string | null>(() => {
+// `alias of: <id>` when only one reachable target is also a visible
+// catalog row (admin or non-admin under a narrow cap viewing a single-
+// target alias);
+// `alias of: N models` when every configured target is reachable;
+// `alias of: K / N models` when some are out of cap.
+const aliasOfLabel = computed<string | null>(() => {
+  const r = aliasReach.value;
+  if (r === null) return null;
+  if (r.sole !== null) return `alias of: ${r.sole.display_name ?? r.sole.id}`;
+  if (r.reachable === r.total) return `alias of: ${r.total} model${r.total === 1 ? '' : 's'}`;
+  return `alias of: ${r.reachable} / ${r.total} models`;
+});
+
+// Single-target chip is enough — drop the parallel `selection: random`
+// label, which only matters for multi-target aliases where the resolver
+// genuinely picks between candidates.
+const selectionLabel = computed<string | null>(() => {
   const a = props.model.aliasedFrom;
-  if (!a || props.catalog === undefined) return null;
-  const reachable = reachableTargets(props.model, props.catalog, props.cap ?? null);
-  return `${reachable.length} / ${a.targets.length} target${a.targets.length === 1 ? '' : 's'} reachable`;
+  if (!a) return null;
+  if (aliasReach.value?.sole !== null) return null;
+  return `selection: ${a.selection}`;
 });
 
 // Single-target aliases render one badge per rule; multi-target aliases
@@ -104,8 +121,7 @@ const ruleBadges = computed<{ label: string }[]>(() => {
             output: {{ formatTokenLimit(model.limits.max_output_tokens) }}
           </span>
           <span v-if="aliasOfLabel" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ aliasOfLabel }}</span>
-          <span v-if="reachableTargetSummary" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ reachableTargetSummary }}</span>
-          <span v-if="model.aliasedFrom" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">selection: {{ model.aliasedFrom.selection }}</span>
+          <span v-if="selectionLabel" class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-white/15 text-gray-400">{{ selectionLabel }}</span>
           <span
             v-for="badge in ruleBadges"
             :key="badge.label"
