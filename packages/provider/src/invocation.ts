@@ -12,9 +12,9 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // plus the per-request `Fetcher` minted for the provider's upstream. The
 // pair is the smallest unit the dispatch layer needs to make a wire call:
 // `provider.provider.callXxx(model, body, ...)`. Every field the dispatch
-// layer used to read off a wrapping `binding` (upstream id, upstream name,
-// provider kind, capability flags, model id, providerData, endpoints) is
-// now read directly off `provider.*` and `model.*`.
+// layer needs (upstream id, upstream name, provider kind, capability
+// flags, model id, providerData, endpoints) is read directly off
+// `provider.*` and `model.*`.
 //
 // Resolution narrows by `model.kind` only — choosing the inbound target
 // protocol from `model.endpoints` is the attempt layer's job, not part of

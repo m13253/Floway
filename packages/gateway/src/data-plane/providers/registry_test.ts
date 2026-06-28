@@ -173,7 +173,7 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       const model = models.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
-      // The merged endpoint surface is the OR of both upstreams' bindings.
+      // The merged endpoint surface is the OR of both upstreams' endpoint maps.
       assertEquals(model?.endpoints, { messages: {}, chatCompletions: {} });
       assertEquals(model?.kind, 'chat');
       // `providerData` (the per-provider wire id carrier) belongs to the
@@ -238,8 +238,8 @@ test('enumerateProviderCandidates strips an -YYYYMMDD suffix when nothing matche
 
       // No upstream's catalog literally lists `claude-opus-4-7-20300101`,
       // so the resolver retries against the stripped `claude-opus-4-7`,
-      // which both upstreams expose. Both bindings end up in the match
-      // list in configured `sort_order`.
+      // which both upstreams expose. Both candidates end up in the
+      // result list in configured `sort_order`.
       assertEquals(resolved.candidates.map(m => m.provider.upstream).sort(), ['up_copilot', 'up_custom'].sort());
       assertEquals(resolved.candidates.map(m => m.model.id), ['claude-opus-4-7', 'claude-opus-4-7']);
     },
