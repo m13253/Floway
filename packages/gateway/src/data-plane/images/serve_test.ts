@@ -78,8 +78,9 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
   clearInProcessCopilotTokenCache();
 
   // Chat-only custom upstream. Its /models response advertises gpt-4o
-  // (which the id heuristic leaves as the chat fallback), so the model exists
-  // in the registry but no binding accepts an /images/generations request.
+  // (which the id heuristic leaves as the chat fallback), so the inbound
+  // id resolves but the kind filter rejects every candidate for the
+  // /images/generations endpoint — `sawModel=true` + no candidates → 400.
   await repo.upstreams.save(buildCustomUpstreamRecord({
     id: 'up_chat_only',
     name: 'Chat Only Provider',
