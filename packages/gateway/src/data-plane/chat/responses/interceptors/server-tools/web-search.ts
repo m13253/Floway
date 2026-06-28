@@ -263,16 +263,12 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
   return null;
 };
 
-// Validate every hosted web_search entry and return the filters the
-// shim will act on. The framework silently dedupes hosted entries to
-// the first one (mirroring upstream Copilot), so filter extraction
-// follows the same rule: first hosted block's filters win. Validation
-// still runs across every hosted entry, so a malformed later block
-// rejects the request rather than slipping through behind the chosen
-// first one. Name-collision resolution and the hosted-tool → shim's
-// function-tool replacement are the framework's responsibility
-// (`resolveServerToolName` / `rewriteToolsForHostedShim`); this
-// function only reads the hosted entries.
+// First hosted block's filters win, matching the framework's
+// dedupe-to-first rule for hosted entries. Validation still runs
+// across every hosted entry so a malformed later block rejects the
+// request rather than slipping through behind the chosen first one.
+// Name-collision resolution and the hosted-tool → function-tool
+// replacement are the framework's responsibility.
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {

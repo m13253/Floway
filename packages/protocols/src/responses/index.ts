@@ -416,11 +416,8 @@ export interface ResponsesResult {
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   // Request params echoed back on the response body. The `Response`
   // schema in OpenAI's openapi.yaml composes `ResponseProperties`, which
-  // declares `tools` and `tool_choice`; observed upstream echoes
-  // (Copilot, Azure) confirm both fields are populated with
-  // server-enriched defaults. Surfaced here so consumers that need to
-  // round-trip or rewrite the echo (e.g. server-tool shim) can type
-  // their reads cleanly.
+  // declares both fields; observed upstream echoes (Copilot, Azure)
+  // confirm they're populated with server-enriched defaults.
   tools?: ResponsesTool[];
   tool_choice?: ResponsesToolChoice;
   usage?: {

@@ -97,21 +97,13 @@ export type ServerToolDispatcher = (args: {
   loopState: ServerToolLoopState;
 }) => ServerToolResultSlot[];
 
-// The members of a hosted interception move together: to run the ReAct
-// loop we must recognize and canonicalize the hosted tool, replace it
-// with a callable function tool the upstream model can invoke, and
-// execute the model's calls. Grouping them makes a partial declaration
-// a compile error instead of a registration that silently never
-// dispatches.
-//
-// `canonicalize` is the sole boundary between raw client input and the
-// rest of the shim: it both detects (returns `undefined` when the raw
-// tool isn't this registration's) and fills upstream-spec defaults so
-// every downstream caller (`buildFunctionTool`, dispatcher input, echo
-// restore output) only ever sees canonical form. `hostedTypes` is the
-// static list of raw `type` discriminants this registration claims;
-// used only for the `tool_choice: {type}` rewrite path where no full
-// tool object is available to canonicalize.
+// Grouped together so a partial declaration is a compile error rather
+// than a registration that silently never dispatches. `canonicalize` is
+// the sole raw→canonical boundary: every downstream caller
+// (`buildFunctionTool`, dispatcher input, echo restore) only ever sees
+// canonical form. `hostedTypes` exists only for the
+// `tool_choice: { type }` rewrite path, where no full tool object is
+// available to canonicalize.
 export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
   canonicalize: (raw: ResponsesTool) => ResponsesHostedTool | undefined;
@@ -144,10 +136,8 @@ export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCt
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
   hasHostedTool: boolean;
-  // The canonical form of this registration's hosted tool, captured at
-  // request rewrite. Present iff `hasHostedTool` is true; used to
-  // restore upstream's echoed function tool (and `tool_choice`) back to
-  // the hosted form on the synthesized envelope.
+  // Present iff `hasHostedTool` is true; drives echo restore on the
+  // synthesized envelope's `tools` and `tool_choice`.
   canonicalHostedTool: ResponsesHostedTool | undefined;
 };
 
@@ -245,8 +235,8 @@ const rewriteHostedToolChoice = (
 ): ResponsesToolChoice | undefined => {
   if (toolChoice === undefined || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
-    if (!entry.hasHostedTool) continue;
-    if (entry.hosted?.hostedTypes.includes(toolChoice.type) === true) return { type: 'function', name: entry.toolName };
+    if (!entry.hasHostedTool || entry.hosted === undefined) continue;
+    if (entry.hosted.hostedTypes.includes(toolChoice.type)) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
 };
@@ -270,17 +260,15 @@ const restoreEchoedToolChoice = (
   return toolChoice;
 };
 
-// Inverse of the request-side hosted→function rewrite. Each tool in the
-// upstream-echoed array is checked against active shims: function tools
-// whose name matches an injected one are replaced with that shim's
-// canonical hosted entry, restoring the client-visible shape. Every
-// other tool passes through verbatim, preserving upstream-side default
-// enrichment on the client's ordinary function tools.
+// Inverse of the request-side hosted→function rewrite, applied to the
+// upstream-echoed tools array. Non-injected entries pass through
+// verbatim so upstream-side default enrichment on ordinary client
+// function tools survives.
 const restoreEchoedTools = (
-  tools: readonly ResponsesTool[] | null | undefined,
+  tools: readonly ResponsesTool[] | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesTool[] | undefined => {
-  if (!Array.isArray(tools)) return undefined;
+  if (tools === undefined) return undefined;
   return tools.map(tool => {
     if (tool.type !== 'function') return tool;
     for (const entry of active) {
@@ -303,13 +291,10 @@ export const resolveServerToolName = (baseName: string, tools: readonly Response
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
-// Canonicalize every raw tool through the registration; the first
-// canonicalized hit is kept (silently deduping subsequent same-type
-// hosted entries, matching upstream Copilot's observed behavior — two
-// `{type:'web_search'}` entries collapse to one expanded echo) and
-// replaced in-place by the function tool the upstream model will
-// invoke. Non-claimed tools pass through unchanged. The returned
-// canonical entry feeds the echo-restore step and the dispatcher's
+// First canonicalized hit wins; subsequent same-type hosted entries
+// are silently deduped, matching upstream Copilot's observed behavior
+// (two `{type:'web_search'}` entries collapse into one expanded echo).
+// The returned canonical entry feeds echo-restore and the dispatcher's
 // hosted-tool view.
 const rewriteToolsForHostedShim = (
   tools: readonly ResponsesTool[],
@@ -981,10 +966,11 @@ export const withResponsesServerToolShim = (
     if (prepared.type === 'invalid-request') return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code);
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
-    const hasHostedTool = prepared.hosted !== undefined && currentTools.some(t => prepared.hosted!.canonicalize(t) !== undefined);
+    const { hosted } = prepared;
+    const hasHostedTool = hosted !== undefined && currentTools.some(t => hosted.canonicalize(t) !== undefined);
     let canonicalHostedTool: ResponsesHostedTool | undefined = undefined;
-    if (hasHostedTool && prepared.hosted !== undefined) {
-      const rewrite = rewriteToolsForHostedShim(currentTools, prepared.hosted, toolName);
+    if (hasHostedTool && hosted !== undefined) {
+      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
       canonicalHostedTool = rewrite.canonicalHostedTool;
       ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
     }
