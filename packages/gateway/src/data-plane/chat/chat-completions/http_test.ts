@@ -12,8 +12,8 @@ import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } fr
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/candidates.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async () => {

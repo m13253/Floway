@@ -16,8 +16,8 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // provider candidates it wants. Mirrors the pattern from serve_test.ts.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
 const seenModels: string[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/candidates.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async (args: { model: string }) => {

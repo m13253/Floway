@@ -1,8 +1,9 @@
 import { chatCompletionsAttempt } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
+import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates, planChatCandidates } from '../shared/candidates.ts';
+import { planChatCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -27,6 +28,7 @@ export const chatCompletionsServe = {
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });

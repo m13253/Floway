@@ -22,8 +22,8 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
 const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+vi.mock('../../providers/candidates.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
     ...original,
     enumerateProviderCandidates: vi.fn(async () => {

@@ -59,6 +59,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/embeddings',
     model: request.model,
+    kind: 'embedding',
     modelServesEndpoint: model => model.endpoints.embeddings !== undefined,
     call: async (provider, model, opts) => {
       const { model: _model, ...body } = request.body;

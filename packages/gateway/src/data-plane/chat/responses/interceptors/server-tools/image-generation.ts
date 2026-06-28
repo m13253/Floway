@@ -1,6 +1,5 @@
-import { createPerRequestFetcher } from '../../../../../dial/per-request.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
-import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { enumerateProviderCandidates } from '../../../../providers/candidates.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
@@ -530,17 +529,22 @@ const serverError = (e: unknown): ImageError => ({
 const resolveImageBinding = async (
   isEdit: boolean,
   state: ShimState,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-): Promise<{ ok: true; provider: ModelProviderInstance; model: UpstreamModel } | { ok: false; error: ImageError }> => {
+): Promise<{ ok: true; provider: ModelProviderInstance; model: UpstreamModel; fetcher: Fetcher } | { ok: false; error: ImageError }> => {
   const endpointKey = isEdit ? 'imagesEdits' : 'imagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await resolveModelForRequest(state.config.model, state.upstreamIds, fetcherForUpstream, state.backgroundScheduler);
+    resolution = await enumerateProviderCandidates({
+      upstreamIds: state.upstreamIds,
+      model: state.config.model,
+      kind: 'image',
+      scheduler: state.backgroundScheduler,
+      currentColo: state.currentColo,
+    });
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
-  const match = resolution.matches.find(m => m.model.endpoints[endpointKey] !== undefined);
+  const match = resolution.candidates.find(c => c.model.endpoints[endpointKey] !== undefined);
   if (match === undefined) {
     return {
       ok: false,
@@ -552,7 +556,7 @@ const resolveImageBinding = async (
       },
     };
   }
-  return { ok: true, provider: match.provider, model: match.model };
+  return { ok: true, provider: match.provider, model: match.model, fetcher: match.fetcher };
 };
 
 // 60s cap matches the per-minute refill window of Azure TPM/RPM and
@@ -760,11 +764,9 @@ const streamImageGeneration = (
   sources: readonly ImageSource[],
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
-  const fetcherForUpstream = await createPerRequestFetcher(state.currentColo);
-  const resolved = await resolveImageBinding(isEdit, state, fetcherForUpstream);
+  const resolved = await resolveImageBinding(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const { provider, model } = resolved;
-  const fetcher = fetcherForUpstream(provider.upstream);
+  const { provider, model, fetcher } = resolved;
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
