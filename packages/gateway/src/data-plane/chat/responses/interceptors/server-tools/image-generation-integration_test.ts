@@ -40,7 +40,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
     disabledPublicModelIds: [],
     modelPrefix: null,
     supportsResponsesItemReference: false,
-    provider: {
+    instance: {
       getPricingForModelKey: () => null,
       callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
         stub.generationsCalls.push(body);
@@ -135,7 +135,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
     provider: {
       upstream: 'test-upstream', providerKind: 'custom', name: 'test',
       disabledPublicModelIds: [], modelPrefix: null,
-      provider: {} as never, supportsResponsesItemReference: false,
+      instance: {} as never, supportsResponsesItemReference: false,
     },
     model: {
       id: 'm', limits: {}, kind: 'chat',
@@ -176,7 +176,7 @@ beforeEach(async () => {
   // "unknown upstream id: u".
   await repo.upstreams.save({
     id: 'u',
-    provider: 'custom',
+    kind: 'custom',
     name: 'mock-image',
     enabled: true,
     sortOrder: 0,

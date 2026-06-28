@@ -8,14 +8,14 @@ import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_rewrite_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
+const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
@@ -26,7 +26,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider: modelProvider,
+      instance: modelProvider,
       supportsResponsesItemReference,
     },
     model: stubUpstreamModel(),
@@ -74,7 +74,7 @@ const makePayload = (input: ResponsesInputItem[]): ResponsesPayload => ({
 
 const rewrite = async (
   input: ResponsesInputItem[],
-  cand: ProviderCandidate,
+  cand: ModelCandidate,
 ): Promise<ResponsesInputItem[]> => {
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });

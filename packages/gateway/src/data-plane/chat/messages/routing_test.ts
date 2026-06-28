@@ -7,7 +7,7 @@ import { createStoredResponsesItemId } from '../responses/items/format.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
 
@@ -25,7 +25,7 @@ const makeCtx = (): ChatGatewayCtx => ({
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
-const candidateFor = (upstream: string): ProviderCandidate => {
+const candidateFor = (upstream: string): ModelCandidate => {
   const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([upstreamModel]),
@@ -33,7 +33,7 @@ const candidateFor = (upstream: string): ProviderCandidate => {
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider: modelProvider,
+      disabledPublicModelIds: [], modelPrefix: null, instance: modelProvider,
       supportsResponsesItemReference: true,
     },
     model: upstreamModel,
