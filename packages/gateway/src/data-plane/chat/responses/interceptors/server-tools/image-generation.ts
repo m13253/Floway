@@ -1,5 +1,5 @@
 import { sleep } from '../../../../../shared/sleep.ts';
-import { enumerateProviderCandidates } from '../../../../providers/candidates.ts';
+import { enumerateModelCandidates } from '../../../../providers/candidates.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
@@ -534,7 +534,7 @@ const resolveImageCandidate = async (
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
   try {
-    resolution = await enumerateProviderCandidates({
+    resolution = await enumerateModelCandidates({
       upstreamIds: state.upstreamIds,
       model: state.config.model,
       kind: 'image',

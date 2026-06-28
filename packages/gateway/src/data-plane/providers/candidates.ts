@@ -2,15 +2,15 @@ import { listModelProviders, resolveInterpretationsAcrossProviders } from './reg
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 
-export type { ProviderCandidate };
+export type { ModelCandidate };
 
 // Per-request model resolution. See RESOLUTION.md for the pipeline
 // spec; this function is its single entry point for every data-plane
 // endpoint. `sawModel=true` with empty `candidates` distinguishes
 // "right id, wrong kind" (400) from "unknown id" (404, sawModel=false).
-export const enumerateProviderCandidates = async ({
+export const enumerateModelCandidates = async ({
   upstreamIds, model, kind, scheduler, currentColo,
 }: {
   // null = unrestricted; empty list = no providers visible.
@@ -20,7 +20,7 @@ export const enumerateProviderCandidates = async ({
   scheduler: BackgroundScheduler;
   currentColo: string;
 }): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
@@ -28,7 +28,7 @@ export const enumerateProviderCandidates = async ({
   const providers = await listModelProviders(upstreamIds);
   const { resolutions, failedUpstreams } = await resolveInterpretationsAcrossProviders(model, providers, fetcherForUpstream, scheduler);
 
-  const candidates: ProviderCandidate[] = [];
+  const candidates: ModelCandidate[] = [];
   let sawModel = false;
   for (const resolved of resolutions) {
     sawModel = true;

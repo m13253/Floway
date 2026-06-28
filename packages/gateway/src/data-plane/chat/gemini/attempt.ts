@@ -5,7 +5,7 @@ import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupport
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ModelCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -25,14 +25,14 @@ export const geminiCountTokensTarget = chatTargetPicker(['messages']);
 export interface GeminiAttemptGenerateArgs {
   readonly payload: GeminiPayload;
   readonly ctx: ChatGatewayCtx;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
 export interface GeminiAttemptCountTokensArgs {
   readonly payload: GeminiPayload;
   readonly ctx: ChatGatewayCtx;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 

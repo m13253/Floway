@@ -30,7 +30,7 @@ interface BackendStub {
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [] }));
 
 vi.mock('../../../../providers/candidates.ts', () => ({
-  enumerateProviderCandidates: vi.fn(async () => ({
+  enumerateModelCandidates: vi.fn(async () => ({
     candidates: [{
       provider: {
         upstream: 'u',

@@ -3,7 +3,7 @@ export type {
   GeminiInvocation,
   ChatTargetApi,
   MessagesInvocation,
-  ProviderCandidate,
+  ModelCandidate,
   ResponsesInvocation,
 } from './invocation.ts';
 

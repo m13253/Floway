@@ -5,7 +5,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
 import { createStoredResponsesItemId } from '../items/format.ts';
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ModelCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -14,19 +14,19 @@ import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@f
 import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-// `enumerateProviderCandidates` is the only seam between serve and the
+// `enumerateModelCandidates` is the only seam between serve and the
 // provider registry — mocking it directly keeps the serve tests narrow
 // (no fake fetch, no repo upstream rows for provider catalogs) and lets
 // each test hand the serve exactly the candidates it wants to exercise.
 // `sawModel` defaults to true when at least one candidate was queued; the
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../providers/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
       return next;
@@ -39,7 +39,7 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 
 const API_KEY_ID = 'key_serve_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
+const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
   candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
@@ -92,7 +92,7 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 const makeCandidate = (overrides: {
   upstream?: string;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callResponses: overrides.callResponses,
@@ -415,7 +415,7 @@ test('generate falls through translate-out to messages target', async () => {
     headers: new Headers(),
   }));
   const provider = stubProvider({ callMessages });
-  const candidate: ProviderCandidate = {
+  const candidate: ModelCandidate = {
     provider: {
       upstream: 'up_m', providerKind: 'custom', name: 'up_m',
       disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
@@ -463,7 +463,7 @@ test('generate falls through translate-out to chat-completions target', async ()
     headers: new Headers(),
   }));
   const provider = stubProvider({ callChatCompletions });
-  const candidate: ProviderCandidate = {
+  const candidate: ModelCandidate = {
     provider: {
       upstream: 'up_c', providerKind: 'custom', name: 'up_c',
       disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,

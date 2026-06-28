@@ -1,7 +1,7 @@
 import { geminiAttempt, geminiGenerateTarget, geminiCountTokensTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { narrowGeminiByItemAffinity } from './narrow.ts';
-import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import { enumerateModelCandidates } from '../../providers/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -28,7 +28,7 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
@@ -57,7 +57,7 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',

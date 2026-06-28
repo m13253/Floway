@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
-import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import { enumerateModelCandidates } from '../../providers/candidates.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -34,13 +34,13 @@ const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoi
   modelPrefix: null,
 });
 
-describe('enumerateProviderCandidates', () => {
+describe('enumerateModelCandidates', () => {
   test('single provider with a matching binding yields one candidate', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_a', 10, ['test-model'], { messages: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -62,7 +62,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -80,7 +80,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_a', 10, ['other-model'], { messages: {} }));
 
-    const { candidates, sawModel } = await enumerateProviderCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -99,7 +99,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_second', 20, ['other-model'], { messages: {} }));
     await repo.upstreams.save(azureUpstream('up_third', 30, ['test-model'], { messages: {} }));
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -119,7 +119,7 @@ describe('enumerateProviderCandidates', () => {
     await repo.upstreams.save(azureUpstream('up_b', 20, ['test-model'], { messages: {} }));
     await repo.upstreams.save(azureUpstream('up_c', 30, ['test-model'], { messages: {} }));
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await enumerateModelCandidates({
       upstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
       kind: 'chat',
@@ -141,7 +141,7 @@ describe('enumerateProviderCandidates', () => {
       enabled: false,
     });
 
-    const { candidates } = await enumerateProviderCandidates({
+    const { candidates } = await enumerateModelCandidates({
       upstreamIds: null,
       model: 'test-model',
       kind: 'chat',
@@ -178,7 +178,7 @@ describe('enumerateProviderCandidates', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+        const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
           upstreamIds: null,
           model: 'test-model',
           kind: 'chat',
@@ -221,7 +221,7 @@ describe('enumerateProviderCandidates', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+        const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
           upstreamIds: null,
           model: 'test-model',
           kind: 'chat',

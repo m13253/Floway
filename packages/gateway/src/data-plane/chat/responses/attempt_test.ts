@@ -7,7 +7,7 @@ import type { StoredResponsesItem } from '../../../repo/types.ts';
 import { createStoredResponsesItemId, isStoredResponseId } from '../items/format.ts';
 import * as outputModule from '../items/output.ts';
 import { createResponsesHttpStore, createNonResponsesSourceStore } from '../items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ModelCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -57,7 +57,7 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ProviderCandidate => {
+const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ModelCandidate => {
   const provider = stubProvider({ callResponses });
   return {
     provider: {
@@ -372,7 +372,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
       };
     },
   });
-  const candidate: ProviderCandidate = {
+  const candidate: ModelCandidate = {
     provider: {
       upstream: 'up_test', providerKind: 'custom', name: 'up_test',
       disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider, supportsResponsesItemReference: true,

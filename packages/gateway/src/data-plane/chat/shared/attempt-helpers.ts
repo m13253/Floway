@@ -1,4 +1,4 @@
-import type { ProviderCandidate } from './candidates.ts';
+import type { ModelCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { requireRecordedDurationMs, type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
@@ -14,7 +14,7 @@ import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResu
 // (`or/gpt-4o` or `gpt-4o`). Usage and performance aggregates therefore key on
 // the canonical upstream id, and a dashboard slice over `model` rolls up both
 // surfaces of the same upstream model under one row.
-export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: string): TelemetryModelIdentity => ({
+export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: string): TelemetryModelIdentity => ({
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   modelKey,
@@ -25,7 +25,7 @@ export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: s
 // UpstreamCallOptions in `@floway-dev/provider` for the contract on each
 // field, especially header ownership.
 export const buildUpstreamCallOptions = (
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   ctx: GatewayCtx,
   recordUpstreamLatency: UpstreamCallOptions['recordUpstreamLatency'],
   headers: Headers,
@@ -49,7 +49,7 @@ export const buildUpstreamCallOptions = (
 // — and so doesn't consult the recorder.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: GatewayCtx,
   recorder: UpstreamLatencyRecorder,

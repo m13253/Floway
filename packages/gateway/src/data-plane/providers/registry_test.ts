@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { enumerateProviderCandidates } from './candidates.ts';
+import { enumerateModelCandidates } from './candidates.ts';
 import { clearInFlightForTesting } from './models-cache.ts';
-import { compareModelIds, enumerateModelInterpretations, getModels, listModelProviders, resolveModelForProvider } from './registry.ts';
+import { compareModelIds, enumerateModelInterpretations, getModels, listModelProviders, findModelInProvider } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type Provider } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
@@ -183,7 +183,7 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       // enumeration order — copilot first, then custom.
       assertEquals(upstreamsByPublicId.get('shared-model')?.map(p => p.upstream), ['up_copilot', 'up_custom']);
 
-      const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstream), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.candidates[0]?.model.endpoints, { messages: {} });
@@ -192,7 +192,7 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
   );
 });
 
-test('enumerateProviderCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
+test('enumerateModelCandidates strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 
   await repo.upstreams.save(
@@ -234,7 +234,7 @@ test('enumerateProviderCandidates strips an -YYYYMMDD suffix when nothing matche
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'claude-opus-4-7-20300101', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-20300101', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
 
       // No upstream's catalog literally lists `claude-opus-4-7-20300101`,
       // so the resolver retries against the stripped `claude-opus-4-7`,
@@ -246,7 +246,7 @@ test('enumerateProviderCandidates strips an -YYYYMMDD suffix when nothing matche
   );
 });
 
-test('enumerateProviderCandidates does not retry when the inbound id has no dated suffix', async () => {
+test('enumerateModelCandidates does not retry when the inbound id has no dated suffix', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(
@@ -270,13 +270,13 @@ test('enumerateProviderCandidates does not retry when the inbound id has no date
     },
     async () => {
       // Plain typo / unknown id — no dated suffix, no retry.
-      const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'claude-opus-4-7-unknown', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-opus-4-7-unknown', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolved.candidates.length, 0);
     },
   );
 });
 
-test('enumerateProviderCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
+test('enumerateModelCandidates prefers the literal dated id over the stripped base when the catalog lists both', async () => {
   // The dated suffix fallback is a SECOND attempt, gated on the first
   // attempt finding nothing. When the upstream catalog already lists the
   // dated id verbatim, the first attempt wins and the stripped form
@@ -309,14 +309,14 @@ test('enumerateProviderCandidates prefers the literal dated id over the stripped
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'claude-sonnet-4-5-20251101', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-sonnet-4-5-20251101', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolved.candidates.length, 1);
       assertEquals(resolved.candidates[0]?.model.id, 'claude-sonnet-4-5-20251101');
     },
   );
 });
 
-test('resolveModelForProvider only loads the selected provider catalog', async () => {
+test('findModelInProvider only loads the selected provider catalog', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -348,7 +348,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher, testScheduler);
+      const resolved = await findModelInProvider(providers[0], 'target-model', directFetcher, testScheduler);
 
       assertEquals(resolved?.model.id, 'target-model');
       assertEquals(resolved?.provider.upstream, 'up_first');
@@ -428,19 +428,19 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
-  assertEquals((await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-solo', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' })).candidates.length, 0);
-  assertEquals((await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-override', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' })).candidates.length, 0);
+  assertEquals((await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-solo', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' })).candidates.length, 0);
+  assertEquals((await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-override', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' })).candidates.length, 0);
 
   // The shared id survives because up_b allows it; only up_b binds it.
-  const shared = await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-shared', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+  const shared = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-shared', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
   assertEquals(shared.candidates.map(m => m.provider.upstream), ['up_b']);
 
   // The untouched model still routes from up_a.
-  const keep = await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-keep', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+  const keep = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-keep', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
   assertEquals(keep.candidates.map(m => m.provider.upstream), ['up_a']);
 });
 
-test('resolveModelForProvider rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
+test('findModelInProvider rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
@@ -467,8 +467,8 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
   });
 
   const [provider] = await listModelProviders(null);
-  assertEquals(await resolveModelForProvider(provider, 'enabled-model', directFetcher, testScheduler).then(r => r?.id), 'enabled-model');
-  assertEquals(await resolveModelForProvider(provider, 'disabled-model', directFetcher, testScheduler).then(r => r?.id), undefined);
+  assertEquals(await findModelInProvider(provider, 'enabled-model', directFetcher, testScheduler).then(r => r?.id), 'enabled-model');
+  assertEquals(await findModelInProvider(provider, 'disabled-model', directFetcher, testScheduler).then(r => r?.id), undefined);
 });
 
 test('listModelProviders silently drops disabled upstreams from a whitelist', async () => {
@@ -596,7 +596,7 @@ test('getModels: a rejected provider does not block other providers', async () =
 // site asking for a model belonging to one of the *healthy* upstreams must
 // still resolve. The broken upstream's display name flows back via
 // `failedUpstreams` so the eventual error renderer can mention it.
-test('enumerateProviderCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
+test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -626,7 +626,7 @@ test('enumerateProviderCandidates: healthy upstream still resolves alongside a r
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateProviderCandidates({ upstreamIds: null, model: 'ok-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, model: 'ok-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolvedExisting.candidates.map(m => m.provider.upstream), ['up_ok']);
       assertEquals(resolvedExisting.candidates[0]?.model.id, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
@@ -635,7 +635,7 @@ test('enumerateProviderCandidates: healthy upstream still resolves alongside a r
       // upstream's catalog error — the caller's failure renderer is the right
       // place to surface that, parenthetically, alongside the model-missing
       // body.
-      const resolvedMissing = await enumerateProviderCandidates({ upstreamIds: null, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolvedMissing.candidates.length, 0);
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
@@ -783,13 +783,13 @@ describe('catalog listing under modelPrefix', () => {
         // the prefixed surface, so a byId-based routing lookup against the
         // stripped bare id would miss. Routing must instead consult each
         // scoped upstream's own catalog, where the bare id is always present.
-        const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(resolved.candidates.map(m => m.provider.upstream), ['up_prefixed']);
         assertEquals(resolved.candidates[0]?.model.id, 'gpt-4o');
 
         // The bare-id request must NOT route to a prefix-only-addressable
         // upstream, regardless of routing path.
-        const bare = await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(bare.candidates.length, 0);
       },
     );
@@ -822,14 +822,14 @@ describe('catalog listing under modelPrefix', () => {
         const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
 
-        const bare = await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(bare.candidates.map(m => m.provider.upstream), ['up_dual_addressable']);
         assertEquals(bare.candidates[0]?.model.id, 'gpt-4o');
 
         // The prefixed request enumerates both forms against `up_dual_addressable`:
         // the unprefixed lookup (`or/gpt-4o`) misses the upstream catalog, and
         // the prefix-stripped lookup (`gpt-4o`) hits — yielding a single match.
-        const prefixed = await enumerateProviderCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const prefixed = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(prefixed.candidates.map(m => m.provider.upstream), ['up_dual_addressable']);
         assertEquals(prefixed.candidates[0]?.model.id, 'gpt-4o');
       },
@@ -873,13 +873,13 @@ describe('catalog listing under modelPrefix', () => {
         // Both upstreams enumerate against the bare id: up_plain via its only
         // form, up_dual via the unprefixed interpretation. Order follows the
         // configured sort_order across providers, then FORM_ORDER within one.
-        const bare = await enumerateProviderCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(bare.candidates.map(m => m.provider.upstream), ['up_plain', 'up_dual']);
 
         // The prefixed id resolves only against up_dual: up_plain's catalog
         // does not contain `or/gpt-4o`, and up_dual's prefix-stripped lookup
         // hits its catalog's bare `gpt-4o`.
-        const prefixed = await enumerateProviderCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const prefixed = await enumerateModelCandidates({ upstreamIds: null, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(prefixed.candidates.map(m => m.provider.upstream), ['up_dual']);
       },
     );
@@ -963,7 +963,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const resolved = await enumerateProviderCandidates({ upstreamIds: null, model: 'aa/bb/gpt-5', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
+        const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'aa/bb/gpt-5', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
         assertEquals(resolved.candidates.map(m => m.provider.upstream), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
         assertEquals(resolved.candidates.map(m => m.model.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
       },

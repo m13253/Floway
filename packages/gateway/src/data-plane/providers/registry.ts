@@ -264,7 +264,7 @@ export const getModels = async (
 // equals `model.id` and differs from the inbound id when the inbound
 // matched the prefixed surface); telemetry and dump records key on that
 // canonical id while error envelopes echo the inbound `model` instead.
-export interface ProviderModelResolution {
+export interface ModelResolution {
   id: string;
   model: UpstreamModel;
   provider: Provider;
@@ -309,15 +309,15 @@ export const collectInterpretationOutcomes = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  resolutions: ProviderModelResolution[];
+  resolutions: ModelResolution[];
   failedUpstreams: string[];
 }> => {
   const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
-    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)));
+    findModelInProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)));
 
   const failedUpstreams: string[] = [];
   const failedSeen = new Set<string>();
-  const resolutions: ProviderModelResolution[] = [];
+  const resolutions: ModelResolution[] = [];
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -349,7 +349,7 @@ export const resolveInterpretationsAcrossProviders = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  readonly resolutions: readonly ProviderModelResolution[];
+  readonly resolutions: readonly ModelResolution[];
   readonly failedUpstreams: readonly string[];
 }> => {
   const first = await collectInterpretationOutcomes(
@@ -371,12 +371,12 @@ export const resolveInterpretationsAcrossProviders = async (
   };
 };
 
-export const resolveModelForProvider = async (
+export const findModelInProvider = async (
   instance: Provider,
   modelId: string,
   fetcher: Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<ProviderModelResolution | undefined> => {
+): Promise<ModelResolution | undefined> => {
   const providedModels = await fetchUpstreamModelsCached(instance, { scheduler, fetcher });
   const disabled = new Set(instance.disabledPublicModelIds);
   const exact = providedModels.find(model => model.id === modelId && !disabled.has(model.id));

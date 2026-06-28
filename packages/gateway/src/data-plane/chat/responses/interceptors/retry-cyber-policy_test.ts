@@ -7,7 +7,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const makePayload = (): ResponsesPayload => ({
   model: 'gpt-test',
@@ -26,7 +26,7 @@ const makePayload = (): ResponsesPayload => ({
 
 const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ model: { enabledFlags: new Set(['retry-cyber-policy']) } }),
+  candidate: stubModelCandidate({ model: { enabledFlags: new Set(['retry-cyber-policy']) } }),
   targetApi: 'responses',
   headers: new Headers(),
   action: 'generate',

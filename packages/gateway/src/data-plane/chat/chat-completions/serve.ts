@@ -1,7 +1,7 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { narrowChatCompletionsByItemAffinity } from './narrow.ts';
-import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import { enumerateModelCandidates } from '../../providers/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -17,7 +17,7 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',

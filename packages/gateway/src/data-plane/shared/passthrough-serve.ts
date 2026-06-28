@@ -23,7 +23,7 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
-import { enumerateProviderCandidates } from '../providers/candidates.ts';
+import { enumerateModelCandidates } from '../providers/candidates.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -120,7 +120,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind,

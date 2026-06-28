@@ -7,7 +7,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import { stubProviderCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
+import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
@@ -24,7 +24,7 @@ const stubCtx: ChatGatewayCtx = {
 const invocation = (): ResponsesInvocation => ({
   payload: { model: 'gpt-test', input: 'hi' } as ResponsesPayload,
   action: 'generate',
-  candidate: stubProviderCandidate(),
+  candidate: stubModelCandidate(),
   targetApi: 'responses',
   headers: new Headers(),
 });

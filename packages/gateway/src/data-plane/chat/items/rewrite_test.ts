@@ -7,7 +7,7 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ModelCandidate } from '../shared/candidates.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
@@ -15,7 +15,7 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 
 const API_KEY_ID = 'key_rewrite_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
+const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
   const model = stubUpstreamModel();
   return {
     provider: {
@@ -72,7 +72,7 @@ const makePayload = (input: ResponsesInputItem[]): ResponsesPayload => ({
 
 const rewrite = async (
   input: ResponsesInputItem[],
-  cand: ProviderCandidate,
+  cand: ModelCandidate,
 ): Promise<ResponsesInputItem[]> => {
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });

@@ -1,9 +1,9 @@
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, ProviderCandidate } from '@floway-dev/provider';
+import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 
 // Re-exported here so chat call sites do not have to know that the
 // underlying type lives in `@floway-dev/provider`.
-export type { ProviderCandidate };
+export type { ModelCandidate };
 
 // Maps each chat target protocol to the `ModelEndpoints` flag the catalog
 // uses to advertise it. The two names differ for `chat-completions` /

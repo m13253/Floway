@@ -1,4 +1,4 @@
-import { directFetcher, type ProviderInstance, type Provider, type ProviderCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { directFetcher, type ProviderInstance, type Provider, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: identity recordUpstreamLatency satisfies the contract without
@@ -57,7 +57,7 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
   callImagesEdits: autoWrap(overrides.callImagesEdits) ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
 });
 
-export const stubProviderCandidate = (overrides: { model?: Partial<UpstreamModel>; provider?: Provider } = {}): ProviderCandidate => {
+export const stubModelCandidate = (overrides: { model?: Partial<UpstreamModel>; provider?: Provider } = {}): ModelCandidate => {
   const provider = overrides.provider ?? {
     upstream: 'test-upstream',
     providerKind: 'custom',

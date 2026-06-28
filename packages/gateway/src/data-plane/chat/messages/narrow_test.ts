@@ -5,7 +5,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createStoredResponsesItemId } from '../items/format.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ModelCandidate } from '../shared/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -26,7 +26,7 @@ const makeCtx = (): ChatGatewayCtx => ({
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
-const candidate = (upstream: string): ProviderCandidate => {
+const candidate = (upstream: string): ModelCandidate => {
   const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([upstreamModel]),

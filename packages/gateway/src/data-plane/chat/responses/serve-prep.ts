@@ -1,9 +1,9 @@
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import { narrowResponsesByItemAffinity } from './narrow.ts';
-import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import { enumerateModelCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ModelCandidate } from '../shared/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -75,7 +75,7 @@ const stageUserInputItems = async (input: ResponsesPayload['input'], store: Stat
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate };
+  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ModelCandidate };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
@@ -90,7 +90,7 @@ export const prepareResponsesServePlan = async (args: {
   const { payload, ctx } = args;
   const { store } = ctx;
   const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
     kind: 'chat',

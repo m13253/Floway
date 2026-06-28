@@ -5,7 +5,7 @@ import type { StatefulResponsesStore } from '../items/store.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ModelCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -24,7 +24,7 @@ export const chatCompletionsTarget = chatTargetPicker(['chat-completions', 'mess
 export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
   readonly ctx: ChatGatewayCtx;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
@@ -73,7 +73,7 @@ export const chatCompletionsAttempt = {
 const rewriteOrRenderChatCompletionsFailure = async (
   payload: ChatCompletionsPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
 ): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
@@ -104,7 +104,7 @@ const rewriteOrRenderChatCompletionsFailure = async (
 const callChatCompletionsAsExecuteResult = async (
   payload: ChatCompletionsPayload,
   ctx: ChatGatewayCtx,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;

@@ -11,7 +11,7 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // One (provider, model) pair the resolver matched, plus the per-request
 // `Fetcher` for the provider's upstream. The smallest unit dispatch
 // needs to make a wire call.
-export interface ProviderCandidate {
+export interface ModelCandidate {
   readonly provider: Provider;
   readonly model: UpstreamModel;
   readonly fetcher: Fetcher;
@@ -24,7 +24,7 @@ export interface ProviderCandidate {
 // use to set or drop wire headers.
 export interface MessagesInvocation {
   payload: MessagesPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
@@ -36,21 +36,21 @@ export interface ResponsesInvocation {
   // responses-compact-shim) and the gateway derives snapshot mode from the
   // post-chain action carried on the provider's tagged result.
   action: ResponsesAction;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export interface ChatCompletionsInvocation {
   payload: ChatCompletionsPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export interface GeminiInvocation {
   payload: GeminiPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }

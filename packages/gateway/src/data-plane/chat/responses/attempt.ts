@@ -10,7 +10,7 @@ import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } fro
 import type { StatefulResponsesStore } from '../items/store.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
-import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ModelCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -31,7 +31,7 @@ export interface ResponsesAttemptInvokeArgs {
   readonly payload: ResponsesPayload;
   readonly action: ResponsesAction;
   readonly ctx: ChatGatewayCtx;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
@@ -179,7 +179,7 @@ type RewriteOutcome =
 const rewriteOrRenderFailure = async (
   payload: ResponsesPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
     return await rewriteResponsesItemsForCandidate(payload, store, candidate);
@@ -292,7 +292,7 @@ const dispatchResponses = async (
 // the provider executed.
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: ChatGatewayCtx,
   recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
