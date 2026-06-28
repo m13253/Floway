@@ -15,7 +15,7 @@ import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ChatTargetApi, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -24,6 +24,7 @@ export interface MessagesAttemptGenerateArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
@@ -32,57 +33,59 @@ export interface MessagesAttemptCountTokensArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, headers } = args;
+    const { payload, ctx, store, candidate, targetApi, headers } = args;
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
+      targetApi,
       headers,
     };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
-      if (candidate.targetApi === 'messages') {
+      if (targetApi === 'messages') {
         const { model: _model, ...body } = invocation.payload;
         const recorder = createUpstreamLatencyRecorder();
-        const providerResult = await candidate.binding.provider.callMessages(
-          candidate.binding.upstreamModel,
+        const providerResult = await candidate.provider.provider.callMessages(
+          candidate.model,
           body,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
       }
-      if (candidate.targetApi === 'responses') {
+      if (targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateMessagesViaResponses(p, { model: candidate.binding.upstreamModel.id }),
+          p => translateMessagesViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, store, candidate, targetApi, headers: invocation.headers,
           }),
         );
       }
-      if (candidate.targetApi === 'chat-completions') {
+      if (targetApi === 'chat-completions') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateMessagesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
+          p => translateMessagesViaChatCompletions(p, { model: candidate.model.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, store, candidate, targetApi, headers: invocation.headers,
           }),
         );
       }
-      throw new Error(`messagesAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
+      throw new Error(`messagesAttempt.generate: unexpected targetApi '${targetApi as string}'`);
     });
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, headers } = args;
-    if (candidate.targetApi !== 'messages') {
-      throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
+    const { payload, ctx, store, candidate, targetApi, headers } = args;
+    if (targetApi !== 'messages') {
+      throw new Error(`messagesAttempt.countTokens requires targetApi='messages', got '${targetApi}'`);
     }
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) {
@@ -93,13 +96,14 @@ export const messagesAttempt = {
     const invocation: MessagesInvocation = {
       payload: rewritten.payload,
       candidate,
+      targetApi,
       headers,
     };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
-      const { response } = await candidate.binding.provider.callMessagesCountTokens(
-        candidate.binding.upstreamModel,
+      const { response } = await candidate.provider.provider.callMessagesCountTokens(
+        candidate.model,
         body,
         ctx.abortSignal,
         buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
@@ -111,7 +115,7 @@ export const messagesAttempt = {
     // contract still has to fire so a provider that forgets to wrap fails
     // loud on the happy path.
     requireRecordedDurationMs(recorder, 'callMessagesCountTokens');
-    return await plainResultFromResponse(response, candidate.binding.upstream);
+    return await plainResultFromResponse(response, candidate.provider.upstream);
   },
 };
 

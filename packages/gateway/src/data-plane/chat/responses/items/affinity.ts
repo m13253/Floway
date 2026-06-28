@@ -1,7 +1,7 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
+import type { ChatPlanItem } from '../../shared/candidates.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -99,17 +99,17 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
 };
 
 const orderCandidatesByStoredResponsesAffinity = (
-  candidates: readonly ProviderCandidate[],
+  candidates: readonly ChatPlanItem[],
   preferredUpstreamIds: ReadonlySet<string>,
-): readonly ProviderCandidate[] => {
+): readonly ChatPlanItem[] => {
   const preferred = [...preferredUpstreamIds].reverse();
   if (preferred.length === 0) return candidates;
 
   const order = new Map(preferred.map((upstreamId, index) => [upstreamId, index]));
   const preferredCandidates = candidates
-    .filter(cand => order.has(cand.binding.upstream))
-    .toSorted((a, b) => order.get(a.binding.upstream)! - order.get(b.binding.upstream)!);
-  const remainingCandidates = candidates.filter(cand => !order.has(cand.binding.upstream));
+    .filter(cand => order.has(cand.candidate.provider.upstream))
+    .toSorted((a, b) => order.get(a.candidate.provider.upstream)! - order.get(b.candidate.provider.upstream)!);
+  const remainingCandidates = candidates.filter(cand => !order.has(cand.candidate.provider.upstream));
   return [...preferredCandidates, ...remainingCandidates];
 };
 
@@ -117,7 +117,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   sourceItems: TSourceItems;
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;
-  candidates: readonly ProviderCandidate[];
+  candidates: readonly ChatPlanItem[];
   // Items the caller will stage as inputs after the affinity walk; passed
   // here so `loadInputItems` can pre-load any stored row whose content hash
   // matches one of them. Without this, a duplicate user message resent on
@@ -193,7 +193,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
 
   if (forcingUpstreamList.length === 1) {
     const [upstreamId] = forcingUpstreamList;
-    const matching = candidates.filter(cand => cand.binding.upstream === upstreamId);
+    const matching = candidates.filter(cand => cand.candidate.provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
         kind: 'failure',
@@ -205,7 +205,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     }
     const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
     if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.binding.supportsResponsesItemReference);
+      const itemReferenceCapable = matching.filter(cand => cand.candidate.provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
         return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
       }

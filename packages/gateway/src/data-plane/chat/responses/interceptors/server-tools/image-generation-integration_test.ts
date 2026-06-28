@@ -119,13 +119,19 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
 
 const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto', extraTool: Record<string, unknown> = {}): ResponsesInvocation => ({
   candidate: {
-    targetApi: 'responses',
-    provider: {} as never,
-    binding: {
+    provider: {
+      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      disabledPublicModelIds: [], modelPrefix: null,
+      provider: {} as never, supportsResponsesItemReference: false,
+    },
+    model: {
+      id: 'm', limits: {}, kind: 'chat',
+      endpoints: { responses: {} },
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
-    } as never,
+    },
     fetcher: directFetcher,
   },
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],

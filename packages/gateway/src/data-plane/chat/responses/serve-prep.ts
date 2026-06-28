@@ -1,7 +1,7 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { enumerateProviderCandidates, type ProviderCandidate } from '../shared/candidates.ts';
+import { enumerateProviderCandidates, planChatCandidates, type ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -72,7 +72,7 @@ const stageUserInputItems = async (input: ResponsesPayload['input'], store: Stat
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate };
+  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate; readonly targetApi: ChatTargetApi };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
@@ -91,11 +91,11 @@ export const prepareResponsesServePlan = async (args: {
   const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
-    pickTarget,
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
   });
-  const decision = await planResponsesRouting({ payload: prepared, candidates, store });
+  const planItems = planChatCandidates(candidates, pickTarget);
+  const decision = await planResponsesRouting({ payload: prepared, candidates: planItems, store });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
@@ -108,8 +108,8 @@ export const prepareResponsesServePlan = async (args: {
   // internal-error — IS the answer for this request: an upstream 4xx/5xx
   // from the first viable candidate is final, not a hint to try another
   // upstream.
-  const [candidate] = decision.candidates;
-  if (candidate === undefined) {
+  const [item] = decision.candidates;
+  if (item === undefined) {
     return {
       kind: 'failure',
       result: renderResponsesFailure(
@@ -119,5 +119,5 @@ export const prepareResponsesServePlan = async (args: {
       ),
     };
   }
-  return { kind: 'ready', prepared, candidate };
+  return { kind: 'ready', prepared, candidate: item.candidate, targetApi: item.targetApi };
 };

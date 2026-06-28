@@ -105,12 +105,9 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'responses';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
   });
@@ -124,16 +121,7 @@ const makeCandidate = (overrides: {
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };

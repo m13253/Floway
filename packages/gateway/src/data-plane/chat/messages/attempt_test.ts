@@ -61,15 +61,12 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'messages';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -78,24 +75,10 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream,
-      providerKind: 'custom',
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
+      upstream, providerKind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -124,6 +107,7 @@ test('generate native messages target calls provider.callMessages with no rewrit
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages }),
+    targetApi: 'messages',
     headers: new Headers(),
   });
 
@@ -153,7 +137,8 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    candidate: makeCandidate({ callResponses }),
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -175,6 +160,7 @@ test('countTokens proxies the upstream response as a plain result', async () => 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessagesCountTokens }),
+    targetApi: 'messages',
     headers: new Headers(),
   });
 
@@ -194,7 +180,8 @@ test('countTokens refuses a non-messages candidate', async () => {
       payload: makePayload(),
       ctx: makeGatewayCtx(),
       store: createNonResponsesSourceStore(API_KEY_ID),
-      candidate: makeCandidate({ targetApi: 'responses' }),
+      candidate: makeCandidate(),
+      targetApi: 'responses',
       headers: new Headers(),
     });
   } catch (error) {
@@ -221,6 +208,7 @@ test('generate attaches the performance context and records upstream_success', a
     ctx,
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ upstream: 'up_perf', callMessages }),
+    targetApi: 'messages',
     headers: new Headers(),
   });
 
@@ -258,6 +246,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages }),
+    targetApi: 'messages',
     headers: new Headers(),
   });
 

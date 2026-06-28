@@ -90,12 +90,9 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'responses';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
   });
@@ -109,16 +106,7 @@ const makeCandidate = (overrides: {
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -431,19 +419,13 @@ test('generate falls through translate-out to messages target', async () => {
     modelKey: 'messages-key',
     headers: new Headers(),
   }));
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callMessages });
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_m', providerKind: 'custom', name: 'up_m',
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_m', upstreamName: 'up_m', providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
+    model: stubUpstreamModel({ endpoints: { messages: {} } }),
     fetcher: directFetcher,
   };
   queueCandidates([candidate]);
@@ -486,19 +468,13 @@ test('generate falls through translate-out to chat-completions target', async ()
     modelKey: 'chat-completions-key',
     headers: new Headers(),
   }));
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callChatCompletions });
   const candidate: ProviderCandidate = {
     provider: {
       upstream: 'up_c', providerKind: 'custom', name: 'up_c',
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_c', upstreamName: 'up_c', providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'chat-completions',
+    model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
     fetcher: directFetcher,
   };
   queueCandidates([candidate]);

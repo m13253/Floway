@@ -11,7 +11,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
@@ -29,7 +29,7 @@ const { chatCompletionsHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_chat_completions_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -104,20 +104,13 @@ const makeCandidate = (overrides: {
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callChatCompletions: overrides.callChatCompletions });
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'chat-completions',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };

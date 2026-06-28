@@ -70,14 +70,11 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -88,12 +85,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -122,6 +114,7 @@ test('generate native chat-completions target calls provider.callChatCompletions
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
+    targetApi: 'chat-completions',
     headers: new Headers(),
   });
 
@@ -140,7 +133,8 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    candidate: makeCandidate({ callMessages }),
+    targetApi: 'messages',
     headers: new Headers(),
   });
 
@@ -170,7 +164,8 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    candidate: makeCandidate({ callResponses }),
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -191,7 +186,8 @@ test('generate inherits invocation headers across translation to Messages', asyn
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    candidate: makeCandidate({ callMessages }),
+    targetApi: 'messages',
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -224,7 +220,8 @@ test('generate inherits invocation headers across translation to Responses', asy
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    candidate: makeCandidate({ callResponses }),
+    targetApi: 'responses',
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -247,6 +244,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
+    targetApi: 'chat-completions',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');
