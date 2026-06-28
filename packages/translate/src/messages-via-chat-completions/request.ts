@@ -210,24 +210,32 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatComp
   return messages;
 };
 
+// Anthropic Messages system blocks are prompt boundaries; preserve each one
+// as a separate Chat Completions text part so a CC→Messages→CC round trip
+// does not silently merge them. Falls back to the simple string form when
+// the source is already a single-string field.
+const systemContentFromBlocks = (system: string | MessagesTextBlock[]): string | ChatCompletionsContentPart[] =>
+  typeof system === 'string'
+    ? system
+    : system.map(block => ({ type: 'text', text: block.text }));
+
 const translateMessagesSystem = (message: MessagesSystemMessage): ChatCompletionsMessage[] => [
   {
     role: 'system',
-    content: typeof message.content === 'string' ? message.content : message.content.map(block => block.text).join('\n\n'),
+    content: systemContentFromBlocks(message.content),
   },
 ];
 
 const translateMessagesInput = (messages: MessagesMessage[], system: string | MessagesTextBlock[] | undefined): ChatCompletionsMessage[] => {
-  // Messages system blocks are prompt boundaries; keep them as separated
-  // paragraphs when falling back to Chat Completions.
-  const systemMessages: ChatCompletionsMessage[] = system
-    ? [
+  const isEmptySystem = system == null || (typeof system === 'string' ? system === '' : system.length === 0);
+  const systemMessages: ChatCompletionsMessage[] = isEmptySystem
+    ? []
+    : [
         {
           role: 'system',
-          content: typeof system === 'string' ? system : system.map(block => block.text).join('\n\n'),
+          content: systemContentFromBlocks(system),
         },
-      ]
-    : [];
+      ];
 
   return [
     ...systemMessages,
