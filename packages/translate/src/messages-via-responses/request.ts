@@ -2,6 +2,7 @@ import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/struc
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   type MessagesAssistantMessage,
   type MessagesClientTool,
@@ -34,7 +35,7 @@ const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, Mess
     };
   }
 
-  throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} user content blocks.`);
+  throw new TranslatorInputError(`Messages → Responses translator does not accept ${(block as { type: string }).type} user content blocks.`);
 };
 
 const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
@@ -134,7 +135,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
       continue;
     }
 
-    throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
+    throw new TranslatorInputError(`Messages → Responses translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');
@@ -155,7 +156,7 @@ const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem
     case 'user': return translateUserMessage(message);
     case 'assistant': return translateAssistantMessage(message);
     case 'system': return translateMessagesSystem(message);
-    default: throw new Error(`Messages → Responses translator does not accept role ${(message as { role: string }).role}.`);
+    default: throw new TranslatorInputError(`Messages → Responses translator does not accept role ${(message as { role: string }).role}.`);
     }
   });
 

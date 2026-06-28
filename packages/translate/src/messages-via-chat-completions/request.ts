@@ -2,6 +2,7 @@ import { type ChatCompletionsScalarReasoning, chatCompletionsScalarReasoningFrom
 import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type {
   MessagesAssistantContentBlock,
@@ -23,7 +24,7 @@ const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] |
 
   for (const block of content) {
     if (block.type !== 'text' && block.type !== 'image') {
-      throw new Error(`Messages → Chat Completions translator does not accept ${block.type} content blocks in message content.`);
+      throw new TranslatorInputError(`Messages → Chat Completions translator does not accept ${block.type} content blocks in message content.`);
     }
   }
 
@@ -202,7 +203,7 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatComp
       });
       break;
     default:
-      throw new Error(`Messages → Chat Completions translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
+      throw new TranslatorInputError(`Messages → Chat Completions translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
     }
   }
 
@@ -244,7 +245,7 @@ const translateMessagesInput = (messages: MessagesMessage[], system: string | Me
       case 'user': return translateMessagesUser(message);
       case 'assistant': return translateMessagesAssistant(message);
       case 'system': return translateMessagesSystem(message);
-      default: throw new Error(`Messages → Chat Completions translator does not accept role ${(message as { role: string }).role}.`);
+      default: throw new TranslatorInputError(`Messages → Chat Completions translator does not accept role ${(message as { role: string }).role}.`);
       }
     }),
   ];

@@ -2,6 +2,7 @@ import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shar
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
@@ -73,7 +74,7 @@ const convertUserContent = async (message: ChatCompletionsMessage, loadRemoteIma
         return resolveImageUrlToMessagesImage(part.image_url.url, loadRemoteImage);
       }
 
-      throw new Error(`Chat Completions → Messages translator does not accept ${(part as { type: string }).type} content parts.`);
+      throw new TranslatorInputError(`Chat Completions → Messages translator does not accept ${(part as { type: string }).type} content parts.`);
     }),
   );
 
@@ -97,7 +98,7 @@ const convertSystemContent = (content: ChatCompletionsMessage['content']): Messa
   const blocks: MessagesTextBlock[] = [];
   for (const part of content) {
     if (part.type === 'image_url') {
-      throw new Error('Chat Completions → Messages translator does not accept image content parts in system or developer messages — Anthropic Messages only permits text in the system field.');
+      throw new TranslatorInputError('Chat Completions → Messages translator does not accept image content parts in system or developer messages — Anthropic Messages only permits text in the system field.');
     }
     if (part.type === 'text') {
       blocks.push({ type: 'text', text: part.text });
@@ -123,7 +124,7 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
       break;
     case 'tool':
       if (!message.tool_call_id) {
-        throw new Error('tool message requires tool_call_id for Messages translation');
+        throw new TranslatorInputError('tool message requires tool_call_id for Messages translation');
       }
 
       appendUserBlocks(result, [
@@ -151,7 +152,7 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
       break;
     }
     default:
-      throw new Error(`Chat Completions → Messages translator does not accept ${message.role} messages.`);
+      throw new TranslatorInputError(`Chat Completions → Messages translator does not accept ${message.role} messages.`);
     }
   }
 

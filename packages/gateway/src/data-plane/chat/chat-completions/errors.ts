@@ -2,7 +2,8 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult } from '@floway-dev/provider';
+import type { TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI error envelope. `param`/`code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body. The
@@ -12,7 +13,7 @@ const openAiErrorResult = (
   status: number,
   message: string,
   extra?: { param: string; code: string | null },
-): ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> => ({
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -21,6 +22,16 @@ const openAiErrorResult = (
     error: { message, type: 'invalid_request_error', ...extra },
   })),
 });
+
+// Translator surfaced a caller-input violation. Render as a 400
+// invalid_request_error so the caller sees a protocol-shaped failure
+// instead of the internal-error 502 envelope. `param` falls back to
+// `messages` (the Chat Completions canonical messages field) when the
+// translator did not carry a more specific path.
+export const translatorInputErrorResult = (
+  error: TranslatorInputError,
+): ApiErrorResult =>
+  openAiErrorResult(400, error.message, { param: error.param ?? 'messages', code: null });
 
 export const renderChatCompletionsFailure = (
   failure: ChatServeFailure,

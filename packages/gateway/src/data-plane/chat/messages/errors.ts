@@ -2,7 +2,8 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult } from '@floway-dev/provider';
+import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Anthropic Messages error envelope used to render pre-stream
 // `ChatServeFailure`s. These are gateway-synthesized rather than received
@@ -11,7 +12,7 @@ const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,
-): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => ({
+): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -21,6 +22,15 @@ const anthropicErrorResult = (
     error: { type, message },
   })),
 });
+
+// Translator surfaced a caller-input violation (unsupported content part,
+// disallowed role, missing required field, etc.). Render as a 400
+// invalid_request_error so the caller sees a protocol-shaped failure
+// instead of the internal-error 502 envelope.
+export const translatorInputErrorResult = (
+  error: TranslatorInputError,
+): ApiErrorResult =>
+  anthropicErrorResult(400, 'invalid_request_error', error.message);
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
 // the `model-unsupported` message string.
