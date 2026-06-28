@@ -258,7 +258,7 @@ test('countTokens refuses a candidate without a messages endpoint', async () => 
     thrown = error;
   }
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
-  assertEquals(thrown.message.includes('picker rejects'), true);
+  assertEquals(thrown.message.includes('non-viable candidate'), true);
 });
 
 test('generate propagates upstream response headers through the chat-completions translation', async () => {

@@ -1,4 +1,4 @@
-import { geminiAttempt, pickGeminiGenerateTarget, pickGeminiCountTokensTarget } from './attempt.ts';
+import { geminiAttempt, geminiGenerateTarget, geminiCountTokensTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
@@ -38,7 +38,7 @@ export const geminiServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => pickGeminiGenerateTarget(c.model.endpoints) !== null);
+    const viable = candidates.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
     const decision = await planGeminiRouting({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'generate');
 
@@ -67,7 +67,7 @@ export const geminiServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => pickGeminiCountTokensTarget(c.model.endpoints) !== null);
+    const viable = candidates.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
     const decision = await planGeminiRouting({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'countTokens');
 

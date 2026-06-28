@@ -1,4 +1,4 @@
-import { chatCompletionsAttempt, pickChatCompletionsTarget } from './attempt.ts';
+import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
@@ -26,7 +26,7 @@ export const chatCompletionsServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => pickChatCompletionsTarget(c.model.endpoints) !== null);
+    const viable = candidates.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const decision = await planChatCompletionsRouting({ payload, candidates: viable, store });
     if (isChatServeFailure(decision)) return renderChatCompletionsFailure(decision);
 

@@ -6,31 +6,26 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { type ChatTargetApi, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/messages` generate prefers a native Messages target, then the
 // translated Responses path, then the translated Chat Completions path.
-export const pickMessagesGenerateTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.messages ? 'messages'
-    : endpoints.responses ? 'responses'
-      : endpoints.chatCompletions ? 'chat-completions'
-        : null;
+export const messagesGenerateTarget = chatTargetPicker(['messages', 'responses', 'chat-completions']);
 
 // `count_tokens` has no translation path — only a native Messages target
 // satisfies the operation.
-export const pickMessagesCountTokensTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.messages ? 'messages' : null;
+export const messagesCountTokensTarget = chatTargetPicker(['messages']);
 
 export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
@@ -51,8 +46,7 @@ export interface MessagesAttemptCountTokensArgs {
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, candidate, headers } = args;
-    const targetApi = pickMessagesGenerateTarget(candidate.model.endpoints);
-    if (targetApi === null) throw new Error('messagesAttempt.generate: serve passed a candidate the picker rejects');
+    const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: MessagesInvocation = { payload: rewritten.payload, candidate, targetApi, headers };
@@ -92,8 +86,7 @@ export const messagesAttempt = {
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
     const { payload, ctx, store, candidate, headers } = args;
-    const targetApi = pickMessagesCountTokensTarget(candidate.model.endpoints);
-    if (targetApi === null) throw new Error('messagesAttempt.countTokens: serve passed a candidate the picker rejects');
+    const targetApi = messagesCountTokensTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) {
       // count_tokens has no streaming envelope; surface the rewrite-time

@@ -1,4 +1,4 @@
-import { pickResponsesTarget } from './attempt.ts';
+import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
@@ -97,7 +97,7 @@ export const prepareResponsesServePlan = async (args: {
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
   });
-  const viable = candidates.filter(c => pickResponsesTarget(c.model.endpoints) !== null);
+  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   const decision = await planResponsesRouting({ payload: prepared, candidates: viable, store });
   if (isChatServeFailure(decision)) return { kind: 'failure', result: renderResponsesFailure(decision) };
   // Stage the user-supplied input from the original payload — not the
