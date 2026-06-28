@@ -6,40 +6,32 @@ import { planResponsesRouting } from './routing.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatPlanItem } from '../shared/candidates.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_routing_test';
 
-const candidate = (upstream: string): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
+const candidate = (upstream: string): ChatPlanItem => {
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([upstreamModel]),
+    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
-    provider: {
-      upstream,
-      providerKind: 'custom',
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider: modelProvider,
-      supportsResponsesItemReference: true,
-    },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider: modelProvider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
+    candidate: {
+      provider: {
+        upstream,
+        providerKind: 'custom',
+        name: upstream,
+        disabledPublicModelIds: [],
+        modelPrefix: null,
+        provider: modelProvider,
+        supportsResponsesItemReference: true,
+      },
+      model: stubUpstreamModel(),
+      fetcher: directFetcher,
     },
     targetApi: 'responses',
-
-    fetcher: directFetcher,
   };
 };
 
@@ -83,7 +75,7 @@ test('payload with no stored references passes candidates through unchanged', as
   assertEquals(decision.kind, 'success');
   if (decision.kind === 'success') {
     assertEquals(decision.candidates.length, candidates.length);
-    assertEquals(decision.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+    assertEquals(decision.candidates.map(c => c.candidate.provider.upstream), ['up_a', 'up_b']);
   }
 });
 

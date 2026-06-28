@@ -92,14 +92,21 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  targetApi?: 'chat-completions' | 'messages' | 'responses';
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
+  // The gemini serve layer picks the target from model.endpoints (chat-completions
+  // first, then messages, then responses). Narrow endpoints to the target this
+  // test wants so planChatCandidates resolves the expected branch.
+  const endpoints = targetApi === 'chat-completions'
+    ? { chatCompletions: {} }
+    : targetApi === 'messages'
+      ? { messages: {} }
+      : { responses: {} };
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -110,11 +117,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom', provider, upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel({ endpoints }),
     fetcher: directFetcher,
   };
 };

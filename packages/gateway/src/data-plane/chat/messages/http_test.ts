@@ -106,32 +106,16 @@ const makeCandidate = (overrides: {
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callMessagesCountTokens: overrides.callMessagesCountTokens,
   });
   return {
     provider: {
-      upstream,
-      providerKind: 'custom',
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
+      upstream, providerKind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };

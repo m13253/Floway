@@ -19,7 +19,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { eventResult, readUpstreamApiError, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 
 export interface ResponsesAttemptInvokeArgs {
@@ -28,6 +28,7 @@ export interface ResponsesAttemptInvokeArgs {
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
   readonly candidate: ProviderCandidate;
+  readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
@@ -70,7 +71,7 @@ export interface ResponsesAttemptInvokeArgs {
 // no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, action, ctx, store, candidate, headers } = args;
+    const { payload, action, ctx, store, candidate, targetApi, headers } = args;
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
@@ -94,6 +95,7 @@ export const responsesAttempt = {
       payload: normalized,
       action,
       candidate,
+      targetApi,
       store,
       headers,
     };
@@ -115,7 +117,7 @@ export const responsesAttempt = {
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
       await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
         store,
-        upstream: candidate.binding.upstream,
+        upstream: candidate.provider.upstream,
         targetApi: 'responses',
         responseId,
       }));
@@ -138,8 +140,8 @@ export const responsesAttempt = {
     return eventResult(
       wrapResponsesOutputForStorage(chainResult.events, {
         store,
-        upstream: candidate.binding.upstream,
-        targetApi: candidate.targetApi,
+        upstream: candidate.provider.upstream,
+        targetApi,
         responseId,
       }),
       chainResult.modelIdentity,
@@ -210,8 +212,8 @@ const dispatchResponses = async (
   invocation: ResponsesInvocation,
   ctx: GatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const { candidate, store } = invocation;
-  switch (candidate.targetApi) {
+  const { candidate, targetApi, store } = invocation;
+  switch (targetApi) {
   case 'responses': {
     const recorder = createUpstreamLatencyRecorder();
     if (invocation.action === 'compact') {
@@ -222,24 +224,24 @@ const dispatchResponses = async (
       // provider can decide for itself (every provider's streaming call
       // forces stream=true anyway).
       const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      const providerResult = await candidate.binding.provider.callResponses(
-        candidate.binding.upstreamModel,
+      const providerResult = await candidate.provider.provider.callResponses(
+        candidate.model,
         body,
         invocation.action,
         ctx.abortSignal,
         buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
       );
-      return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
+      return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
     }
     const { model: _model, ...body } = invocation.payload;
-    const providerResult = await candidate.binding.provider.callResponses(
-      candidate.binding.upstreamModel,
+    const providerResult = await candidate.provider.provider.callResponses(
+      candidate.model,
       body,
       invocation.action,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
     );
-    return await providerResponsesResultToExecuteResult(providerResult, candidate, ctx, recorder);
+    return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
   }
   case 'messages':
     if (invocation.action === 'compact') {
@@ -254,11 +256,11 @@ const dispatchResponses = async (
     return await traverseTranslation(
       invocation.payload,
       p => translateResponsesViaMessages(p, {
-        model: candidate.binding.upstreamModel.id,
-        fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
+        model: candidate.model.id,
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       translated => messagesAttempt.generate({
-        payload: translated, ctx, store, candidate, headers: invocation.headers,
+        payload: translated, ctx, store, candidate, targetApi: 'messages', headers: invocation.headers,
       }),
     );
   case 'chat-completions':
@@ -267,13 +269,13 @@ const dispatchResponses = async (
     }
     return await traverseTranslation(
       invocation.payload,
-      p => translateResponsesViaChatCompletions(p, { model: candidate.binding.upstreamModel.id }),
+      p => translateResponsesViaChatCompletions(p, { model: candidate.model.id }),
       translated => chatCompletionsAttempt.generate({
-        payload: translated, ctx, store, candidate, headers: invocation.headers,
+        payload: translated, ctx, store, candidate, targetApi: 'chat-completions', headers: invocation.headers,
       }),
     );
   default: {
-    const exhaustive: never = candidate.targetApi;
+    const exhaustive: never = targetApi;
     throw new Error(`unexpected targetApi '${exhaustive as string}'`);
   }
   }
@@ -287,6 +289,7 @@ const dispatchResponses = async (
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
   candidate: ProviderCandidate,
+  targetApi: ChatTargetApi,
   ctx: GatewayCtx,
   recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
@@ -296,6 +299,7 @@ const providerResponsesResultToExecuteResult = async (
         ? { ok: true, events: providerResult.events, modelKey: providerResult.modelKey, ...(providerResult.headers ? { headers: providerResult.headers } : {}) }
         : { ok: false, response: providerResult.response, modelKey: providerResult.modelKey },
       candidate,
+      targetApi,
       ctx,
       recorder,
     );
@@ -305,7 +309,7 @@ const providerResponsesResultToExecuteResult = async (
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     recordUpstreamHttpFailure(ctx, context);
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.binding.upstream)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
   }
   ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponses(action=compact)')));
   return eventResult(

@@ -1,6 +1,6 @@
 import { describe, test } from 'vitest';
 
-import { enumerateProviderCandidates } from './candidates.ts';
+import { enumerateProviderCandidates, planChatCandidates } from './candidates.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
@@ -55,19 +55,20 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 1);
     assertEquals(candidates[0].provider.upstream, 'up_a');
-    assertEquals(candidates[0].binding.upstreamModel.id, 'test-model');
-    assertEquals(candidates[0].targetApi, 'messages');
+    assertEquals(candidates[0].model.id, 'test-model');
     assertEquals(sawModel, true);
   });
 
-  test('provider with binding but pickTarget returns null yields no candidate but sets sawModel', async () => {
+  test('provider with binding yields a candidate regardless of endpoint shape', async () => {
+    // Resolution is kind-aware and endpoint-blind: a chat-kind model with
+    // only `chatCompletions` set is a candidate at this layer. Whether the
+    // serve's preference table accepts it is the planner's job.
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
@@ -75,15 +76,12 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
 
-    assertEquals(candidates.length, 0);
-    // The model exists on a provider — sawModel distinguishes this from a
-    // model that no provider knows about, so the serve renders 400
-    // model-unsupported instead of 404 model-missing.
+    assertEquals(candidates.length, 1);
+    assertEquals(candidates[0].provider.upstream, 'up_chat');
     assertEquals(sawModel, true);
   });
 
@@ -95,7 +93,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -114,7 +111,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -134,7 +130,6 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -156,66 +151,12 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
-      pickTarget: pickMessages,
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
 
     assertEquals(candidates.length, 1);
     assertEquals(candidates[0].provider.upstream, 'up_enabled');
-  });
-
-  test('pickTarget preference: multi-endpoint binding picks according to pickTarget logic', async () => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
-
-    const { candidates: msgCandidates } = await enumerateProviderCandidates({
-      upstreamIds: null,
-      model: 'test-model',
-      pickTarget: pickMessagesOrResponses,
-      scheduler: testScheduler,
-      currentColo: 'TEST',
-    });
-    assertEquals(msgCandidates.length, 1);
-    assertEquals(msgCandidates[0].targetApi, 'messages');
-
-    const { candidates: resCandidates } = await enumerateProviderCandidates({
-      upstreamIds: null,
-      model: 'test-model',
-      pickTarget: pickResponses,
-      scheduler: testScheduler,
-      currentColo: 'TEST',
-    });
-    assertEquals(resCandidates.length, 1);
-    assertEquals(resCandidates[0].targetApi, 'responses');
-  });
-
-  test('pickTarget returning null filters out an otherwise-matching provider', async () => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
-
-    const { candidates: anyCandidates } = await enumerateProviderCandidates({
-      upstreamIds: null,
-      model: 'test-model',
-      pickTarget: pickAny,
-      scheduler: testScheduler,
-      currentColo: 'TEST',
-    });
-    assertEquals(anyCandidates.length, 1);
-    assertEquals(anyCandidates[0].targetApi, 'chat-completions');
-
-    const { candidates: msgCandidates, sawModel } = await enumerateProviderCandidates({
-      upstreamIds: null,
-      model: 'test-model',
-      pickTarget: pickMessages,
-      scheduler: testScheduler,
-      currentColo: 'TEST',
-    });
-    assertEquals(msgCandidates.length, 0);
-    // pickTarget filtered out, but the model exists — sawModel stays true.
-    assertEquals(sawModel, true);
   });
 
   // Regression: a single upstream whose catalog fetch rejects must not poison
@@ -246,7 +187,6 @@ describe('enumerateProviderCandidates', () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
           model: 'test-model',
-          pickTarget: pickMessages,
           scheduler: testScheduler,
           currentColo: 'TEST',
         });
@@ -289,7 +229,6 @@ describe('enumerateProviderCandidates', () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
           model: 'test-model',
-          pickTarget: pickMessages,
           scheduler: testScheduler,
           currentColo: 'TEST',
         });
@@ -299,5 +238,52 @@ describe('enumerateProviderCandidates', () => {
         assertEquals(failedUpstreams, ['A', 'B']);
       },
     );
+  });
+});
+
+describe('planChatCandidates', () => {
+  // The picker callback runs at the serve layer, after resolution: it maps
+  // each candidate's `model.endpoints` to a target protocol via the
+  // inbound-protocol preference table. Candidates whose picker returns null
+  // drop out before the planner sees them.
+  test('multi-endpoint candidate picks the picker-preferred target', async () => {
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(azureUpstream('up_multi', 10, ['test-model'], { messages: {}, responses: {} }));
+
+    const { candidates } = await enumerateProviderCandidates({
+      upstreamIds: null,
+      model: 'test-model',
+      scheduler: testScheduler,
+      currentColo: 'TEST',
+    });
+
+    const messagesItems = planChatCandidates(candidates, pickMessagesOrResponses);
+    assertEquals(messagesItems.length, 1);
+    assertEquals(messagesItems[0].targetApi, 'messages');
+
+    const responsesItems = planChatCandidates(candidates, pickResponses);
+    assertEquals(responsesItems.length, 1);
+    assertEquals(responsesItems[0].targetApi, 'responses');
+  });
+
+  test('picker returning null drops the candidate', async () => {
+    const { repo } = await setupAppTest();
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(azureUpstream('up_chat', 10, ['test-model'], { chatCompletions: {} }));
+
+    const { candidates } = await enumerateProviderCandidates({
+      upstreamIds: null,
+      model: 'test-model',
+      scheduler: testScheduler,
+      currentColo: 'TEST',
+    });
+
+    const anyItems = planChatCandidates(candidates, pickAny);
+    assertEquals(anyItems.length, 1);
+    assertEquals(anyItems[0].targetApi, 'chat-completions');
+
+    const messagesItems = planChatCandidates(candidates, pickMessages);
+    assertEquals(messagesItems.length, 0);
   });
 });

@@ -548,7 +548,7 @@ const resolveImageBinding = async (
   } catch (e) {
     return { ok: false, error: serverError(e) };
   }
-  const match = resolution.matches.find(m => m.binding.upstreamModel.endpoints[endpointKey] !== undefined);
+  const match = resolution.matches.find(m => m.model.endpoints[endpointKey] !== undefined);
   if (match === undefined) {
     return {
       ok: false,
@@ -892,7 +892,7 @@ export const transformInputItemsForImageGeneration = (
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
-  if (invocation.candidate.targetApi === 'responses' && !invocation.candidate.binding.enabledFlags.has('responses-image-generation-shim')) {
+  if (invocation.targetApi === 'responses' && !invocation.candidate.model.enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
 

@@ -6,7 +6,7 @@ import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -14,7 +14,7 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 
 // Mock the candidates seam so each test hands the serve exactly the
 // provider candidates it wants.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../shared/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../shared/candidates.ts')>();
   return {
@@ -32,7 +32,7 @@ const { chatCompletionsServe } = await import('./serve.ts');
 const API_KEY_ID = 'key_chat_completions_serve_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -108,14 +108,12 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -126,12 +124,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -170,7 +163,7 @@ test('generate translates through the Messages target when only that endpoint is
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'messages-model-key', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ upstream: 'up_m', targetApi: 'messages', callMessages })]);
+  queueCandidates([makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages })]);
 
   const result = await chatCompletionsServe.generate({
     payload: makePayload(),
@@ -190,7 +183,7 @@ test('generate translates through the Responses target when only that endpoint i
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'responses-model-key', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
+  queueCandidates([makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses })]);
 
   const result = await chatCompletionsServe.generate({
     payload: makePayload(),

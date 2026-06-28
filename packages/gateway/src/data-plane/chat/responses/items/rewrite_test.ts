@@ -16,9 +16,8 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 const API_KEY_ID = 'key_rewrite_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([upstreamModel]),
+    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
     provider: {
@@ -30,17 +29,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       provider: modelProvider,
       supportsResponsesItemReference,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider: modelProvider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -90,7 +79,7 @@ const rewrite = async (
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   // Simulate the affinity classification that populates the store cache.
-  await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
+  await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [{ candidate: cand, targetApi: 'responses' }] });
   const result = await rewriteResponsesItemsForCandidate(makePayload(input), store, cand);
   return result.payload.input as ResponsesInputItem[];
 };

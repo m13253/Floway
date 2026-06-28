@@ -5,7 +5,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -116,7 +116,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   providerKind?: ProviderCandidate['provider']['providerKind'];
   enabledFlags?: ReadonlySet<string>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -124,9 +124,7 @@ const makeCandidate = (overrides: {
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'messages';
   const providerKind = overrides.providerKind ?? 'custom';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -134,24 +132,13 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream,
-      providerKind,
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
+      upstream, providerKind, name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind,
-      provider,
-      upstreamModel,
-      enabledFlags: overrides.enabledFlags ?? upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel({
+      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    }),
     fetcher: directFetcher,
   };
 };
@@ -210,7 +197,7 @@ test('generate translates through the Responses target when only that endpoint i
     modelKey: 'responses-model-key',
     headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
+  queueCandidates([makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses })]);
 
   const result = await messagesServe.generate({
     payload: makePayload(),

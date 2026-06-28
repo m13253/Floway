@@ -1,6 +1,6 @@
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import type { ChatPlanItem } from '../shared/candidates.ts';
 import type { RoutingDecision } from '../shared/routing.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -9,7 +9,7 @@ export type MessagesRoutingDecision = RoutingDecision;
 
 export const planMessagesRouting = async (input: {
   readonly payload: MessagesPayload;
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ChatPlanItem[];
   readonly store: StatefulResponsesStore;
 }): Promise<MessagesRoutingDecision> =>
   await classifyResponsesItemAffinity({

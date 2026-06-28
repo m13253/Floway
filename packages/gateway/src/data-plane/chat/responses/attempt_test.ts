@@ -57,7 +57,6 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 };
 
 const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callResponses });
   return {
     provider: {
@@ -69,17 +68,7 @@ const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<Response
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_test',
-      upstreamName: 'up_test',
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -141,6 +130,7 @@ test('generate native success wraps the upstream event stream once', async () =>
     ctx,
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -207,6 +197,7 @@ test('generate derives snapshotMode=replace when the upstream emits a compaction
     ctx: makeGatewayCtx(),
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -229,7 +220,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
   const candidate = makeCandidate(callResponses);
   // Force `supportsResponsesItemReference: false` so a stored row with no
   // inline payload triggers the rewrite-side throw.
-  candidate.binding.supportsResponsesItemReference = false;
+  candidate.provider.supportsResponsesItemReference = false;
 
   const missingId = createStoredResponsesItemId('message');
   // Pre-seed the store cache: a row with no inline payload, referenced as
@@ -255,6 +246,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     ctx: makeGatewayCtx(),
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -284,6 +276,7 @@ test('generate passes non-events provider result through unchanged', async () =>
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -336,6 +329,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
     ctx: makeGatewayCtx(),
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -392,13 +386,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
       upstream: 'up_test', providerKind: 'custom', name: 'up_test',
       disabledPublicModelIds: [], modelPrefix: null, provider: messagesProvider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',
-      provider: messagesProvider, upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
-
+    model: upstreamModel,
     fetcher: directFetcher,
   };
 
@@ -407,6 +395,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
+    targetApi: 'messages',
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -482,12 +471,11 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
   const candidate = makeCandidate(callResponses);
-  // The shim early-returns inactive unless the binding has the flag. The
-  // candidate shape is `readonly`, so swap the enabledFlags via Object.assign
-  // on both the binding and its upstreamModel (which the binding aliases).
+  // The shim early-returns inactive unless the model has the flag. The
+  // candidate shape is `readonly`, so swap the enabledFlags on the model via
+  // Object.assign.
   const enabledFlags = new Set(['responses-web-search-shim']);
-  Object.assign(candidate.binding.upstreamModel, { enabledFlags });
-  Object.assign(candidate.binding, { enabledFlags });
+  Object.assign(candidate.model, { enabledFlags });
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
   await store.loadInputItems({
@@ -517,6 +505,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     ctx: makeGatewayCtx(),
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');
@@ -565,6 +554,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store,
     candidate,
+    targetApi: 'responses',
     headers: new Headers(),
   });
 
