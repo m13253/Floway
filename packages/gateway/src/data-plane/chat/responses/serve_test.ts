@@ -21,7 +21,7 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // `sawModel` defaults to true when at least one candidate was queued; the
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean ; readonly failedUpstreams: readonly string[] }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../providers/candidates.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/candidates.ts')>();
   return {
@@ -40,7 +40,7 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 const API_KEY_ID = 'key_serve_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel , failedUpstreams: [] });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
