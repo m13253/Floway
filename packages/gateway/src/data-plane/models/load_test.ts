@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
 import { toPublicModel } from './load.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { CatalogModel } from '@floway-dev/provider';
 
-const base: InternalModel = {
+const base: CatalogModel = {
   id: 'm1',
   kind: 'chat',
   limits: { max_context_window_tokens: 100000 },
+  endpoints: { chatCompletions: {} },
 };
 
 describe('toPublicModel', () => {

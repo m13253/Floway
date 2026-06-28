@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { clearInFlightForTesting } from './models-cache.ts';
-import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
+import { compareModelIds, enumerateModelInterpretations, getModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
@@ -121,7 +121,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
   assertEquals(providers.map(provider => provider.upstream), ['up_custom', 'up_azure', 'up_copilot']);
 });
 
-test('getInternalModels returns the catalog projection without execution bindings', async () => {
+test('getModels returns the merged catalog plus the per-id upstream index', async () => {
   const { repo } = await setupAppTest();
 
   await repo.upstreams.save(buildCustomUpstreamRecord());
@@ -168,17 +168,22 @@ test('getInternalModels returns the catalog projection without execution binding
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
-      const model = catalog.find(candidate => candidate.id === 'shared-model');
+      const { models, upstreamsByPublicId } = await getModels(null, () => directFetcher, testScheduler);
+      const model = models.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
-      assertEquals(Object.hasOwn(model!, 'endpoints'), false);
+      // The merged endpoint surface is the OR of both upstreams' bindings.
+      assertEquals(model?.endpoints, { messages: {}, chatCompletions: {} });
       assertEquals(model?.kind, 'chat');
-      assertEquals(Object.hasOwn(model!, 'providers'), false);
+      // `providerData` (the per-provider wire id carrier) belongs to the
+      // upstream-facing UpstreamModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
+      // The reverse index lists every upstream that surfaced this id, in
+      // enumeration order — copilot first, then custom.
+      assertEquals(upstreamsByPublicId.get('shared-model')?.map(p => p.upstream), ['up_copilot', 'up_custom']);
 
       const resolved = await resolveModelForRequest('shared-model', null, () => directFetcher, testScheduler);
-      assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_copilot', 'up_custom']);
+      assertEquals(resolved.matches.map(m => m.provider.upstream), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.matches[0]?.model.endpoints, { messages: {} });
       assertEquals(resolved.matches[1]?.model.endpoints, { chatCompletions: {} });
@@ -234,7 +239,7 @@ test('resolveModelForRequest strips an -YYYYMMDD suffix when nothing matched and
       // so the resolver retries against the stripped `claude-opus-4-7`,
       // which both upstreams expose. Both bindings end up in the match
       // list in configured `sort_order`.
-      assertEquals(resolved.matches.map(m => m.binding.upstream).sort(), ['up_copilot', 'up_custom'].sort());
+      assertEquals(resolved.matches.map(m => m.provider.upstream).sort(), ['up_copilot', 'up_custom'].sort());
       assertEquals(resolved.matches.map(m => m.id), ['claude-opus-4-7', 'claude-opus-4-7']);
     },
   );
@@ -305,7 +310,7 @@ test('resolveModelForProvider only loads the selected provider catalog', async (
       const resolved = await resolveModelForProvider(providers[0], 'target-model', directFetcher, testScheduler);
 
       assertEquals(resolved?.model.id, 'target-model');
-      assertEquals(resolved?.binding.upstream, 'up_first');
+      assertEquals(resolved?.provider.upstream, 'up_first');
     },
   );
 
@@ -378,7 +383,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
     disabledPublicModelIds: [],
   }));
 
-  const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+  const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
   assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-keep', 'gpt-shared']);
 
   // The solo and override ids resolve to nothing (hidden + unroutable).
@@ -387,11 +392,11 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 
   // The shared id survives because up_b allows it; only up_b binds it.
   const shared = await resolveModelForRequest('gpt-shared', null, () => directFetcher, testScheduler);
-  assertEquals(shared.matches.map(m => m.binding.upstream), ['up_b']);
+  assertEquals(shared.matches.map(m => m.provider.upstream), ['up_b']);
 
   // The untouched model still routes from up_a.
   const keep = await resolveModelForRequest('gpt-keep', null, () => directFetcher, testScheduler);
-  assertEquals(keep.matches.map(m => m.binding.upstream), ['up_a']);
+  assertEquals(keep.matches.map(m => m.provider.upstream), ['up_a']);
 });
 
 test('resolveModelForProvider rejects a model id disabled on that upstream (filter parity with the catalog)', async () => {
@@ -451,7 +456,7 @@ test('listModelProviders throws on unknown upstream ids in the whitelist', async
 // tracks the slowest upstream, not the sum. The bound is loose because CI
 // timer noise eats into a tight `< sum` comparison; what matters is the
 // ratio.
-test('getInternalModels fans out per-upstream catalog fetches in parallel', async () => {
+test('getModels fans out per-upstream catalog fetches in parallel', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -483,7 +488,7 @@ test('getInternalModels fans out per-upstream catalog fetches in parallel', asyn
     },
     async () => {
       const start = Date.now();
-      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+      const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
       const elapsed = Date.now() - start;
 
       assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
@@ -501,7 +506,7 @@ test('getInternalModels fans out per-upstream catalog fetches in parallel', asyn
 // A single upstream's catalog fetch failure is surfaced as `lastError` and
 // recorded against `sawSuccess === true`; the public catalog still includes
 // every successful upstream's models.
-test('getInternalModels: a rejected provider does not block other providers', async () => {
+test('getModels: a rejected provider does not block other providers', async () => {
   clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -540,7 +545,7 @@ test('getInternalModels: a rejected provider does not block other providers', as
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+      const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
       assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
     },
   );
@@ -581,7 +586,7 @@ test('resolveModelForRequest: healthy upstream still resolves alongside a reject
     },
     async () => {
       const resolvedExisting = await resolveModelForRequest('ok-model', null, () => directFetcher, testScheduler);
-      assertEquals(resolvedExisting.matches.map(m => m.binding.upstream), ['up_ok']);
+      assertEquals(resolvedExisting.matches.map(m => m.provider.upstream), ['up_ok']);
       assertEquals(resolvedExisting.matches[0]?.id, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
 
@@ -680,7 +685,7 @@ describe('enumerateModelInterpretations', () => {
 });
 
 // End-to-end listing checks for the prefix policy. The catalog walk goes
-// through getInternalModels, which threads custom upstreams' /v1/models
+// through getModels, which threads custom upstreams' /v1/models
 // responses through fetchUpstreamModelsCached just like production does.
 describe('catalog listing under modelPrefix', () => {
   test('null prefix lists bare ids only (today\'s behavior)', async () => {
@@ -701,7 +706,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals(catalog.map(m => m.id), ['gpt-4o']);
       },
     );
@@ -726,7 +731,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
         // Prefixed surface gets a synthesized display_name prepending the
         // upstream's display name so the dashboard tells the operator at a
@@ -738,7 +743,7 @@ describe('catalog listing under modelPrefix', () => {
         // stripped bare id would miss. Routing must instead consult each
         // scoped upstream's own catalog, where the bare id is always present.
         const resolved = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_prefixed']);
+        assertEquals(resolved.matches.map(m => m.provider.upstream), ['up_prefixed']);
         assertEquals(resolved.matches[0]?.id, 'gpt-4o');
 
         // The bare-id request must NOT route to a prefix-only-addressable
@@ -773,18 +778,18 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals(catalog.map(m => m.id), ['or/gpt-4o']);
 
         const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(bare.matches.map(m => m.binding.upstream), ['up_dual_addressable']);
+        assertEquals(bare.matches.map(m => m.provider.upstream), ['up_dual_addressable']);
         assertEquals(bare.matches[0]?.id, 'gpt-4o');
 
         // The prefixed request enumerates both forms against `up_dual_addressable`:
         // the unprefixed lookup (`or/gpt-4o`) misses the upstream catalog, and
         // the prefix-stripped lookup (`gpt-4o`) hits — yielding a single match.
         const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(prefixed.matches.map(m => m.binding.upstream), ['up_dual_addressable']);
+        assertEquals(prefixed.matches.map(m => m.provider.upstream), ['up_dual_addressable']);
         assertEquals(prefixed.matches[0]?.id, 'gpt-4o');
       },
     );
@@ -821,20 +826,20 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-4o', 'or/gpt-4o']);
 
         // Both upstreams enumerate against the bare id: up_plain via its only
         // form, up_dual via the unprefixed interpretation. Order follows the
         // configured sort_order across providers, then FORM_ORDER within one.
         const bare = await resolveModelForRequest('gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(bare.matches.map(m => m.binding.upstream), ['up_plain', 'up_dual']);
+        assertEquals(bare.matches.map(m => m.provider.upstream), ['up_plain', 'up_dual']);
 
         // The prefixed id resolves only against up_dual: up_plain's catalog
         // does not contain `or/gpt-4o`, and up_dual's prefix-stripped lookup
         // hits its catalog's bare `gpt-4o`.
         const prefixed = await resolveModelForRequest('or/gpt-4o', null, () => directFetcher, testScheduler);
-        assertEquals(prefixed.matches.map(m => m.binding.upstream), ['up_dual']);
+        assertEquals(prefixed.matches.map(m => m.provider.upstream), ['up_dual']);
       },
     );
   });
@@ -868,7 +873,7 @@ describe('catalog listing under modelPrefix', () => {
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => {
-        const catalog = await getInternalModels(null, () => directFetcher, testScheduler);
+        const catalog = (await getModels(null, () => directFetcher, testScheduler)).models;
         assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-mini', 'or/gpt-mini']);
       },
     );
@@ -918,7 +923,7 @@ describe('catalog listing under modelPrefix', () => {
       },
       async () => {
         const resolved = await resolveModelForRequest('aa/bb/gpt-5', null, () => directFetcher, testScheduler);
-        assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
+        assertEquals(resolved.matches.map(m => m.provider.upstream), ['up_short_prefix', 'up_long_prefix', 'up_bare']);
         assertEquals(resolved.matches.map(m => m.id), ['bb/gpt-5', 'gpt-5', 'aa/bb/gpt-5']);
       },
     );

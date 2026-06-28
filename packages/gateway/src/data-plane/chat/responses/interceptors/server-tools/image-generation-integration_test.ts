@@ -37,9 +37,13 @@ vi.mock('../../../../providers/registry.ts', () => ({
         id: 'gpt-image-2',
         endpoints: { imagesGenerations: {}, imagesEdits: {} },
       },
-      binding: {
+      provider: {
         upstream: 'u',
-        upstreamModel: { id: 'gpt-image-2', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
+        providerKind: 'custom',
+        name: 'mock-image',
+        disabledPublicModelIds: [],
+        modelPrefix: null,
+        supportsResponsesItemReference: false,
         provider: {
           getPricingForModelKey: () => null,
           callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
