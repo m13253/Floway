@@ -135,8 +135,18 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
     }
 
+    // Track the most recent candidate that produced a non-2xx response so
+    // we can forward it verbatim once the candidate list is exhausted.
+    // `lastFailedUpstream` is the upstream id we attribute the request to
+    // in the dump and the request-perf record.
+    let lastFailedResponse: Response | undefined;
+    let lastFailedPerformance: PerformanceTelemetryContext | undefined;
+    let lastFailedUpstream: string | undefined;
+    let anyCandidateServedEndpoint = false;
+
     for (const candidate of candidates) {
       if (!modelServesEndpoint(candidate.model)) continue;
+      anyCandidateServedEndpoint = true;
 
       const recorder = createUpstreamLatencyRecorder();
       const { response, modelKey } = await call(candidate.provider, candidate.model, {
@@ -163,10 +173,16 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       lastPerformance = performanceContext;
 
       if (!response.ok) {
+        // Non-2xx (4xx including 429, 5xx) — let the next candidate try.
+        // Upstream-perf is recorded per failed attempt so the dashboard
+        // shows each attempted upstream; request-perf and the dump's
+        // upstream attribution wait until the final candidate is chosen
+        // (success or the last failure).
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
-        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.error('upstream', candidate.provider.upstream);
-        return forwardUpstreamResponse(response);
+        lastFailedResponse = response;
+        lastFailedPerformance = performanceContext;
+        lastFailedUpstream = candidate.provider.upstream;
+        continue;
       }
 
       recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
@@ -253,8 +269,24 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       });
     }
 
-    ctx.dump?.error('gateway');
-    return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+    // Candidate list exhausted. Two terminal states:
+    //   - At least one candidate replied non-2xx → surface the most recent
+    //     upstream response verbatim (its status, headers, body), and
+    //     attribute the request-perf + dump to that upstream.
+    //   - No candidate served the endpoint at all → 400 (the model exists
+    //     for chat dispatch but no enabled upstream offers this endpoint).
+    if (lastFailedResponse !== undefined) {
+      recordRequestPerformance(ctx.backgroundScheduler, lastFailedPerformance, true, performance.now() - requestStartedAt);
+      ctx.dump?.error('upstream', lastFailedUpstream);
+      return forwardUpstreamResponse(lastFailedResponse);
+    }
+    if (!anyCandidateServedEndpoint) {
+      ctx.dump?.error('gateway');
+      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+    }
+    // Unreachable: anyCandidateServedEndpoint=true implies one candidate
+    // either succeeded (returned above) or failed (lastFailedResponse set).
+    throw new Error('passthrough-serve: loop exhausted with no success or failure response');
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);

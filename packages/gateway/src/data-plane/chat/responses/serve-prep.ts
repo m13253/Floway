@@ -61,16 +61,18 @@ export const expandPreviousResponseId = async (
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: CanonicalResponsesPayload; readonly candidate: ModelCandidate };
+  | { readonly kind: 'ready'; readonly prepared: CanonicalResponsesPayload; readonly candidates: readonly ModelCandidate[] };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
 // expand any `previous_response_id`, enumerate candidates, narrow by item
 // affinity (so a stored reasoning/compaction item nails the request to the
-// upstream that produced it), stage the user input, and pick the first
-// candidate. Returns a rendered failure result when no candidate is viable
-// so the caller can surface it directly without re-deriving the model-error
-// branch.
+// upstream that produced it), stage the user input, and return the
+// narrowed candidate list. Returns a rendered failure result when no
+// candidate is viable so the caller can surface it directly without
+// re-deriving the model-error branch. The caller iterates the candidates
+// — a successful attempt is the final answer, a per-candidate failure
+// falls through to the next entry in the list.
 export const prepareResponsesServePlan = async (args: {
   readonly payload: CanonicalResponsesPayload;
   readonly ctx: ChatGatewayCtx;
@@ -106,12 +108,7 @@ export const prepareResponsesServePlan = async (args: {
   await store.stageInputItems(payload.input);
   await store.refreshTouchedItems();
 
-  // Any non-throwing attempt result — events, api-error, or
-  // internal-error — IS the answer for this request: an upstream 4xx/5xx
-  // from the first viable candidate is final, not a hint to try another
-  // upstream.
-  const [candidate] = decision;
-  if (candidate === undefined) {
+  if (decision.length === 0) {
     return {
       kind: 'failure',
       result: renderResponsesFailure(
@@ -121,5 +118,5 @@ export const prepareResponsesServePlan = async (args: {
       ),
     };
   }
-  return { kind: 'ready', prepared, candidate };
+  return { kind: 'ready', prepared, candidates: decision };
 };

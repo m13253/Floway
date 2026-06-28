@@ -2,7 +2,7 @@ import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/candidates.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
-import { isChatServeFailure } from '../shared/errors.ts';
+import { isAttemptSuccess, isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -33,19 +33,20 @@ export const chatCompletionsServe = {
       candidates: viable,
     });
     if (isChatServeFailure(decision)) return renderChatCompletionsFailure(decision);
-
-    // Any non-throwing attempt result — events, api-error, or
-    // internal-error — IS the answer for this request: an upstream 4xx/5xx
-    // from the first viable candidate is final, not a hint to try another
-    // upstream.
-    const [candidate] = decision;
-    if (candidate === undefined) {
+    if (decision.length === 0) {
       return renderChatCompletionsFailure(
         sawModel
           ? { kind: 'model-unsupported', model: payload.model, failedUpstreams }
           : { kind: 'model-missing', model: payload.model, failedUpstreams },
       );
     }
-    return await chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
+
+    let lastFailure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> | undefined;
+    for (const candidate of decision) {
+      const result = await chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
+      if (isAttemptSuccess(result)) return result;
+      lastFailure = result;
+    }
+    return lastFailure!;
   },
 };

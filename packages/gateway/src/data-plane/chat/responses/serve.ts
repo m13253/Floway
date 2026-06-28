@@ -1,6 +1,7 @@
 import { responsesAttempt } from './attempt.ts';
 import type { CanonicalResponsesPayload, ResponsesAttemptResult } from './interceptors/types.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
+import { isAttemptSuccess } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -23,7 +24,18 @@ export const responsesServe = {
     const { payload, ctx, headers } = args;
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.generate({ payload: plan.prepared, ctx, candidate: plan.candidate, headers });
+    // Try each narrowed candidate in order. A successful attempt (SSE
+    // stream opened) is the final answer; an api-error or internal-error
+    // from one candidate falls through to the next so the gateway's
+    // resilience absorbs transient 5xx/429/network failures. The last
+    // failure surfaces when the list is exhausted.
+    let lastFailure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | undefined;
+    for (const candidate of plan.candidates) {
+      const result = await responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
+      if (isAttemptSuccess(result)) return result;
+      lastFailure = result;
+    }
+    return lastFailure!;
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -39,6 +51,12 @@ export const responsesServe = {
     // re-tags the result as compact on the way out.
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
-    return await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate: plan.candidate, headers });
+    let lastFailure: ResponsesAttemptResult | undefined;
+    for (const candidate of plan.candidates) {
+      const result = await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
+      if (isAttemptSuccess(result)) return result;
+      lastFailure = result;
+    }
+    return lastFailure!;
   },
 };
