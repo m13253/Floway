@@ -161,15 +161,13 @@ interface ProviderCandidate {
 ```
 
 - `provider` is the resolved upstream provider instance — every wire call,
-  capability flag, and pricing lookup reads off it directly. Fields the
-  candidate used to copy (upstream id, upstream name, provider kind,
-  `supportsResponsesItemReference`) are read from `provider.*`.
+  capability flag, and pricing lookup reads off it directly. It carries
+  the upstream id, upstream name, provider kind, and
+  `supportsResponsesItemReference`.
 - `model` is the specific `UpstreamModel` entry that the catalog match
   produced for this upstream. Its `id` is the upstream's catalog id;
   `providerData` carries the per-provider wire id; `enabledFlags` carries
-  the operator's per-binding flag set. Same fields the candidate used to
-  copy off `binding.enabledFlags` / `binding.upstreamModel` are read from
-  `model.*`.
+  the operator's per-model flag set.
 - `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
   candidate's upstream, minted once at resolution time and shared by every
   attempt that dispatches against this candidate.
