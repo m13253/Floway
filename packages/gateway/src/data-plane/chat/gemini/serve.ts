@@ -31,7 +31,7 @@ export interface GeminiServeCountTokensArgs {
 // Gemini has no native upstream target in the provider API; prefer Chat
 // Completions, then Messages, then Responses for generate. countTokens has
 // no translation path beyond native Messages count_tokens, so only
-// Messages-endpoint bindings qualify there.
+// Messages-endpoint candidates qualify there.
 const pickGeminiGenerateTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
   endpoints.chatCompletions ? 'chat-completions'
     : endpoints.messages ? 'messages'

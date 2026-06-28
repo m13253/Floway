@@ -120,19 +120,24 @@ Steps:
    normalization hook above the catalog; an upstream that wants the
    gateway to accept a non-listed alternate id must list it in its
    catalog.
-4. **Kind-filter** the resolved set: keep only entries whose
+4. If the resolved set is empty **and** the inbound id matches
+   `-\d{8}$`, strip the eight-digit dated suffix and rerun steps 2–3
+   once against the stripped id. The retry is bounded to one iteration;
+   a second dated suffix on the stripped id is not stripped again. The
+   gate runs on the pre-kind-filter raw resolution: if any upstream's
+   catalog already lists the dated id verbatim (at any kind), the
+   strip-and-retry never fires.
+5. **Kind-filter** the surviving resolved set: keep only entries whose
    `model.kind === inboundKind`. No endpoint-level capability check
    happens here.
-5. If the resolved set is non-empty, return the candidates plus
-   `sawModel: true` and `failedUpstreams`.
-6. If the resolved set is empty **and** the inbound id matches `-\d{8}$`,
-   strip the eight-digit dated suffix and rerun steps 2–5 once against
-   the stripped id. The retry is bounded to one iteration; a second
-   dated suffix on the stripped id is not stripped again.
-7. If both attempts produce zero candidates, return `sawModel:
-   false` with the union of `failedUpstreams` seen across the
-   attempts. The caller renders a 404 / 400 with the standard wording
-   plus the failed-upstreams parenthetical.
+6. Return the kind-filtered candidates plus `sawModel` (true iff the
+   raw resolution from steps 2–4 produced at least one match, of any
+   kind) and `failedUpstreams` (deduped union across both attempts when
+   the retry fired). When both attempts produce zero raw resolutions
+   the caller renders a 404 with the standard wording; when raw
+   resolutions exist but kind-filter rejects them all the caller
+   renders a 400 "model does not support this endpoint" with the same
+   failed-upstreams parenthetical.
 
 The dated-suffix fallback exists for clients that pin to a vendor's dated
 release id (typical for Anthropic-style `claude-sonnet-4-5-20250929`)
