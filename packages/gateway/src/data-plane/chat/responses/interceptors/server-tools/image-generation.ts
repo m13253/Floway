@@ -526,7 +526,7 @@ const serverError = (e: unknown): ImageError => ({
 // model for the target endpoint. A resolution/availability failure is
 // normalized into an `ImageError` so the caller always produces a
 // terminal image item.
-const resolveImageBinding = async (
+const resolveImageCandidate = async (
   isEdit: boolean,
   state: ShimState,
 ): Promise<{ ok: true; provider: ModelProviderInstance; model: UpstreamModel; fetcher: Fetcher } | { ok: false; error: ImageError }> => {
@@ -764,7 +764,7 @@ const streamImageGeneration = (
   sources: readonly ImageSource[],
   state: ShimState,
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
-  const resolved = await resolveImageBinding(isEdit, state);
+  const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { provider, model, fetcher } = resolved;
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
