@@ -66,41 +66,57 @@ const computeCatalog = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, addressable, aliases] = await Promise.all([
+  const [catalog, callerAddressable, gatewayAddressable, aliases] = await Promise.all([
     resolveCodexCatalog(userAgent),
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
+    upstreamIds === null
+      ? Promise.resolve(null)
+      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
     getRepo().modelAliases.list(),
   ]);
-  const realModels = listedRealModels(addressable);
-  // `registrySlugs` mirrors the listed catalog surface — the slugs codex
-  // would have seen in a regular /v1/models call. `addressableById` is the
-  // broader map the resolver actually accepts (prefix alternates, Copilot
-  // variants) — same surface the listing-side synthesizer narrowed against,
-  // so the kind-filtered lookup below stays consistent with the entries
-  // it emitted.
+  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+  const realModels = listedRealModels(callerAddressable);
+  // `registrySlugs` mirrors the caller's listed catalog — the slugs the
+  // codex client would have seen in a regular /v1/models call. The two
+  // addressable maps below feed the synthesizer's metadata-vs-visibility
+  // split: gateway-wide for the alias's context-window intersection (so
+  // every API key sees the same number), caller-scope for "does this
+  // alias appear at all".
   const registrySlugs = new Set(realModels.map(m => m.id));
-  const addressableById = new Map(addressable.map(entry => [entry.id, entry] as const));
+  const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry] as const));
+  const callerById = new Map(callerAddressable.map(entry => [entry.id, entry] as const));
 
   // Each alias entry survives in the codex catalog when at least one of
   // its configured targets is currently addressable AND kind-matches the
-  // alias — the same predicate `synthesizeListedAliases` already applied to
-  // emit the entry, re-derived here per-target so we can pull the min
-  // window across every routable target. Selection mode is irrelevant
-  // because the catalog must publish a single stable window; the operator
-  // override still wins when announced metadata supplies one.
+  // alias under the CALLER's cap (this matches `synthesizeListedAliases`'s
+  // visibility rule). The fallback window — used when the operator did
+  // not override `announcedMetadata` — is the min across every GATEWAY-
+  // wide routable target's window, mirroring the safe-lower-bound rule
+  // /v1/models already applies. Selection mode is irrelevant here because
+  // the catalog must publish a single stable window.
   interface AliasCatalogInfo {
     readonly routableWindowsMin: number | null;
     readonly announcedContextWindow: number | undefined;
   }
   const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
-  for (const entry of synthesizeListedAliases({ aliases, addressableModelIds: addressable })) {
+  for (const entry of synthesizeListedAliases({
+    aliases,
+    gatewayAddressableModelIds,
+    callerAddressableModelIds: callerAddressable,
+    narrowTargets: true,
+  })) {
     const aliasedFrom = entry.aliasedFrom;
     if (aliasedFrom === undefined) continue;
-    const routable = aliasedFrom.targets
-      .map(t => addressableById.get(t.target_model_id))
+    // Use the raw alias record's targets for the window scan — the
+    // entry's `aliasedFrom.targets` is the narrowed projection, which
+    // would understate the gateway-wide min when the caller is scoped.
+    const alias = aliases.find(a => a.name === entry.id);
+    if (alias === undefined) continue;
+    const gatewayRoutable = alias.targets
+      .map(t => gatewayById.get(t.target_model_id))
       .filter((a): a is NonNullable<typeof a> => a !== undefined && a.model.kind === entry.kind);
-    if (routable.length === 0) continue;
-    const windows = routable
+    if (gatewayRoutable.length === 0) continue;
+    const windows = gatewayRoutable
       .map(a => a.model.limits.max_context_window_tokens)
       .filter((w): w is number => w !== undefined);
     aliasCatalogInfo.set(entry.id, {
@@ -122,7 +138,7 @@ const computeCatalog = async (
   const contextWindowOf: ContextWindowResolver = slug => {
     const info = aliasCatalogInfo.get(slug);
     if (info !== undefined) return info.announcedContextWindow ?? info.routableWindowsMin;
-    return addressableById.get(slug)?.model.limits.max_context_window_tokens ?? null;
+    return callerById.get(slug)?.model.limits.max_context_window_tokens ?? null;
   };
   return applyContextWindowFromRegistry(filtered, contextWindowOf);
 };

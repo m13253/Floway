@@ -3,14 +3,14 @@
 // carries an `aliasedFrom` block so an alias-aware UI can render the
 // alias-of relationship without a second round trip.
 //
-// `limits` and `chat` come from the alias's announced metadata payload:
-// the operator's stored override when set (with top-level sub-block
-// granularity — a present `limits` / `chat` replaces the computed
-// counterpart wholesale, not per-leaf), otherwise the rule-aware
-// intersection across the alias's available targets. The
-// intersection is the safe lower bound for the inbound request — every
-// reported capability survives no matter which target the resolver
-// picks at request time.
+// `limits`, `chat`, `endpoints`, and `cost` are computed against the
+// GATEWAY-WIDE addressable surface — every caller sees the same numbers
+// for the same alias, independent of their data-plane cap. The operator's
+// stored `announced_metadata` override still wins at sub-block
+// granularity (a present `limits` / `chat` replaces the computed
+// counterpart wholesale, not per-leaf). The intersection is the safe
+// lower bound for the inbound request — every reported capability
+// survives no matter which target the resolver picks.
 //
 // The rule-aware part: when an alias's rule pins a value at a target,
 // that target is treated as "unsupported" for the corresponding
@@ -18,6 +18,11 @@
 // already fixes whatever value the listing would have advertised, so
 // dropping the sub-field from the announced metadata keeps the wire
 // surface honest about what the operator left for the caller to set.
+//
+// Caller-scope (the addressable surface this specific request can
+// reach) controls only two things: whether the alias appears in this
+// caller's response (at least one target reachable under the cap), and
+// the `aliasedFrom.targets` projection when `narrowTargets` is true.
 //
 // Collision: when an alias's `name` exactly equals a real model id, the
 // alias entry replaces the real entry in the final catalog. Two entries
@@ -35,12 +40,27 @@ import type { ResolvedModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
-  // Full addressable surface — both the listed catalog rows and the
-  // addressable-but-not-listed prefix/redirect forms each provider
-  // contributes. The synthesizer maps every alias target through this
-  // surface so a target that's only reachable via a prefix alternate or
-  // Copilot variant id still counts as available.
-  readonly addressableModelIds: readonly AddressableIdEntry[];
+  // Gateway-wide addressable surface — used for the metadata + endpoints
+  // + cost computations that must be stable across callers. A target
+  // resolvable only via an upstream the current caller cannot reach
+  // STILL contributes to the safe-lower-bound intersection the catalog
+  // publishes, because the same alias must look the same to every
+  // user (admin, non-admin, api key).
+  readonly gatewayAddressableModelIds: readonly AddressableIdEntry[];
+  // Caller-scoped addressable surface. Decides (a) whether this alias
+  // is visible to the caller at all (must have at least one target
+  // reachable under the caller's cap) and (b) the `aliasedFrom.targets`
+  // projection when `narrowTargets` is true. For unrestricted callers
+  // (admin gateway-wide) pass the same array as `gatewayAddressableModelIds`.
+  readonly callerAddressableModelIds: readonly AddressableIdEntry[];
+  // True for callers whose `aliasedFrom.targets` projection must omit
+  // any configured target the addressable surface cannot serve — every
+  // data-plane response, and non-admin control-plane responses. False
+  // for admin sessions on the control plane: the alias-edit dialog
+  // needs to see every target the operator wired, including typos and
+  // targets on upstreams the admin self-restricted out of, so the
+  // configuration is editable end to end.
+  readonly narrowTargets: boolean;
 }
 
 // Result preserves the order of `arrays[0]`. Matters for callers like the
@@ -154,14 +174,24 @@ const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelL
   return result;
 };
 
-const buildAliasedFrom = (alias: ModelAliasRecord): PublicModelAliasedFrom => ({
-  name: alias.name,
-  kind: alias.kind,
-  selection: alias.selection,
-  // Every configured target — including ones the live catalog can not
-  // serve — so the dashboard can show the full configuration.
-  targets: alias.targets,
-});
+// `narrowTargets=true` filters `targets` to those the caller's addressable
+// surface can serve — protects non-admin / data-plane callers from seeing
+// operator state (target IDs from upstreams they have no access to, plus
+// typo'd / removed model IDs). `narrowTargets=false` is the admin-debug
+// view: every configured target survives so the dashboard's alias editor
+// can render the full configuration even when the admin self-restricted.
+const buildAliasedFrom = (
+  alias: ModelAliasRecord,
+  addressableModelIds: readonly AddressableIdEntry[],
+  narrowTargets: boolean,
+): PublicModelAliasedFrom => {
+  if (!narrowTargets) {
+    return { name: alias.name, kind: alias.kind, selection: alias.selection, targets: alias.targets };
+  }
+  const addressableSet = new Set(addressableModelIds.map(entry => entry.id));
+  const targets = alias.targets.filter(t => addressableSet.has(t.target_model_id));
+  return { name: alias.name, kind: alias.kind, selection: alias.selection, targets };
+};
 
 // Compute the rule-aware intersection (`limits` + `chat`) over the
 // alias's currently-available targets. Caller decides whether to use
@@ -197,43 +227,57 @@ const mergeWithOverride = (
   chat: override.chat ?? computed.chat,
 });
 
-// Returns null when every configured target falls outside the caller's
-// addressable surface — an alias with no reachable target has no listing
-// row, because the catalog should never advertise an id the resolver
-// would 404 on. The alias itself stays addressable through
-// `resolveAlias`, which surfaces `AliasNoTargetAvailableError` at request
-// time. Callers (`synthesizeListedAliases`) filter the nulls out.
-const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly AddressableIdEntry[]): PublicModel | null => {
-  // Map every alias target through the full addressable surface, not just
-  // the listed catalog: a target reachable only via a prefix-addressable
-  // alternate or a provider-side redirect (Copilot variant id) is still
-  // available to the resolver, and the listing must agree.
-  const addressableById = new Map(addressableModelIds.map(entry => [entry.id, entry.model] as const));
-  const availableTargets = alias.targets
-    .map(target => ({ target, real: addressableById.get(target.target_model_id) }))
+// Returns null when no target serves this alias on the gateway, OR when the
+// caller cannot reach any of the configured targets — the catalog should
+// never advertise an id the caller would 404 on. The alias itself stays
+// addressable through `resolveAlias`, which surfaces
+// `AliasNoTargetAvailableError` at request time. Callers
+// (`synthesizeListedAliases`) filter the nulls out.
+const synthesizeOne = (
+  alias: ModelAliasRecord,
+  gatewayAddressableModelIds: readonly AddressableIdEntry[],
+  callerAddressableModelIds: readonly AddressableIdEntry[],
+  narrowTargets: boolean,
+): PublicModel | null => {
+  // Gateway-wide kind-matched targets — the basis for stable metadata.
+  // A target reachable only via a prefix-addressable alternate or a
+  // provider-side redirect (Copilot variant id) still counts.
+  const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
+  const gatewayAvailable = alias.targets
+    .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
+  if (gatewayAvailable.length === 0) return null;
 
-  if (availableTargets.length === 0) return null;
+  // Caller-scope visibility: the alias appears only if at least one
+  // gateway-available target sits inside the caller's addressable cap.
+  const callerSet = new Set(callerAddressableModelIds.map(entry => entry.id));
+  const callerHasAny = gatewayAvailable.some(e => callerSet.has(e.target.target_model_id));
+  if (!callerHasAny) return null;
 
   // Display name precedence: operator-set wins; otherwise derive from the
   // sole target's id + rules when single-target; multi-target falls back to
   // the alias's own name because no single target represents the alias.
+  // Uses the configured `alias.targets.length` (stable across callers)
+  // rather than the per-caller reachable count.
   const displayName = alias.displayName ?? (alias.targets.length === 1
     ? composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules)
     : alias.name);
 
-  const computed = computeAutomaticMetadata(availableTargets);
+  // Metadata + endpoints + cost computed against gateway-wide — every
+  // caller sees the same numbers for the same alias, so a non-admin
+  // restricted to a subset of upstreams never sees a more permissive
+  // limit than the admin who knows the alias's true safe-lower-bound.
+  const computed = computeAutomaticMetadata(gatewayAvailable);
   const { limits, chat } = alias.announcedMetadata !== null
     ? mergeWithOverride(computed, alias.announcedMetadata)
     : computed;
 
-  // Endpoints follow the available-targets UNION, not an intersection —
-  // every endpoint reachable through ANY target is advertised, because
-  // the resolver's request-time pool narrows to targets that serve the
-  // inbound endpoint and the first-available / random pick happens
-  // within that narrowed pool. Operator can't override endpoints (they
-  // follow the target set, not a stored override).
-  const endpoints = unionEndpoints(availableTargets.map(({ real }) => real.endpoints));
+  // Endpoints follow the gateway-wide union — every endpoint reachable
+  // through ANY gateway target is advertised. The resolver's
+  // request-time pool narrows to targets that serve the inbound endpoint;
+  // a caller hitting an endpoint that's only available through an out-of-
+  // cap target gets the natural `AliasNoTargetAvailableError` 404.
+  const endpoints = unionEndpoints(gatewayAvailable.map(({ real }) => real.endpoints));
 
   const entry: PublicModel = {
     id: alias.name,
@@ -243,14 +287,15 @@ const synthesizeOne = (alias: ModelAliasRecord, addressableModelIds: readonly Ad
     limits,
     kind: alias.kind,
     endpoints,
-    aliasedFrom: buildAliasedFrom(alias),
+    aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
   };
   if (chat !== undefined) entry.chat = chat;
 
-  // Single-target chat pricing rides along when available — the resolver
-  // will hit that target, so the catalog can publish its rate verbatim.
-  if (availableTargets.length === 1) {
-    const [{ real }] = availableTargets;
+  // Gateway-wide single-target chat pricing rides along when available.
+  // Stable across callers — same alias publishes the same cost
+  // everywhere.
+  if (gatewayAvailable.length === 1) {
+    const [{ real }] = gatewayAvailable;
     if (real.cost !== undefined) entry.cost = real.cost;
   }
 
@@ -263,7 +308,7 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[] =>
   sortAliases(input.aliases)
     .filter(alias => alias.visibleInModelsList)
-    .map(alias => synthesizeOne(alias, input.addressableModelIds))
+    .map(alias => synthesizeOne(alias, input.gatewayAddressableModelIds, input.callerAddressableModelIds, input.narrowTargets))
     .filter((entry): entry is PublicModel => entry !== null);
 
 // Compose real-model entries with visible alias entries into a single typed
@@ -280,18 +325,26 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[]
 // before projecting to Gemini's wire form).
 //
 // `realModels` is the listed projection — what `/v1/models` and the
-// dashboard's default `/api/models` row stream emit. `addressableModelIds`
-// feeds the alias synthesizer's availability check; the merge step never
-// promotes addressable-but-not-listed ids to real-model rows.
+// dashboard's default `/api/models` row stream emit (caller-scoped).
+// The two addressable surfaces feed the alias synthesizer's metadata-vs-
+// visibility split; the merge step never promotes addressable-but-not-
+// listed ids to real-model rows.
 export const mergeAliasesIntoModels = <T>(input: {
   readonly realModels: readonly ResolvedModel[];
-  readonly addressableModelIds: readonly AddressableIdEntry[];
+  readonly gatewayAddressableModelIds: readonly AddressableIdEntry[];
+  readonly callerAddressableModelIds: readonly AddressableIdEntry[];
   readonly aliases: readonly ModelAliasRecord[];
+  readonly narrowTargets: boolean;
   readonly mapReal: (model: ResolvedModel) => T;
   readonly wrapAlias: (entry: PublicModel) => T;
 }): T[] => {
-  const { realModels, addressableModelIds, aliases, mapReal, wrapAlias } = input;
-  const aliasEntries = synthesizeListedAliases({ aliases, addressableModelIds });
+  const { realModels, gatewayAddressableModelIds, callerAddressableModelIds, aliases, narrowTargets, mapReal, wrapAlias } = input;
+  const aliasEntries = synthesizeListedAliases({
+    aliases,
+    gatewayAddressableModelIds,
+    callerAddressableModelIds,
+    narrowTargets,
+  });
   const aliasIds = new Set(aliasEntries.map(entry => entry.id));
   return [
     ...realModels.filter(model => !aliasIds.has(model.id)).map(mapReal),

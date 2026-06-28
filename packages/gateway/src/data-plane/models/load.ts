@@ -31,19 +31,25 @@ export const loadModels = async (
   scheduler: BackgroundScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<PublicModelsResponse> => {
-  // The addressable surface already includes the listed projection — its
-  // entries-where-unlisted-is-absent are exactly the rows /v1/models
-  // historically served. Reusing the surface here avoids a second registry
-  // call for the alias-availability check.
-  const [addressable, aliases] = await Promise.all([
+  // Data-plane responses always narrow `aliasedFrom.targets` to the
+  // caller's reachable set (and never expose typo'd / removed target
+  // ids), but the alias's metadata is still computed gateway-wide so
+  // every caller sees the same numbers.
+  const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
     enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
+    upstreamFilter === null
+      ? Promise.resolve(null)
+      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const realModels = listedRealModels(addressable);
+  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+  const realModels = listedRealModels(callerAddressable);
   const data = mergeAliasesIntoModels({
     realModels,
-    addressableModelIds: addressable,
+    gatewayAddressableModelIds,
+    callerAddressableModelIds: callerAddressable,
     aliases,
+    narrowTargets: true,
     mapReal: toPublicModel,
     wrapAlias: entry => entry,
   });

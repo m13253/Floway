@@ -53,7 +53,7 @@ describe('synthesizeListedAliases', () => {
       },
     })];
 
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.id).toBe('gpt-fast');
     expect(entry.display_name).toBe('gpt-5.4 (low effort)');
     // The rule pins effort, so the announced metadata drops it — the
@@ -76,7 +76,7 @@ describe('synthesizeListedAliases', () => {
       id: 'gpt-5.4',
       chat: { reasoning: { budget_tokens: { min: 1024, max: 65536 } } },
     })];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -95,7 +95,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { budget_tokens: { min: 1024 } } } }),
       realModel({ id: 'b', chat: { reasoning: { budget_tokens: { max: 65536 } } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -111,7 +111,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.id).toBe('smart-router');
     expect(entry.display_name).toBe('smart-router');
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
@@ -128,7 +128,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } }),
       realModel({ id: 'b', chat: {} }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -148,7 +148,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { modalities: { input: ['text'], output: ['text'] } } }),
       realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['image'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.modalities).toBeUndefined();
   });
 
@@ -164,7 +164,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', chat: { modalities: { input: ['text'], output: ['text', 'image'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
     // Every configured target — including the unavailable one — survives in aliasedFrom.
     expect(entry.aliasedFrom?.targets.map(t => t.target_model_id)).toEqual(['a', 'gone', 'b']);
@@ -173,7 +173,7 @@ describe('synthesizeListedAliases', () => {
   test('hidden alias is not emitted', () => {
     const aliases = [aliasFixture({ visibleInModelsList: false })];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    expect(synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) })).toEqual([]);
+    expect(synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false })).toEqual([]);
   });
 
   test('alias whose name collides with a real id is emitted (loadModels drops the duplicate real)', () => {
@@ -182,7 +182,7 @@ describe('synthesizeListedAliases', () => {
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
     })];
     const realModels = [realModel({ id: 'gpt-5.4', display_name: 'GPT 5.4' })];
-    const entries = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const entries = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe('gpt-5.4');
     expect(entries[0].aliasedFrom?.name).toBe('gpt-5.4');
@@ -193,7 +193,7 @@ describe('synthesizeListedAliases', () => {
       name: 'orphan',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    expect(synthesizeListedAliases({ aliases, addressableModelIds: [] })).toEqual([]);
+    expect(synthesizeListedAliases({ aliases, gatewayAddressableModelIds: [], callerAddressableModelIds: [], narrowTargets: false })).toEqual([]);
   });
 
   test('sorts entries by (sort_order, name) so listing order stays stable', () => {
@@ -203,7 +203,7 @@ describe('synthesizeListedAliases', () => {
       aliasFixture({ name: 'mid-b', sortOrder: 0 }),
     ];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    const ids = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) }).map(entry => entry.id);
+    const ids = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false }).map(entry => entry.id);
     expect(ids).toEqual(['mid-a', 'mid-b', 'late']);
   });
 
@@ -219,7 +219,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'emb', kind: 'embedding' }),
       realModel({ id: 'chat', chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // Only the chat target backs the metadata — the embedding row never
     // enters the intersection / narrowing path.
     expect(entry.chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
@@ -231,7 +231,7 @@ describe('synthesizeListedAliases', () => {
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
     })];
     const realModels = [realModel({ id: 'gpt-5.4' })];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.display_name).toBe('My Fast GPT');
   });
 
@@ -249,7 +249,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
       realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -265,7 +265,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } } }),
       realModel({ id: 'b', chat: { reasoning: { effort: { supported: ['medium', 'high'], default: 'medium' } } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning?.effort).toEqual({ supported: ['medium', 'high'], default: 'medium' });
   });
 
@@ -281,7 +281,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', chat: { reasoning: { adaptive: true } } }),
       realModel({ id: 'b', chat: { reasoning: { adaptive: true } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat?.reasoning).toBeUndefined();
   });
 
@@ -297,7 +297,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', limits: { max_context_window_tokens: 128000, max_output_tokens: 16000 } }),
       realModel({ id: 'b', limits: { max_context_window_tokens: 200000 } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // Both targets advertise max_context_window_tokens — emit the min.
     expect(entry.limits.max_context_window_tokens).toBe(128000);
     // Only `a` declares max_output_tokens, so it drops out.
@@ -319,7 +319,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'a', limits: { max_context_window_tokens: 128000 }, chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
       realModel({ id: 'b', limits: { max_context_window_tokens: 200000 }, chat: { modalities: { input: ['text'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // The override carries the operator's pinned ceiling verbatim …
     expect(entry.limits).toEqual({ max_output_tokens: 8192 });
     // … while chat falls back to the rule-aware intersection.
@@ -337,7 +337,7 @@ describe('synthesizeListedAliases', () => {
     const realModels = [
       realModel({ id: 'a', chat: { modalities: { input: ['text', 'image'], output: ['text'] } } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.chat).toEqual({ modalities: { input: ['text'], output: ['text'] } });
   });
 
@@ -355,7 +355,7 @@ describe('synthesizeListedAliases', () => {
       // Target b only serves the three chat endpoints.
       realModel({ id: 'b', endpoints: { chatCompletions: {}, messages: {}, responses: {} } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     // Union: every key surfaces. Resolver narrows to the supporting subset
     // at request time, so first-available / random stays sound per-endpoint.
     expect(entry.endpoints).toEqual({
@@ -378,7 +378,7 @@ describe('synthesizeListedAliases', () => {
       realModel({ id: 'gen', kind: 'image', endpoints: { imagesGenerations: {} } }),
       realModel({ id: 'edit', kind: 'image', endpoints: { imagesEdits: {} } }),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds: listed(realModels) });
+    const [entry] = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entry.endpoints).toEqual({ imagesGenerations: {}, imagesEdits: {} });
   });
 
@@ -387,7 +387,7 @@ describe('synthesizeListedAliases', () => {
       name: 'ghost',
       targets: [{ target_model_id: 'missing', rules: {} }],
     })];
-    expect(synthesizeListedAliases({ aliases, addressableModelIds: [] })).toEqual([]);
+    expect(synthesizeListedAliases({ aliases, gatewayAddressableModelIds: [], callerAddressableModelIds: [], narrowTargets: false })).toEqual([]);
   });
 
   test('an alias target reachable only via the addressable-but-not-listed surface counts as available', () => {
@@ -409,9 +409,104 @@ describe('synthesizeListedAliases', () => {
       ...listed([canonical]),
       unlisted('claude-opus-4.7-high', canonical),
     ];
-    const [entry] = synthesizeListedAliases({ aliases, addressableModelIds });
+    const [entry] = synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: addressableModelIds,
+      callerAddressableModelIds: addressableModelIds,
+      narrowTargets: false,
+    });
     expect(entry.id).toBe('fast-claude');
     expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
     expect(entry.endpoints).toEqual({ chatCompletions: {}, messages: {}, responses: {} });
+  });
+
+  test('metadata is computed gateway-wide — same numbers regardless of caller cap', () => {
+    // The alias has two targets with different windows. Two callers see
+    // the alias: one with full gateway access, one capped to a subset.
+    // Both must read the same `limits.max_context_window_tokens` because
+    // the announced metadata is a stable property of the alias.
+    const aliases = [aliasFixture({
+      name: 'mix',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+      ],
+    })];
+    const a = realModel({ id: 'a', limits: { max_context_window_tokens: 100_000 } });
+    const b = realModel({ id: 'b', limits: { max_context_window_tokens: 200_000 } });
+    const gatewayWide = listed([a, b]);
+    const restricted = listed([b]);
+
+    const [unrestricted] = synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: gatewayWide,
+      callerAddressableModelIds: gatewayWide,
+      narrowTargets: false,
+    });
+    const [scoped] = synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: gatewayWide,
+      callerAddressableModelIds: restricted,
+      narrowTargets: true,
+    });
+
+    // Both callers read the safe-lower-bound min(100k, 200k) = 100k —
+    // even though the scoped caller's resolver would never pick `a`.
+    expect(unrestricted.limits.max_context_window_tokens).toBe(100_000);
+    expect(scoped.limits.max_context_window_tokens).toBe(100_000);
+    // Endpoints union also computed gateway-wide.
+    expect(unrestricted.endpoints).toEqual(scoped.endpoints);
+  });
+
+  test('narrowTargets=true filters `aliasedFrom.targets` to caller-reachable; narrowTargets=false keeps raw config (typos included)', () => {
+    const aliases = [aliasFixture({
+      name: 'mix',
+      targets: [
+        { target_model_id: 'a', rules: {} },
+        { target_model_id: 'b', rules: {} },
+        { target_model_id: 'typo-no-such-model', rules: {} },
+      ],
+    })];
+    const a = realModel({ id: 'a' });
+    const b = realModel({ id: 'b' });
+    const gatewayWide = listed([a, b]);
+    const restricted = listed([b]);
+
+    const [adminView] = synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: gatewayWide,
+      callerAddressableModelIds: gatewayWide,
+      narrowTargets: false,
+    });
+    // Admin (narrowTargets=false) keeps the raw configured list,
+    // including the typo, so the alias-edit dialog can render the full
+    // configuration even when some targets do not currently resolve.
+    expect(adminView.aliasedFrom?.targets.map(t => t.target_model_id)).toEqual(['a', 'b', 'typo-no-such-model']);
+
+    const [scopedView] = synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: gatewayWide,
+      callerAddressableModelIds: restricted,
+      narrowTargets: true,
+    });
+    // Non-admin / data-plane caller (narrowTargets=true) only sees the
+    // targets sitting inside their addressable cap. Out-of-cap target
+    // `a` AND the typo `typo-no-such-model` both drop out — the caller
+    // never learns the operator's full alias configuration.
+    expect(scopedView.aliasedFrom?.targets.map(t => t.target_model_id)).toEqual(['b']);
+  });
+
+  test('alias is omitted when caller cannot reach any of the configured targets', () => {
+    const aliases = [aliasFixture({
+      name: 'mix',
+      targets: [{ target_model_id: 'a', rules: {} }],
+    })];
+    const a = realModel({ id: 'a' });
+    expect(synthesizeListedAliases({
+      aliases,
+      gatewayAddressableModelIds: listed([a]),
+      callerAddressableModelIds: [],  // caller sees nothing
+      narrowTargets: true,
+    })).toEqual([]);
   });
 });

@@ -59,22 +59,33 @@ export const controlPlaneModels = async (c: Context) => {
     // sessions stay scoped to their effective upstream cap so the
     // dashboard cannot leak models from upstreams their account has no
     // data-plane access to.
-    const upstreamScope = userFromContext(c).isAdmin ? null : effectiveUpstreamIdsFromContext(c);
+    const isAdmin = userFromContext(c).isAdmin;
+    const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const [addressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(
-        upstreamScope,
-        fetcherForUpstream,
-        backgroundSchedulerFromContext(c),
-      ),
+    // Two addressable surfaces: caller-scoped (drives visibility +
+    // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
+    // (drives the alias's metadata + endpoints + cost — every caller
+    // sees the same numbers for the same alias). For admin the two are
+    // the same, so skip the second fetch.
+    const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
+      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c)),
+      isAdmin
+        ? Promise.resolve(null)
+        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c)),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
-    const realModels = listedRealModels(addressable);
+    const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+    const realModels = listedRealModels(callerAddressable);
     const listedRows = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
-          addressableModelIds: addressable,
+          gatewayAddressableModelIds,
+          callerAddressableModelIds: callerAddressable,
           aliases,
+          // Admin sees raw configured targets (including typos / out-of-
+          // cap models) so the alias-edit dialog can render the full
+          // configuration; non-admin sessions get the narrowed projection.
+          narrowTargets: !isAdmin,
           mapReal: toControlPlaneModel,
           wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
@@ -86,7 +97,7 @@ export const controlPlaneModels = async (c: Context) => {
     // of collision; the dashboard must agree.
     const listedIds = new Set(listedRows.map(row => row.id));
     const unlistedRows = includeUnlisted
-      ? addressable
+      ? callerAddressable
           .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
           .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
       : [];

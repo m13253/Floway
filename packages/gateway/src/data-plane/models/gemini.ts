@@ -74,18 +74,24 @@ const loadGeminiModels = async (
   scheduler: BackgroundScheduler,
   aliasRepo: ModelAliasesRepo,
 ): Promise<GeminiModel[]> => {
-  const [addressable, aliases] = await Promise.all([
+  const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
     enumerateAddressableModelIds(upstreamFilter, fetcherForUpstream, scheduler),
+    upstreamFilter === null
+      ? Promise.resolve(null)
+      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
     aliasRepo.list(),
   ]);
-  const realModels = listedRealModels(addressable);
+  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+  const realModels = listedRealModels(callerAddressable);
   // Gemini surfaces chat-kind models only; filter both the real catalog and
   // the synthesized alias entries before the merge so the alias collision
   // step only ever weighs chat-on-chat.
   const merged = mergeAliasesIntoModels<InternalModel>({
     realModels: realModels.filter(model => model.kind === 'chat'),
-    addressableModelIds: addressable.filter(entry => entry.model.kind === 'chat'),
+    gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => entry.model.kind === 'chat'),
+    callerAddressableModelIds: callerAddressable.filter(entry => entry.model.kind === 'chat'),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
+    narrowTargets: true,
     mapReal: model => model,
     wrapAlias: entry => ({
       id: entry.id,
