@@ -88,6 +88,15 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
+// Identity canonicalization for image_generation: the shim doesn't
+// depend on filled defaults to run, and the OpenAI spec defaults for
+// `background` / `quality` / `size` / etc. observed via Azure echo
+// (all `'auto'`) signal "backend decides" rather than concrete values
+// the model needs. Preserving the client's raw shape keeps the echo
+// round-trip minimal — anything the client didn't send stays absent.
+export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesTool | undefined =>
+  isHostedImageGenerationTool(raw) ? raw : undefined;
+
 // A base64-data-URL or bare-base64 image source bound for an edit call.
 // Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
 interface ImageSource {
@@ -302,7 +311,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (_canonical: ResponsesTool, name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -968,7 +977,8 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     baseToolName: SHIM_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
     hosted: {
-      isHostedTool: isHostedImageGenerationTool,
+      hostedTypes: ['image_generation'],
+      canonicalize: canonicalizeImageGenerationTool,
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'
