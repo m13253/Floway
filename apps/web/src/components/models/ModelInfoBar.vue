@@ -49,13 +49,15 @@ const aliasReach = computed<{ total: number; reachable: number; sole: ControlPla
 
 // `alias of: <id>` when only one reachable target is also a visible
 // catalog row (admin or non-admin under a narrow cap viewing a single-
-// target alias);
+// target alias) — use the raw model id, not its display name, so the
+// badge mirrors the value the operator typed into the alias target
+// field and the value a client would put on the wire;
 // `alias of: N models` when every configured target is reachable;
 // `alias of: K / N models` when some are out of cap.
 const aliasOfLabel = computed<string | null>(() => {
   const r = aliasReach.value;
   if (r === null) return null;
-  if (r.sole !== null) return `alias of: ${r.sole.display_name ?? r.sole.id}`;
+  if (r.sole !== null) return `alias of: ${r.sole.id}`;
   if (r.reachable === r.total) return `alias of: ${r.total} model${r.total === 1 ? '' : 's'}`;
   return `alias of: ${r.reachable} / ${r.total} models`;
 });
