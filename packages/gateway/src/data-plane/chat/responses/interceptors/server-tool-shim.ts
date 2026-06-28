@@ -991,11 +991,14 @@ export const withResponsesServerToolShim = (
     if (nextInput !== inputArray) ctx.payload = { ...ctx.payload, input: nextInput };
   }
 
-  const hostedActive = active.filter(entry => entry.hasHostedTool && entry.hosted !== undefined);
+  const hostedActive = active.filter(
+    (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>
+      entry.hasHostedTool && entry.hosted !== undefined,
+  );
   if (hostedActive.length === 0) return await run();
 
   const dispatchers = new Map<string, ServerToolDispatcher>();
-  for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted!.dispatcher);
+  for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted.dispatcher);
   const loopState: ServerToolLoopState = {
     iterationCount: 1,
     remainingToolCalls: typeof ctx.payload.max_tool_calls === 'number' ? ctx.payload.max_tool_calls : undefined,
