@@ -58,6 +58,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/images/generations',
     model: request.model,
+    kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesGenerations !== undefined,
     call: (provider, model, opts) => {
       const { model: _model, ...body } = request.body;
@@ -99,6 +100,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/images/edits',
     model: modelRaw,
+    kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
     call: (provider, model, opts) => {
       // ModelProvider.callImagesEdits takes ownership of the FormData and

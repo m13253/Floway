@@ -1,8 +1,9 @@
 import { messagesAttempt } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
+import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates, planChatCandidates } from '../shared/candidates.ts';
+import { planChatCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -41,6 +42,7 @@ export const messagesServe = {
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
@@ -69,6 +71,7 @@ export const messagesServe = {
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
+      kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });

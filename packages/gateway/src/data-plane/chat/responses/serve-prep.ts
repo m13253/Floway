@@ -1,7 +1,8 @@
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { enumerateProviderCandidates, planChatCandidates, type ProviderCandidate } from '../shared/candidates.ts';
+import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import { planChatCandidates, type ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -91,6 +92,7 @@ export const prepareResponsesServePlan = async (args: {
   const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
+    kind: 'chat',
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
   });

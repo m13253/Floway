@@ -259,16 +259,6 @@ export const getModels = async (
   return { models: [], upstreamsByPublicId };
 };
 
-interface ModelResolution {
-  matches: readonly ProviderModelResolution[];
-  // Upstream names whose catalog fetch rejected during this resolution.
-  // Threaded out so the caller's failure renderer can mention them
-  // parenthetically — same data the dashboard's `modelsCache.lastError`
-  // surfaces, but inlined into the per-request 404/400 so a client sees
-  // why their model might be temporarily missing.
-  failedUpstreams: readonly string[];
-}
-
 // A single (provider, upstream-catalog model) pair the resolver matched
 // against an inbound id. `id` is the upstream's bare catalog id (which
 // equals `model.id` and differs from the inbound id when the inbound
@@ -312,25 +302,22 @@ export const enumerateModelInterpretations = (
 
 // Fan out per-interpretation against the SWR cache and collect the resolved
 // matches plus a deduped list of upstreams whose catalog fetch rejected.
-// Shared by `resolveModelForRequest` and `enumerateProviderCandidates`; the
-// per-caller divergence (passthrough vs LLM-candidate shape) happens after
-// this returns. Cancellation (`AbortError`) propagates so the per-request
-// abort signal cannot be masked by a slow upstream's rejection.
+// Cancellation (`AbortError`) propagates so the per-request abort signal
+// cannot be masked by a slow upstream's rejection.
 export const collectInterpretationOutcomes = async (
   interpretations: readonly ModelInterpretation[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  resolutions: ProviderModelResolution[];
   failedUpstreams: string[];
 }> => {
   const settled = await Promise.allSettled(interpretations.map(({ provider, lookupId }) =>
-    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)
-      .then(resolved => ({ provider, resolved }))));
+    resolveModelForProvider(provider, lookupId, fetcherForUpstream(provider.upstream), scheduler)));
 
   const failedUpstreams: string[] = [];
   const failedSeen = new Set<string>();
-  const resolutions: Array<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }> = [];
+  const resolutions: ProviderModelResolution[] = [];
 
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -345,9 +332,7 @@ export const collectInterpretationOutcomes = async (
       }
       continue;
     }
-    const { provider, resolved } = result.value;
-    if (!resolved) continue;
-    resolutions.push({ provider, resolved });
+    if (result.value !== undefined) resolutions.push(result.value);
   }
 
   return { resolutions, failedUpstreams };
@@ -370,7 +355,7 @@ export const resolveInterpretationsAcrossProviders = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  readonly resolutions: ReadonlyArray<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  readonly resolutions: readonly ProviderModelResolution[];
   readonly failedUpstreams: readonly string[];
 }> => {
   const first = await collectInterpretationOutcomes(
@@ -390,20 +375,6 @@ export const resolveInterpretationsAcrossProviders = async (
     resolutions: second.resolutions,
     failedUpstreams: [...new Set([...first.failedUpstreams, ...second.failedUpstreams])],
   };
-};
-
-export const resolveModelForRequest = async (
-  modelId: string,
-  upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<ModelResolution> => {
-  const providers = await listModelProviders(upstreamFilter);
-  if (providers.length === 0) {
-    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
-  }
-  const { resolutions, failedUpstreams } = await resolveInterpretationsAcrossProviders(modelId, providers, fetcherForUpstream, scheduler);
-  return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };
 
 export const resolveModelForProvider = async (

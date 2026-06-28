@@ -1,8 +1,9 @@
 import { geminiAttempt } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
+import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { enumerateProviderCandidates, planChatCandidates } from '../shared/candidates.ts';
+import { planChatCandidates } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -46,6 +47,7 @@ export const geminiServe = {
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
+      kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
@@ -74,6 +76,7 @@ export const geminiServe = {
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
+      kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });

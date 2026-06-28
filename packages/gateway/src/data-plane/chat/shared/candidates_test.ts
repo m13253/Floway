@@ -1,7 +1,8 @@
 import { describe, test } from 'vitest';
 
-import { enumerateProviderCandidates, planChatCandidates } from './candidates.ts';
+import { planChatCandidates } from './candidates.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
+import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, UpstreamRecord } from '@floway-dev/provider';
@@ -55,6 +56,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -76,6 +78,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -93,6 +96,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates, sawModel } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -111,6 +115,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -130,6 +135,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: ['up_c', 'up_a'],
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -151,6 +157,7 @@ describe('enumerateProviderCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -187,6 +194,7 @@ describe('enumerateProviderCandidates', () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
           model: 'test-model',
+          kind: 'chat',
           scheduler: testScheduler,
           currentColo: 'TEST',
         });
@@ -229,6 +237,7 @@ describe('enumerateProviderCandidates', () => {
         const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
           upstreamIds: null,
           model: 'test-model',
+          kind: 'chat',
           scheduler: testScheduler,
           currentColo: 'TEST',
         });
@@ -254,6 +263,7 @@ describe('planChatCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });
@@ -275,6 +285,7 @@ describe('planChatCandidates', () => {
     const { candidates } = await enumerateProviderCandidates({
       upstreamIds: null,
       model: 'test-model',
+      kind: 'chat',
       scheduler: testScheduler,
       currentColo: 'TEST',
     });

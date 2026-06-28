@@ -29,14 +29,9 @@ interface BackendStub {
 // `next*` queues and read back the recorded calls.
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [] }));
 
-vi.mock('../../../../providers/registry.ts', () => ({
-  resolveModelForRequest: vi.fn(async () => ({
-    matches: [{
-      id: 'gpt-image-2',
-      model: {
-        id: 'gpt-image-2',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
-      },
+vi.mock('../../../../providers/candidates.ts', () => ({
+  enumerateProviderCandidates: vi.fn(async () => ({
+    candidates: [{
       provider: {
         upstream: 'u',
         providerKind: 'custom',
@@ -60,6 +55,11 @@ vi.mock('../../../../providers/registry.ts', () => ({
           },
         },
       },
+      model: {
+        id: 'gpt-image-2',
+        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+      },
+      fetcher: (request: Request) => fetch(request),
     }],
     failedUpstreams: [],
   })),
