@@ -8,7 +8,7 @@ import { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch, as
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom Test',
   enabled: true,
   sortOrder: 0,

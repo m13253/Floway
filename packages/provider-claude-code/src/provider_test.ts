@@ -42,7 +42,7 @@ const activeAccount: ClaudeCodeAccountCredential = {
 
 const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   id: upstreamId,
-  provider: 'claude-code',
+  kind: 'claude-code',
   name: 'CC',
   enabled: true,
   sortOrder: 0,

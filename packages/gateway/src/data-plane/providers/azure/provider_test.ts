@@ -28,7 +28,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
 
   return {
     id: 'up_azure',
-    provider: 'azure',
+    kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
     sortOrder: 0,
@@ -374,7 +374,7 @@ test('createAzureProvider getPricingForModelKey resolves by upstream model id', 
 test('createAzureProvider exposes image models and routes generations with api-version=preview', async () => {
   const record: UpstreamRecord = {
     id: 'az-image',
-    provider: 'azure',
+    kind: 'azure',
     name: 'azure-images',
     enabled: true,
     sortOrder: 0,
@@ -421,7 +421,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
 test('createAzureProvider callImagesEdits posts multipart with model replaced by upstream model id and api-version=preview', async () => {
   const record: UpstreamRecord = {
     id: 'az-image',
-    provider: 'azure',
+    kind: 'azure',
     name: 'azure-images',
     enabled: true,
     sortOrder: 0,

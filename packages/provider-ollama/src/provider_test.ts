@@ -7,7 +7,7 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
-  provider: 'ollama',
+  kind: 'ollama',
   name: 'Ollama',
   enabled: true,
   sortOrder: 0,

@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
-import { createStoredResponsesItemId } from '../items/format.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
 import { narrowResponsesByItemAffinity } from './narrow.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
+import { createStoredResponsesItemId } from '../items/format.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';

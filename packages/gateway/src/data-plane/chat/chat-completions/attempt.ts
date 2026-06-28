@@ -1,9 +1,9 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
-import { messagesAttempt } from '../messages/attempt.ts';
-import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../items/rewrite.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
+import { messagesAttempt } from '../messages/attempt.ts';
+import { responsesAttempt } from '../responses/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';

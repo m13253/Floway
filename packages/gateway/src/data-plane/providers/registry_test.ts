@@ -93,7 +93,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom', sortOrder: 1 }));
   await repo.upstreams.save({
     id: 'up_azure',
-    provider: 'azure',
+    kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
     sortOrder: 2,
@@ -386,7 +386,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 
   const azureUpstream = (over: { id: string; sortOrder: number; models: { upstreamModelId: string; publicModelId?: string }[]; disabledPublicModelIds: string[] }) => ({
     id: over.id,
-    provider: 'azure' as const,
+    kind: 'azure' as const,
     name: over.id,
     enabled: true,
     sortOrder: over.sortOrder,
@@ -445,7 +445,7 @@ test('resolveModelForProvider rejects a model id disabled on that upstream (filt
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_x',
-    provider: 'azure',
+    kind: 'azure',
     name: 'X',
     enabled: true,
     sortOrder: 1,

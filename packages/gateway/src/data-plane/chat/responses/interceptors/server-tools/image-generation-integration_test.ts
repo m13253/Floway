@@ -2,8 +2,8 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../../../items/store.ts';
+import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -167,7 +167,7 @@ beforeEach(async () => {
   // "unknown upstream id: u".
   await repo.upstreams.save({
     id: 'u',
-    provider: 'custom',
+    kind: 'custom',
     name: 'mock-image',
     enabled: true,
     sortOrder: 0,

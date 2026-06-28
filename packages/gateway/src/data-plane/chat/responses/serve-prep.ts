@@ -1,8 +1,8 @@
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
-import type { StatefulResponsesStore } from '../items/store.ts';
 import { narrowResponsesByItemAffinity } from './narrow.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
+import type { StatefulResponsesStore } from '../items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';

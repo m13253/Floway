@@ -38,7 +38,7 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
 };
 
 export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
-  providerFactories[record.provider](record);
+  providerFactories[record.kind](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels) so a caller can never omit it and silently receive the
@@ -75,7 +75,7 @@ export const listModelProviders = async (
 
   const providers: ModelProviderInstance[] = [];
   for (const upstream of selection) {
-    const factory = providerFactories[upstream.provider];
+    const factory = providerFactories[upstream.kind];
     providers.push(await factory(upstream));
   }
 

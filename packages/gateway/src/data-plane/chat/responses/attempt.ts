@@ -1,13 +1,13 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
+import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
+import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { createStoredResponseId } from '../items/format.ts';
 import { normalizeAssistantInputText } from '../items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from '../items/output.ts';
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from '../items/rewrite.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
-import { tokenUsageFromResponsesResult } from './usage.ts';
-import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
-import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity } from '../shared/attempt-helpers.ts';
 import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';

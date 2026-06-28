@@ -39,7 +39,7 @@ type UpstreamRecord = import('@floway-dev/provider').UpstreamRecord;
 test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor flip compact→generate routes to the streaming generate path)', async () => {
   const upstream: UpstreamRecord = {
     id: 'up_copilot_pivot',
-    provider: 'copilot',
+    kind: 'copilot',
     name: 'Copilot (pivot tester)',
     enabled: true,
     sortOrder: 0,

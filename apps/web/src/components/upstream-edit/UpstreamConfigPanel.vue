@@ -66,22 +66,22 @@ defineEmits<{
 // record-of-the-wrong-provider both yield null — the per-provider section is
 // already gated on `provider === '<kind>'` in the template, so this only
 // happens during the brief window when a sibling section is mounting.
-type CodexRecord = Extract<UpstreamRecord, { provider: 'codex' }>;
-type ClaudeCodeRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
-type CopilotRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
+type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
+type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
+type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 type PanelMode<R> = { mode: 'create'; record: null } | { mode: 'edit'; record: R };
 
 const codexPanel = computed<PanelMode<CodexRecord> | null>(() => {
   if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.provider === 'codex' ? { mode: 'edit', record: props.record } : null;
+  return props.record.kind === 'codex' ? { mode: 'edit', record: props.record } : null;
 });
 const claudeCodePanel = computed<PanelMode<ClaudeCodeRecord> | null>(() => {
   if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.provider === 'claude-code' ? { mode: 'edit', record: props.record } : null;
+  return props.record.kind === 'claude-code' ? { mode: 'edit', record: props.record } : null;
 });
 const copilotPanel = computed<PanelMode<CopilotRecord> | null>(() => {
   if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.provider === 'copilot' ? { mode: 'edit', record: props.record } : null;
+  return props.record.kind === 'copilot' ? { mode: 'edit', record: props.record } : null;
 });
 
 // Intrinsic floor for the aside: smallest height at which every

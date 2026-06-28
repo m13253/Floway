@@ -13,7 +13,7 @@ interface BuildOptions {
 
 const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   id: 'up_custom',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom Provider',
   enabled: true,
   sortOrder: 0,

@@ -11,7 +11,7 @@ const freshAccessToken: CodexAccessTokenEntry = { token: 'at', expiresAt: farFut
 
 const baseRecord: UpstreamRecord = {
   id: 'up_codex',
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex Plus',
   enabled: true,
   sortOrder: 0,

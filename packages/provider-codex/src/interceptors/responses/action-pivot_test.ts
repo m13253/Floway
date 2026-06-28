@@ -36,7 +36,7 @@ const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
 const baseRecord: UpstreamRecord = {
   id: 'up_codex_pivot',
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex (pivot tester)',
   enabled: true,
   sortOrder: 0,

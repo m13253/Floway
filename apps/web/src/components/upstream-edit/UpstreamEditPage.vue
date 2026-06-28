@@ -69,7 +69,7 @@ type PatchBody = InferRequestType<(typeof api.api.upstreams)[':id']['$patch']>['
 
 // Edit mode: provider follows the record. Create mode: locked in by the
 // route param at mount time.
-const activeProvider = computed<UpstreamProviderKind>(() => props.mode === 'edit' ? props.record.provider : props.initialProvider);
+const activeProvider = computed<UpstreamProviderKind>(() => props.mode === 'edit' ? props.record.kind : props.initialProvider);
 
 // Discriminated (mode, record) pair forwarded to UpstreamConfigPanel. The
 // page's own union already guarantees this shape; the explicit pairing
@@ -120,7 +120,7 @@ const seedFromRecord = (r: UpstreamRecord) => {
         listed: [...r.model_prefix.listed],
       };
 
-  if (r.provider === 'custom') {
+  if (r.kind === 'custom') {
     const cfg = r.config;
     customDraft.value = {
       baseUrl: cfg.baseUrl,
@@ -137,14 +137,14 @@ const seedFromRecord = (r: UpstreamRecord) => {
       // deep, proxy-free copy that the field can mutate freely.
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
-  } else if (r.provider === 'azure') {
+  } else if (r.kind === 'azure') {
     const cfg = r.config;
     azureDraft.value = {
       endpoint: cfg.endpoint,
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
-  } else if (r.provider === 'ollama') {
+  } else if (r.kind === 'ollama') {
     const cfg = r.config;
     ollamaDraft.value = {
       baseUrl: cfg.baseUrl,
@@ -171,11 +171,11 @@ if (props.mode === 'edit') seedFromRecord(props.record);
 else seedFresh();
 
 const customApiKeySet = computed(() => {
-  if (props.record?.provider !== 'custom') return false;
+  if (props.record?.kind !== 'custom') return false;
   return props.record.config.apiKeySet === true;
 });
 const azureApiKeySet = computed(() => {
-  if (props.record?.provider !== 'azure') return false;
+  if (props.record?.kind !== 'azure') return false;
   return props.record.config.apiKeySet === true;
 });
 const ollamaApiKeySet = computed(() => {
@@ -231,7 +231,7 @@ const fetchDraftModels = async () => {
     if (activeProvider.value === 'custom') {
       const { data, error } = await callApi<{ data: CustomRawModel[] }>(
         () => api.api.upstreams['fetch-models'].$post({
-          json: { provider: 'custom', config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
+          json: { kind: 'custom', config: { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models } },
         }),
       );
       // The toggle may have been turned off while this request was in flight;
@@ -244,14 +244,14 @@ const fetchDraftModels = async () => {
       fetchedAtMs.value = Date.now();
     } else if (activeProvider.value === 'ollama') {
       type FetchModelsBody = InferRequestType<typeof api.api.upstreams['fetch-models']['$post']>['json'];
-      type OllamaFetchConfig = Extract<FetchModelsBody, { provider: 'ollama' }>['config'];
+      type OllamaFetchConfig = Extract<FetchModelsBody, { kind: 'ollama' }>['config'];
       const config: OllamaFetchConfig = {
         baseUrl: ollamaDraft.value.baseUrl.trim(),
         models: ollamaDraft.value.models,
       };
       if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
       const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
-        () => api.api.upstreams['fetch-models'].$post({ json: { provider: 'ollama', config } }),
+        () => api.api.upstreams['fetch-models'].$post({ json: { kind: 'ollama', config } }),
       );
       if (error) { fetchError.value = error.message; return; }
       fetchedOllamaModels.value = data.data;
@@ -283,7 +283,7 @@ const fetchStatus = computed<string | null>(() => {
 
 const refreshing = ref(false);
 const refreshCachedModels = async () => {
-  if (!props.record || props.record.provider === 'azure') return;
+  if (!props.record || props.record.kind === 'azure') return;
   refreshing.value = true;
   upstreamModelsError.value = null;
   try {
@@ -315,8 +315,8 @@ const saving = ref(false);
 const saveError = ref<string | null>(null);
 const modelsPanelInvalid = ref(false);
 
-const buildCustomConfig = (): Extract<CreateBody, { provider: 'custom' }>['config'] => {
-  const config: Extract<CreateBody, { provider: 'custom' }>['config'] = {
+const buildCustomConfig = (): Extract<CreateBody, { kind: 'custom' }>['config'] => {
+  const config: Extract<CreateBody, { kind: 'custom' }>['config'] = {
     ...buildCustomConfigCore(customDraft.value),
     models: customDraft.value.models,
   };
@@ -330,8 +330,8 @@ const buildCustomConfig = (): Extract<CreateBody, { provider: 'custom' }>['confi
   return config;
 };
 
-const buildAzureConfig = (): Extract<CreateBody, { provider: 'azure' }>['config'] => {
-  const config: Extract<CreateBody, { provider: 'azure' }>['config'] = {
+const buildAzureConfig = (): Extract<CreateBody, { kind: 'azure' }>['config'] => {
+  const config: Extract<CreateBody, { kind: 'azure' }>['config'] = {
     endpoint: azureDraft.value.endpoint.trim(),
     models: azureDraft.value.models,
   };
@@ -339,8 +339,8 @@ const buildAzureConfig = (): Extract<CreateBody, { provider: 'azure' }>['config'
   return config;
 };
 
-const buildOllamaConfig = (): Extract<CreateBody, { provider: 'ollama' }>['config'] => {
-  const config: Extract<CreateBody, { provider: 'ollama' }>['config'] = {
+const buildOllamaConfig = (): Extract<CreateBody, { kind: 'ollama' }>['config'] => {
+  const config: Extract<CreateBody, { kind: 'ollama' }>['config'] = {
     baseUrl: ollamaDraft.value.baseUrl.trim(),
     models: ollamaDraft.value.models,
   };
@@ -370,11 +370,11 @@ const save = async () => {
     if (props.mode === 'create') {
       let body: CreateBody;
       if (activeProvider.value === 'custom') {
-        body = { provider: 'custom', ...baseFields(), config: buildCustomConfig() };
+        body = { kind: 'custom', ...baseFields(), config: buildCustomConfig() };
       } else if (activeProvider.value === 'azure') {
-        body = { provider: 'azure', ...baseFields(), config: buildAzureConfig() };
+        body = { kind: 'azure', ...baseFields(), config: buildAzureConfig() };
       } else if (activeProvider.value === 'ollama') {
-        body = { provider: 'ollama', ...baseFields(), config: buildOllamaConfig() };
+        body = { kind: 'ollama', ...baseFields(), config: buildOllamaConfig() };
       } else {
         // Unreachable: see showSaveButton.
         saveError.value = `${activeProvider.value} upstreams are created through their dedicated panel.`;
@@ -464,7 +464,7 @@ const showSaveButton = computed(() => props.mode === 'edit' || (activeProvider.v
 // force-refresh shortcut. Azure is the one provider whose catalog is pure
 // form data — there is nothing the gateway can fetch — so the panel is
 // suppressed for it.
-const showCacheStatus = computed(() => props.mode === 'edit' && props.record !== null && props.record.provider !== 'azure');
+const showCacheStatus = computed(() => props.mode === 'edit' && props.record !== null && props.record.kind !== 'azure');
 
 // Public-id catalogue feeding the disabled-models combobox: every model
 // currently surfaced for this provider, deduped by public id. A model's

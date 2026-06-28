@@ -318,13 +318,13 @@ const upstreamBaseFields = {
 // cryptic zod "invalid discriminator value" message. The `config` slot is
 // `unknown()` because the real config is derived from the OAuth flow, not
 // from anything posted against this endpoint.
-export const createUpstreamBody = z.discriminatedUnion('provider', [
-  z.object({ provider: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
-  z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
-  z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
-  z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
-  z.object({ provider: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
-  z.object({ provider: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
+export const createUpstreamBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
+  z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
+  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
+  z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
 // Update is provider-agnostic: provider is read from the existing record, and
@@ -337,7 +337,7 @@ export const createUpstreamBody = z.discriminatedUnion('provider', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -353,9 +353,9 @@ export const updateUpstreamBody = z.object({
 // edit mode so the handler can substitute the stored secret when the secret
 // is left blank ("keep the stored secret"). Discriminated by `provider` so
 // each provider's draft preview surfaces a typed catalog.
-export const fetchModelsBody = z.discriminatedUnion('provider', [
-  z.object({ provider: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
-  z.object({ provider: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
+export const fetchModelsBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
+  z.object({ kind: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
 ]);
 
 // --- copilot device flow ---

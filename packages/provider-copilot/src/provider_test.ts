@@ -14,7 +14,7 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
   const { config: overrideConfig, ...rest } = overrides;
   return {
     id: 'up_copilot',
-    provider: 'copilot',
+    kind: 'copilot',
     name: 'GitHub Copilot (tester)',
     enabled: true,
     sortOrder: 0,

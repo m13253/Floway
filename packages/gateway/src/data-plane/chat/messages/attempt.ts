@@ -2,9 +2,9 @@ import { messagesInterceptors, messagesCountTokensInterceptors } from './interce
 import type { MessagesInvocation } from './interceptors/types.ts';
 import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
-import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../items/rewrite.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
+import { responsesAttempt } from '../responses/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import { chatTargetPicker, type ProviderCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';

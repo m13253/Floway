@@ -1,9 +1,9 @@
 import { jsonrepair } from 'jsonrepair';
 
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
+import type { StatefulResponsesStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
-import type { StatefulResponsesStore } from '../../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
