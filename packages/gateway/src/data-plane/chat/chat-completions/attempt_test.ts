@@ -5,7 +5,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -15,7 +15,7 @@ import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
@@ -24,6 +24,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
 const makePayload = (overrides: Partial<ChatCompletionsPayload> = {}): ChatCompletionsPayload => ({
@@ -113,7 +114,6 @@ test('generate native chat-completions target calls provider.callChatCompletions
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });
@@ -132,7 +132,6 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
@@ -162,7 +161,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
@@ -183,7 +181,6 @@ test('generate inherits invocation headers across translation to Messages', asyn
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers({ 'x-test': 'abc' }),
   });
@@ -216,7 +213,6 @@ test('generate inherits invocation headers across translation to Responses', asy
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers({ 'x-test': 'abc' }),
   });
@@ -238,7 +234,6 @@ test('generate propagates upstream response headers onto the EventResult so resp
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });

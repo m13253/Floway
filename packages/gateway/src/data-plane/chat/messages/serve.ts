@@ -2,30 +2,27 @@ import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } fr
 import { renderMessagesFailure } from './errors.ts';
 import { narrowMessagesByItemAffinity } from './narrow.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
-import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 export interface MessagesServeGenerateArgs {
   readonly payload: MessagesPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
+  readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
 }
 
 export interface MessagesServeCountTokensArgs {
   readonly payload: MessagesPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
+  readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
 }
 
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, headers } = args;
+    const { payload, ctx, headers } = args;
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
@@ -34,7 +31,7 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, store });
+    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, ctx });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
@@ -50,11 +47,11 @@ export const messagesServe = {
         'generate',
       );
     }
-    return await messagesAttempt.generate({ payload, ctx, store, candidate, headers });
+    return await messagesAttempt.generate({ payload, ctx, candidate, headers });
   },
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
-    const { payload, ctx, store, headers } = args;
+    const { payload, ctx, headers } = args;
     const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
@@ -63,7 +60,7 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = candidates.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, store });
+    const decision = await narrowMessagesByItemAffinity({ payload, candidates: viable, ctx });
     if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
@@ -78,6 +75,6 @@ export const messagesServe = {
         'countTokens',
       );
     }
-    return await messagesAttempt.countTokens({ payload, ctx, store, candidate, headers });
+    return await messagesAttempt.countTokens({ payload, ctx, candidate, headers });
   },
 };

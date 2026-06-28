@@ -4,7 +4,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -38,7 +38,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
@@ -47,6 +47,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
 const makePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
@@ -180,7 +181,6 @@ test('generate routes a native Messages candidate end to end', async () => {
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -202,7 +202,6 @@ test('generate translates through the Responses target when only that endpoint i
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -229,7 +228,6 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -257,7 +255,6 @@ test('generate stops at the first candidate when the payload has no reasoning ca
   const result = await messagesServe.generate({
     payload: makePayload({ messages: [{ role: 'user', content: 'hi' }] }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -272,7 +269,6 @@ test('generate renders model-missing when no candidates are available', async ()
   const result = await messagesServe.generate({
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -297,7 +293,6 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const result = await messagesServe.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -353,7 +348,6 @@ test('claude-code binding preserves x-anthropic-billing-header system block thro
       ],
     }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -409,7 +403,6 @@ test('copilot binding strips x-anthropic-billing-header system block via the def
       ],
     }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 

@@ -6,7 +6,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -49,7 +49,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
@@ -58,6 +58,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: store ?? createResponsesHttpStore(API_KEY_ID, true),
 });
 
 const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
@@ -138,7 +139,6 @@ test('generate routes a native Responses candidate end to end', async () => {
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -167,7 +167,6 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   const result = await responsesServe.compact({
     payload: makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }] }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -201,7 +200,6 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -220,7 +218,6 @@ test('generate renders model-missing when no candidates are available', async ()
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -255,7 +252,6 @@ test('generate renders routing-unavailable as a 400 when a forcing item names an
   const result = await responsesServe.generate({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -288,7 +284,6 @@ test('compact renders routing-unavailable when no candidate exposes the response
   const result = await responsesServe.compact({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -433,7 +428,6 @@ test('generate falls through translate-out to messages target', async () => {
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -482,7 +476,6 @@ test('generate falls through translate-out to chat-completions target', async ()
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -512,12 +505,12 @@ test('generate reuses an existing input row when a later turn echoes the same us
   const payload = makePayload({ input: [{ type: 'message', role: 'user', content: 'hello' }] });
 
   queueCandidates([makeCandidate({ callResponses })]);
-  const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
+  const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(store), headers: new Headers() });
   if (turn1.type !== 'events') throw new Error('turn 1: expected events');
   const turn1Events = await collectEvents(turn1.events);
 
   queueCandidates([makeCandidate({ callResponses })]);
-  const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
+  const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(store), headers: new Headers() });
   if (turn2.type !== 'events') throw new Error('turn 2: expected events');
   const turn2Events = await collectEvents(turn2.events);
 
@@ -592,7 +585,6 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
       input: [{ type: 'compaction_trigger' }],
     }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 

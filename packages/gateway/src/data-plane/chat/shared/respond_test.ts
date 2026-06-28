@@ -1,9 +1,10 @@
 import { beforeEach, test } from 'vitest';
 
-import type { GatewayCtx } from './gateway-ctx.ts';
+import type { ChatGatewayCtx } from './gateway-ctx.ts';
 import { SourceStreamState, recordPerformance, recordUsage } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -26,7 +27,7 @@ const testPerformanceContext: PerformanceTelemetryContext = {
 interface Harness {
   repo: InMemoryRepo;
   background: Promise<unknown>[];
-  ctx: (overrides?: { apiKeyId?: string; requestStartedAt?: number }) => GatewayCtx;
+  ctx: (overrides?: { apiKeyId?: string; requestStartedAt?: number }) => ChatGatewayCtx;
 }
 
 const setup = (): Harness => {
@@ -43,8 +44,9 @@ const setup = (): Harness => {
       runtimeLocation: 'TEST',
       currentColo: 'TEST',
       dump: null,
-      backgroundScheduler: promise => { background.push(promise); },
+      backgroundScheduler: (promise: Promise<unknown>) => { background.push(promise); },
       requestStartedAt,
+      store: createNonResponsesSourceStore(apiKeyId),
     }),
   };
 };
