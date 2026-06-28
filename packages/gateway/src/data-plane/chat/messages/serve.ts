@@ -1,12 +1,13 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
-import { planMessagesRouting } from './routing.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
+import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MessagesServeGenerateArgs {
   readonly payload: MessagesPayload;
@@ -31,7 +32,12 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, ctx });
+    const decision = await classifyResponsesItemAffinity({
+      sourceItems: payload.messages,
+      view: messagesViaResponsesItemsView,
+      store: ctx.store,
+      candidates: viable,
+    });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
@@ -53,7 +59,12 @@ export const messagesServe = {
       currentColo: ctx.currentColo,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, ctx });
+    const decision = await classifyResponsesItemAffinity({
+      sourceItems: payload.messages,
+      view: messagesViaResponsesItemsView,
+      store: ctx.store,
+      candidates: viable,
+    });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
