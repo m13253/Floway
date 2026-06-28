@@ -1,6 +1,7 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
+import type { CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
 import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
@@ -28,9 +29,9 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   store: store ?? createNonResponsesSourceStore(API_KEY_ID),
 });
 
-const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
+const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',
-  input: 'hello',
+  input: [{ type: 'message', role: 'user', content: 'hello' }],
   ...overrides,
 });
 

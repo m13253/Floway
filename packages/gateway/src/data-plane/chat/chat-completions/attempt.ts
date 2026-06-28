@@ -14,6 +14,7 @@ import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStr
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
+import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/chat/completions` generate prefers a native Chat Completions target,
@@ -60,7 +61,7 @@ export const chatCompletionsAttempt = {
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, candidate, headers: invocation.headers,
+            payload: canonicalizeResponsesPayload(translated), ctx, candidate, headers: invocation.headers,
           }),
         );
       }

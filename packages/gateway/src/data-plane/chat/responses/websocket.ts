@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import type { CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -230,7 +231,7 @@ const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent =
   return parsed as ResponsesWebSocketClientEvent;
 };
 
-const responsesPayloadFromClientSource = (source: object): ResponsesPayload => {
+const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload => {
   const candidate = source as { model?: unknown; input?: unknown };
   if (typeof candidate.model !== 'string' || candidate.model.length === 0) {
     throw new WebSocketClientMessageError('response.create requires response.model to be a non-empty string.');
@@ -238,7 +239,13 @@ const responsesPayloadFromClientSource = (source: object): ResponsesPayload => {
   if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
-  return { ...source, stream: true } as ResponsesPayload;
+  // Normalize the wire string to a single synthetic user message so every
+  // downstream reader operates on array-shaped input. See http.ts:parsePayload
+  // for the matching normalization on the HTTP entry.
+  const input = typeof candidate.input === 'string'
+    ? [{ type: 'message' as const, role: 'user' as const, content: candidate.input }]
+    : candidate.input;
+  return { ...source, input, stream: true } as CanonicalResponsesPayload;
 };
 
 const respondResponsesWebSocket = async (input: {

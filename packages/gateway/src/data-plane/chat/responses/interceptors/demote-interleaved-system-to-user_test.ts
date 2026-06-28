@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 
 import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-to-user.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import { eventResult, type ResponsesInvocation } from '@floway-dev/provider';
+import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
@@ -31,7 +31,7 @@ const okEvents = () =>
   );
 
 const invocation = (
-  payload: ResponsesPayload,
+  payload: CanonicalResponsesPayload,
   enabledFlags: ReadonlySet<string> = new Set(['demote-interleaved-system-to-user']),
 ): ResponsesInvocation => ({
   payload,
@@ -137,12 +137,4 @@ test('is a no-op for an empty input array', async () => {
   await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
 
   assertEquals(input.payload.input, []);
-});
-
-test('is a no-op when input is a plain string', async () => {
-  const input = invocation({ model: 'm', input: 'hello' });
-
-  await withInterleavedSystemDemotedToUser(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.input, 'hello');
 });

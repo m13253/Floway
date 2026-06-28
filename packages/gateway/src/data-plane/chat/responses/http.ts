@@ -1,4 +1,5 @@
 import { translatorInputErrorResult } from './errors.ts';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -79,8 +80,10 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   return await respondWithInternalError(c, error, requestBody, ctx);
 };
 
-const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
-  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): CanonicalResponsesPayload =>
+  canonicalizeResponsesPayload(
+    rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort),
+  );
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

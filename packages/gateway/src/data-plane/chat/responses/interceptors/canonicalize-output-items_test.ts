@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
 import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ExecuteResult, eventResult, type ResponsesInvocation } from '@floway-dev/provider';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
@@ -21,7 +22,7 @@ const stubCtx: ChatGatewayCtx = {
 };
 
 const invocation = (): ResponsesInvocation => ({
-  payload: { model: 'gpt-test', input: 'hi' } as ResponsesPayload,
+  payload: { model: 'gpt-test', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }] } as CanonicalResponsesPayload,
   action: 'generate',
   candidate: stubModelCandidate(),
   targetApi: 'responses',

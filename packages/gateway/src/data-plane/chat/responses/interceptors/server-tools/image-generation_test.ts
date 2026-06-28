@@ -21,8 +21,9 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../../items/store.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
-import { directFetcher, type ResponsesInvocation } from '@floway-dev/provider';
+import { directFetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertStringIncludes } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
@@ -43,7 +44,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
     fetcher: directFetcher,
   },
   targetApi: 'responses',
-  payload: { model: 'm', input: [], ...payload } as ResponsesPayload,
+  payload: { model: 'm', input: [], ...payload } as CanonicalResponsesPayload,
   headers: new Headers(),
   action: 'generate',
 });
