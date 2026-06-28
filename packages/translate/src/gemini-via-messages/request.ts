@@ -12,7 +12,7 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
+import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
 import {
@@ -239,8 +239,9 @@ export const buildTargetRequest = (
 
   const system = geminiText(payload.systemInstruction);
   if (system !== null) {
-    const systemBlock: MessagesTextBlock = { type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL };
-    request.system = [systemBlock];
+    const systemBlocks: MessagesTextBlock[] = [{ type: 'text', text: system }];
+    applyLastSystemCacheBreakpoint(systemBlocks);
+    request.system = systemBlocks;
   }
 
   payload.contents?.forEach((content, turnIndex) => {
