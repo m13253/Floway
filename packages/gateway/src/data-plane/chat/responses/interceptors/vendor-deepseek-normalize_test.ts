@@ -1,11 +1,10 @@
 import { test } from 'vitest';
 
-import type { ResponsesInvocation } from './types.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -31,7 +30,7 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
+const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ model: { enabledFlags } }),
   targetApi: 'responses',
@@ -42,7 +41,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
 test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-level thinking:{type:'disabled'}", async () => {
   const input = invocation({
     model: 'deepseek-reasoner',
-    input: 'hi',
+    input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
     reasoning: { effort: 'none' },
   });
 
@@ -56,7 +55,7 @@ test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-lev
 test('vendor-deepseek leaves a real reasoning.effort value untouched (only the none sentinel triggers the rewrite)', async () => {
   const input = invocation({
     model: 'deepseek-reasoner',
-    input: 'hi',
+    input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
     reasoning: { effort: 'high' },
   });
 
@@ -68,7 +67,7 @@ test('vendor-deepseek leaves a real reasoning.effort value untouched (only the n
 });
 
 test('vendor-deepseek early-returns when its flag is not set on the binding', async () => {
-  const input = invocation({ model: 'deepseek-reasoner', input: 'hi', reasoning: { effort: 'none' } }, new Set());
+  const input = invocation({ model: 'deepseek-reasoner', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
 
   await withVendorDeepseekResponsesNormalize(input, stubCtx, okEvents);
 

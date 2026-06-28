@@ -1,11 +1,10 @@
 import { test } from 'vitest';
 
-import type { ResponsesInvocation } from './types.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -31,7 +30,7 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
+const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ model: { enabledFlags } }),
   targetApi: 'responses',
@@ -42,7 +41,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
 test("vendor-qwen translates canonical reasoning.effort: 'none' into top-level enable_thinking:false", async () => {
   const input = invocation({
     model: 'qwen-max',
-    input: 'hi',
+    input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
     reasoning: { effort: 'none' },
   });
 
@@ -54,7 +53,7 @@ test("vendor-qwen translates canonical reasoning.effort: 'none' into top-level e
 });
 
 test('vendor-qwen leaves a real reasoning.effort value untouched (only the none sentinel triggers the rewrite)', async () => {
-  const input = invocation({ model: 'qwen-max', input: 'hi', reasoning: { effort: 'high' } });
+  const input = invocation({ model: 'qwen-max', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }], reasoning: { effort: 'high' } });
 
   await withVendorQwenResponsesNormalize(input, stubCtx, okEvents);
 
@@ -64,7 +63,7 @@ test('vendor-qwen leaves a real reasoning.effort value untouched (only the none 
 });
 
 test('vendor-qwen early-returns when its flag is not set on the binding', async () => {
-  const input = invocation({ model: 'qwen-max', input: 'hi', reasoning: { effort: 'none' } }, new Set());
+  const input = invocation({ model: 'qwen-max', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
 
   await withVendorQwenResponsesNormalize(input, stubCtx, okEvents);
 

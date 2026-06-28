@@ -1,7 +1,7 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/candidates.ts';
-import { classifyResponsesItemAffinity } from '../items/affinity.ts';
+import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';

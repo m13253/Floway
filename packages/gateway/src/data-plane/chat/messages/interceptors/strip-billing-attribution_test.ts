@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesInvocation } from './types.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
+import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';

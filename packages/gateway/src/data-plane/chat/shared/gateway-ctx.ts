@@ -3,7 +3,7 @@ import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumul
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
-import type { StatefulResponsesStore } from '../items/store.ts';
+import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface GatewayCtx {

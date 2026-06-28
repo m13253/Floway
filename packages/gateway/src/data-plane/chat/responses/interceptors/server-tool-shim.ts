@@ -1,15 +1,14 @@
 import { jsonrepair } from 'jsonrepair';
 
-import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-import type { StatefulResponsesStore } from '../../items/store.ts';
+import type { CanonicalResponsesPayload, ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
+import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   ResponsesInputItem,
   ResponsesOutputItem,
-  ResponsesPayload,
   ResponsesResult,
   ResponsesStreamEvent,
   ResponsesTool,
@@ -855,7 +854,7 @@ async function* runMultiTurnLoop(args: {
         ...baseInput,
         ...materializeAccumulatedOutput(merge).map(item => item as ResponsesInputItem),
       ];
-      const nextPayload: ResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
+      const nextPayload: CanonicalResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
       if (loopState.remainingToolCalls !== undefined) {
         nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
       } else {

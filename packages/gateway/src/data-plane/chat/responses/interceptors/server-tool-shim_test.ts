@@ -13,7 +13,7 @@ import {
   type UpstreamTerminal,
 } from './server-tool-shim.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
-import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
+import type { CanonicalResponsesPayload, ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
@@ -26,8 +26,8 @@ import type {
   WebSearchProviderRequest,
   WebSearchProviderResult,
 } from '../../../tools/web-search/types.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -334,7 +334,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
     // assert the wire-item shape without `results`.
     include: ['web_search_call.results'],
     ...overrides.payload,
-  } as ResponsesPayload,
+  } as CanonicalResponsesPayload,
   headers: new Headers(),
   action: 'generate',
 });

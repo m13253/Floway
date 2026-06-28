@@ -1,10 +1,11 @@
+import type { CanonicalResponsesPayload } from './interceptors/types.ts';
+import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createResponsesHttpStore } from '../items/store.ts';
 import { createGatewayCtxFromHono, createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -60,8 +61,16 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
-const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
-  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): CanonicalResponsesPayload => {
+  const parsed = rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+  // Wire allows `input: string | InputItem[]`; the gateway's internal
+  // invariant from here on is array-only — encoded in CanonicalResponsesPayload
+  // so every downstream signature reads the narrower input shape.
+  const input = typeof parsed.input === 'string'
+    ? [{ type: 'message' as const, role: 'user' as const, content: parsed.input }]
+    : parsed.input;
+  return { ...parsed, input };
+};
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

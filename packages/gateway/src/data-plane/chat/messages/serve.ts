@@ -1,7 +1,7 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/candidates.ts';
-import { classifyResponsesItemAffinity } from '../items/affinity.ts';
+import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

@@ -1,12 +1,13 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
+import type { CanonicalResponsesPayload } from './interceptors/types.ts';
+import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
+import * as outputModule from './items/output.ts';
+import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import { createStoredResponsesItemId, isStoredResponseId } from '../items/format.ts';
-import * as outputModule from '../items/output.ts';
-import { createResponsesHttpStore, createNonResponsesSourceStore } from '../items/store.ts';
 import type { ModelCandidate } from '../shared/candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -29,9 +30,9 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   store: store ?? createNonResponsesSourceStore(API_KEY_ID),
 });
 
-const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
+const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',
-  input: 'hello',
+  input: [{ type: 'message', role: 'user', content: 'hello' }],
   ...overrides,
 });
 

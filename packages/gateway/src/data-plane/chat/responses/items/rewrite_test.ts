@@ -4,11 +4,12 @@ import { classifyResponsesItemAffinity } from './affinity.ts';
 import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
 import { rewriteResponsesItemsForCandidate } from './rewrite.ts';
 import { createNonResponsesSourceStore } from './store.ts';
-import { initRepo } from '../../../repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ModelCandidate } from '../shared/candidates.ts';
-import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+import { initRepo } from '../../../../repo/index.ts';
+import { InMemoryRepo } from '../../../../repo/memory.ts';
+import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import type { ModelCandidate } from '../../shared/candidates.ts';
+import type { CanonicalResponsesPayload } from '../interceptors/types.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -65,7 +66,7 @@ const storedMessageId = (_label: string): string => createStoredResponsesItemId(
 const storedReasoningId = (_label: string): string => createStoredResponsesItemId('reasoning');
 const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
 
-const makePayload = (input: ResponsesInputItem[]): ResponsesPayload => ({
+const makePayload = (input: ResponsesInputItem[]): CanonicalResponsesPayload => ({
   model: 'test-model',
   input,
 });
@@ -275,16 +276,6 @@ test('id-less encrypted_content with no stored match is a benign passthrough', a
   const rewritten = await rewrite(input, candidate('up_a'));
 
   assertEquals(rewritten, input);
-});
-
-test('string input is returned unchanged', async () => {
-  await insertRows([]);
-  const store = createNonResponsesSourceStore(API_KEY_ID);
-  const payload: ResponsesPayload = { model: 'test-model', input: 'plain text' };
-  const result = await rewriteResponsesItemsForCandidate(payload, store, candidate('up_a'));
-
-  assertEquals(result.payload, payload);
-  assertEquals(result.references, []);
 });
 
 test('id-less encrypted_content duplicate hash uses freshest stored row for rewrite', async () => {

@@ -1,11 +1,10 @@
 import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
-import type { ResponsesInvocation } from './types.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
+import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -32,7 +31,7 @@ const okEvents = () =>
   );
 
 const invocation = (
-  payload: ResponsesPayload,
+  payload: CanonicalResponsesPayload,
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): ResponsesInvocation => ({
   payload,
@@ -45,7 +44,7 @@ const invocation = (
 test('responses required tool_choice sets reasoning.effort to none', async () => {
   const input = invocation({
     model: 'm',
-    input: 'hi',
+    input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
     reasoning: { effort: 'high' },
     tool_choice: 'required',
   });
@@ -61,7 +60,7 @@ test('responses required tool_choice sets reasoning.effort to none', async () =>
 test('responses object tool_choice is forced', async () => {
   const input = invocation({
     model: 'm',
-    input: 'hi',
+    input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
     reasoning: { effort: 'high' },
     tool_choice: { type: 'custom', name: 'x' },
   });
@@ -75,7 +74,7 @@ test('responses non-forced tool_choice leaves reasoning untouched', async () => 
   for (const tool_choice of ['auto', 'none'] as const) {
     const input = invocation({
       model: 'm',
-      input: 'hi',
+      input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
       reasoning: { effort: 'high' },
       tool_choice,
     });

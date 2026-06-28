@@ -1,9 +1,10 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
-import { rewriteStoredResponsesItemsForCandidate } from '../items/rewrite.ts';
-import type { StatefulResponsesStore } from '../items/store.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
+import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
+import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
+import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
 import { chatTargetPicker, type ModelCandidate } from '../shared/candidates.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
@@ -59,7 +60,7 @@ export const chatCompletionsAttempt = {
         return await traverseTranslation(
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.model.id }),
-          translated => responsesAttempt.generate({ payload: translated, ctx, candidate, headers: invocation.headers }),
+          translated => responsesAttempt.generate({ payload: canonicalizeResponsesPayload(translated), ctx, candidate, headers: invocation.headers }),
         );
       }
       throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
