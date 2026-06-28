@@ -41,3 +41,35 @@ export const noViableCandidateFailure = (
   sawModel
     ? { kind: 'model-unsupported', model, failedUpstreams }
     : { kind: 'model-missing', model, failedUpstreams };
+
+// A serve-layer attempt result counts as success when:
+//   - The SSE event stream actually opened (`type: 'events'`). Mid-stream
+//     failure is the upstream's responsibility from there on; a fresh
+//     attempt on a different upstream does not start once the client has
+//     begun consuming events.
+//   - The non-streaming envelope landed: `PlainResult` with a 2xx status,
+//     or the Responses-compact `{type:'result'}` envelope.
+// `api-error` and `internal-error` are failures: the serve loop falls
+// through to the next candidate. 4xx is on the failure side — 429
+// (rate-limit) is the responsibility of the upstream that issued it, and
+// the gateway's candidate ordering exists to absorb that kind of
+// transient.
+export const isAttemptSuccess = (
+  result:
+    | { readonly type: 'events' }
+    | { readonly type: 'result' }
+    | { readonly type: 'plain'; readonly status: number }
+    | { readonly type: 'api-error' }
+    | { readonly type: 'internal-error' },
+): boolean => {
+  switch (result.type) {
+  case 'events':
+  case 'result':
+    return true;
+  case 'plain':
+    return result.status >= 200 && result.status < 300;
+  case 'api-error':
+  case 'internal-error':
+    return false;
+  }
+};
