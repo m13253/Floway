@@ -48,6 +48,7 @@
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -153,7 +154,7 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: R
   };
 };
 
-const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
 
   // Materialize the user-supplied input (string or array) into Responses items,
@@ -224,7 +225,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   // (For non-responses targets the targetApi check already suppresses
   // ownership; this also covers the responses-target + flag-on engagement.)
   const cmpId = `cmp_${crypto.randomUUID()}`;
-  ctx.store.addSyntheticItem(cmpId);
+  gatewayCtx.store.addSyntheticItem(cmpId);
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
   return {
@@ -240,7 +241,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
 export const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
   typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
 
-export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
+export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   // The shim is engaged when the operator turned it on for this upstream,
   // OR when the upstream's targetApi is not Responses (Messages /
   // Chat Completions have no compaction wire and would crash on the
@@ -258,5 +259,5 @@ export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatew
   const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
   if (!isCompactShaped) return await run();
 
-  return await simulateCompaction(ctx, run);
+  return await simulateCompaction(ctx, gatewayCtx, run);
 };

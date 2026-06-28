@@ -2,14 +2,14 @@ import { test } from 'vitest';
 
 import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
 import type { ResponsesInvocation } from './types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubProviderCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
@@ -18,6 +18,7 @@ const stubCtx: GatewayCtx = {
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const invocation = (): ResponsesInvocation => ({
@@ -25,13 +26,6 @@ const invocation = (): ResponsesInvocation => ({
   action: 'generate',
   candidate: stubProviderCandidate(),
   targetApi: 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-  }),
   headers: new Headers(),
 });
 

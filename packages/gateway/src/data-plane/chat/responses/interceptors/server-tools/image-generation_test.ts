@@ -19,8 +19,8 @@ import {
 } from './image-generation.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../../items/store.ts';
+import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
@@ -44,18 +44,11 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
     fetcher: directFetcher,
   },
   targetApi: 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-  }),
   payload: { model: 'm', input: [], ...payload } as ResponsesPayload,
   headers: new Headers(),
   action: 'generate',
 });
-const gatewayCtx = (): GatewayCtx => ({
+const gatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
@@ -64,6 +57,7 @@ const gatewayCtx = (): GatewayCtx => ({
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 });
 
 beforeEach(() => {

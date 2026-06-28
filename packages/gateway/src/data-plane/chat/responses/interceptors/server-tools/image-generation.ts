@@ -3,7 +3,7 @@ import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
-import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
@@ -453,7 +453,7 @@ interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
-  backgroundScheduler: GatewayCtx['backgroundScheduler'];
+  backgroundScheduler: ChatGatewayCtx['backgroundScheduler'];
   runtimeLocation: string;
   currentColo: string;
   downstreamAbortSignal: AbortSignal | undefined;
