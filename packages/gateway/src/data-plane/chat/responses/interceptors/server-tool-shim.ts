@@ -7,6 +7,7 @@ import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  ResponsesHostedToolType,
   ResponsesInputItem,
   ResponsesOutputItem,
   ResponsesPayload,
@@ -96,15 +97,25 @@ export type ServerToolDispatcher = (args: {
   loopState: ServerToolLoopState;
 }) => ServerToolResultSlot[];
 
-// The three members of a hosted interception move together: to run the
-// ReAct loop we must recognize the hosted tool (`isHostedTool`), replace
-// it with a callable function tool the upstream model can invoke
-// (`buildFunctionTool`), and execute the model's calls (`dispatcher`).
-// Grouping them makes a partial declaration a compile error instead of a
-// registration that silently never dispatches.
+// The members of a hosted interception move together: to run the ReAct
+// loop we must recognize and canonicalize the hosted tool, replace it
+// with a callable function tool the upstream model can invoke, and
+// execute the model's calls. Grouping them makes a partial declaration
+// a compile error instead of a registration that silently never
+// dispatches.
+//
+// `canonicalize` is the sole boundary between raw client input and the
+// rest of the shim: it both detects (returns `undefined` when the raw
+// tool isn't this registration's) and fills upstream-spec defaults so
+// every downstream caller (`buildFunctionTool`, dispatcher input, echo
+// restore output) only ever sees canonical form. `hostedTypes` is the
+// static list of raw `type` discriminants this registration claims;
+// used only for the `tool_choice: {type}` rewrite path where no full
+// tool object is available to canonicalize.
 export interface ServerToolHostedDispatch {
-  isHostedTool: (tool: ResponsesTool) => boolean;
-  buildFunctionTool: (toolName: string) => ResponsesTool;
+  hostedTypes: readonly string[];
+  canonicalize: (raw: ResponsesTool) => ResponsesTool | undefined;
+  buildFunctionTool: (canonical: ResponsesTool, toolName: string) => ResponsesTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -133,6 +144,11 @@ export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCt
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
   hasHostedTool: boolean;
+  // The canonical form of this registration's hosted tool, captured at
+  // request rewrite. Present iff `hasHostedTool` is true; used to
+  // restore upstream's echoed function tool (and `tool_choice`) back to
+  // the hosted form on the synthesized envelope.
+  canonicalHostedTool: ResponsesTool | undefined;
 };
 
 // How a single upstream turn ended, as observed while consuming its
@@ -231,14 +247,50 @@ const rewriteHostedToolChoice = (
   if (choiceType === undefined) return toolChoice;
   for (const entry of active) {
     if (!entry.hasHostedTool) continue;
-    // A hosted `tool_choice` is `{ type }` on the wire, the same
-    // discriminant a hosted tool carries, so a type-only probe is a
-    // faithful (if sparse) tool object: hosted Responses tools are
-    // identified by `type`. `isHostedTool` must therefore classify on
-    // `type` alone.
-    if (entry.hosted?.isHostedTool({ type: choiceType } as ResponsesTool)) return { type: 'function', name: entry.toolName };
+    if (entry.hosted?.hostedTypes.includes(choiceType) === true) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
+};
+
+// Reverse of `rewriteHostedToolChoice` for the upstream-echoed
+// `tool_choice` on the synthesized envelope: a function-typed choice
+// whose name matches an active shim's `toolName` was originally a
+// hosted-type choice. Restore it by stripping the function shape down
+// to `{ type: <hosted-type> }` using the canonical hosted entry's
+// discriminant.
+const restoreEchoedToolChoice = (
+  toolChoice: ResponsesToolChoice | undefined,
+  active: readonly ActiveServerTool[],
+): ResponsesToolChoice | undefined => {
+  if (typeof toolChoice !== 'object' || toolChoice === null || toolChoice.type !== 'function') return toolChoice;
+  for (const entry of active) {
+    if (entry.canonicalHostedTool === undefined) continue;
+    if (toolChoice.name !== entry.toolName) continue;
+    return { type: entry.canonicalHostedTool.type as ResponsesHostedToolType };
+  }
+  return toolChoice;
+};
+
+// Inverse of the request-side hosted→function rewrite. Each tool in the
+// upstream-echoed array is checked against active shims: function tools
+// whose name matches an injected one are replaced with that shim's
+// canonical hosted entry, restoring the client-visible shape. Every
+// other tool passes through verbatim, preserving upstream-side default
+// enrichment on the client's ordinary function tools.
+const restoreEchoedTools = (
+  tools: readonly ResponsesTool[] | null | undefined,
+  active: readonly ActiveServerTool[],
+): ResponsesTool[] | undefined => {
+  if (!Array.isArray(tools)) return undefined;
+  return tools.map(tool => {
+    if (tool.type !== 'function') return tool;
+    for (const entry of active) {
+      if (entry.canonicalHostedTool !== undefined && tool.name === entry.toolName) {
+        return entry.canonicalHostedTool;
+      }
+    }
+    return tool;
+  });
 };
 
 export const resolveServerToolName = (baseName: string, tools: readonly ResponsesTool[]): string => {
@@ -252,24 +304,33 @@ export const resolveServerToolName = (baseName: string, tools: readonly Response
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
-const replaceHostedToolsWithFunctionTool = (
+// Canonicalize every raw tool through the registration; the first
+// canonicalized hit is kept (silently deduping subsequent same-type
+// hosted entries, matching upstream Copilot's observed behavior — two
+// `{type:'web_search'}` entries collapse to one expanded echo) and
+// replaced in-place by the function tool the upstream model will
+// invoke. Non-claimed tools pass through unchanged. The returned
+// canonical entry feeds the echo-restore step and the dispatcher's
+// hosted-tool view.
+const rewriteToolsForHostedShim = (
   tools: readonly ResponsesTool[],
-  isHostedTool: (tool: ResponsesTool) => boolean,
-  functionTool: ResponsesTool,
-): ResponsesTool[] => {
+  hosted: ServerToolHostedDispatch,
+  toolName: string,
+): { rewritten: ResponsesTool[]; canonicalHostedTool: ResponsesTool | undefined } => {
   const rewritten: ResponsesTool[] = [];
-  let injected = false;
-  for (const tool of tools) {
-    if (isHostedTool(tool)) {
-      if (!injected) {
-        rewritten.push(functionTool);
-        injected = true;
+  let canonicalHostedTool: ResponsesTool | undefined = undefined;
+  for (const raw of tools) {
+    const canonical = hosted.canonicalize(raw);
+    if (canonical !== undefined) {
+      if (canonicalHostedTool === undefined) {
+        canonicalHostedTool = canonical;
+        rewritten.push(hosted.buildFunctionTool(canonical, toolName));
       }
       continue;
     }
-    rewritten.push(tool);
+    rewritten.push(raw);
   }
-  return rewritten;
+  return { rewritten, canonicalHostedTool };
 };
 
 export const parseServerToolArguments = (argumentsJson: string): Record<string, unknown> | null => {
@@ -286,12 +347,20 @@ export const parseServerToolArguments = (argumentsJson: string): Record<string, 
   return parsed as Record<string, unknown>;
 };
 
-const syntheticInProgressResponse = (state: MergeState, id: string, model: string): ResponsesResult => {
+const syntheticInProgressResponse = (
+  state: MergeState,
+  id: string,
+  model: string,
+  active: readonly ActiveServerTool[],
+): ResponsesResult => {
   if (state.upstreamResponseSnapshot === undefined) {
     throw new Error('Server-tool shim cannot synthesize a Responses in-progress envelope before upstream `response.created` is captured.');
   }
+  const snapshot = state.upstreamResponseSnapshot;
+  const restoredTools = restoreEchoedTools(snapshot.tools, active);
+  const restoredToolChoice = restoreEchoedToolChoice(snapshot.tool_choice, active);
   return {
-    ...state.upstreamResponseSnapshot,
+    ...snapshot,
     id,
     object: 'response',
     model,
@@ -299,6 +368,8 @@ const syntheticInProgressResponse = (state: MergeState, id: string, model: strin
     status: 'in_progress',
     error: null,
     incomplete_details: null,
+    ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
+    ...(restoredToolChoice !== undefined ? { tool_choice: restoredToolChoice } : {}),
   };
 };
 
@@ -409,6 +480,7 @@ export const consumeTurnStreaming = async function* (
   isFirstTurn: boolean,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
   loopState: ServerToolLoopState,
+  active: readonly ActiveServerTool[],
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary> {
   const dispatched: Array<{ intercepted: InterceptedFunctionCall; slots: DispatchedServerToolSlot[] }> = [];
   let sawClientToolCall = false;
@@ -451,7 +523,7 @@ export const consumeTurnStreaming = async function* (
       if (isFirstTurn) {
         yield stamp({
           type: 'response.created',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel()),
+          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
         });
       }
       continue;
@@ -461,7 +533,7 @@ export const consumeTurnStreaming = async function* (
       if (isFirstTurn) {
         yield stamp({
           type: 'response.in_progress',
-          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel()),
+          response: syntheticInProgressResponse(merge, merge.synthesizedResponseId, ensureModel(), active),
         });
       }
       continue;
@@ -733,6 +805,7 @@ const SYNTHESIZED_TERMINAL_FRAME: Record<SynthesizedTerminal['kind'], { type: 'r
 const synthesizeTerminalEnvelope = (
   state: MergeState,
   kind: SynthesizedTerminal,
+  active: readonly ActiveServerTool[],
 ): ProtocolFrame<ResponsesStreamEvent> => {
   if (state.lastSeenModel === null) {
     throw new Error('Server-tool shim cannot synthesize a Responses terminal envelope before upstream `response.created` reports a model.');
@@ -750,17 +823,22 @@ const synthesizeTerminalEnvelope = (
       if (block.type === 'output_text') outputText += block.text;
     }
   }
+  const snapshot = state.upstreamResponseSnapshot;
+  const restoredTools = restoreEchoedTools(snapshot.tools, active);
+  const restoredToolChoice = restoreEchoedToolChoice(snapshot.tool_choice, active);
   return eventFrame({
     type: frame.type,
     sequence_number: state.sequenceNumber++,
     response: {
-      ...state.upstreamResponseSnapshot,
+      ...snapshot,
       id: state.synthesizedResponseId,
       object: 'response',
       model: state.lastSeenModel,
       status: frame.status,
       output,
       output_text: outputText,
+      ...(restoredTools !== undefined ? { tools: restoredTools } : {}),
+      ...(restoredToolChoice !== undefined ? { tool_choice: restoredToolChoice } : {}),
       ...(usage !== undefined ? { usage } : {}),
       ...(kind.kind === 'failed' ? { error: kind.error } : {}),
       ...(kind.kind === 'incomplete' ? { incomplete_details: kind.incompleteDetails } : {}),
@@ -819,29 +897,29 @@ async function* runMultiTurnLoop(args: {
 
       if (turn.terminalStatus.kind === 'failed') {
         if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, statefulResponsesStore);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error });
+        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'incomplete') {
         if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, statefulResponsesStore);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details });
+        yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
         yield synthesizeTerminalEnvelope(merge, {
           kind: 'failed',
           error: { code: turn.terminalStatus.error.code, message: turn.terminalStatus.error.message },
-        });
+        }, active);
         return;
       }
       if (!executedShim && !turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' });
+        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
       }
 
       yield* materializeServerToolItems(turn.dispatched, merge, statefulResponsesStore);
       if (turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' });
+        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
       }
 
@@ -868,12 +946,12 @@ async function* runMultiTurnLoop(args: {
 
       const nextResult = await run();
       if (nextResult.type !== 'events') {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: buildErrorFromResult(nextResult) });
+        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: buildErrorFromResult(nextResult) }, active);
         return;
       }
       metadata.modelIdentity = nextResult.modelIdentity;
       metadata.performance = nextResult.performance;
-      currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState);
+      currentTurn = yield* consumeTurnStreaming(nextResult.events, merge, false, dispatchers, loopState, active);
       merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
     }
   } catch (error) {
@@ -887,7 +965,7 @@ async function* runMultiTurnLoop(args: {
         code: 'server_error',
         message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
       },
-    });
+    }, active);
   } finally {
     if (midStreamError === undefined) resolveFinalMetadata(metadata);
   }
@@ -904,14 +982,14 @@ export const withResponsesServerToolShim = (
     if (prepared.type === 'invalid-request') return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code);
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
-    const hasHostedTool = prepared.hosted !== undefined && currentTools.some(prepared.hosted.isHostedTool);
+    const hasHostedTool = prepared.hosted !== undefined && currentTools.some(t => prepared.hosted!.canonicalize(t) !== undefined);
+    let canonicalHostedTool: ResponsesTool | undefined = undefined;
     if (hasHostedTool && prepared.hosted !== undefined) {
-      ctx.payload = {
-        ...ctx.payload,
-        tools: replaceHostedToolsWithFunctionTool(currentTools, prepared.hosted.isHostedTool, prepared.hosted.buildFunctionTool(toolName)),
-      };
+      const rewrite = rewriteToolsForHostedShim(currentTools, prepared.hosted, toolName);
+      canonicalHostedTool = rewrite.canonicalHostedTool;
+      ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
     }
-    active.push({ ...prepared, toolName, hasHostedTool });
+    active.push({ ...prepared, toolName, hasHostedTool, canonicalHostedTool });
   }
 
   if (active.length === 0) return await run();
@@ -947,7 +1025,7 @@ export const withResponsesServerToolShim = (
   const merge = createMergeState();
   const firstResult = await run();
   if (firstResult.type !== 'events') return firstResult;
-  const turn1Iter = consumeTurnStreaming(firstResult.events, merge, true, dispatchers, loopState);
+  const turn1Iter = consumeTurnStreaming(firstResult.events, merge, true, dispatchers, loopState, active);
 
   let resolveFinalMetadata!: (m: EventResultMetadata) => void;
   const shimFinalMetadata = new Promise<EventResultMetadata>(resolve => {
