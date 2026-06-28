@@ -1,5 +1,5 @@
 import { createPerRequestFetcher } from '../../../dial/per-request.ts';
-import { collectInterpretationOutcomes, enumerateModelInterpretations, listModelProviders } from '../../providers/registry.ts';
+import { listModelProviders, resolveInterpretationsAcrossProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ProviderCandidate } from '@floway-dev/provider';
@@ -31,16 +31,13 @@ export const enumerateProviderCandidates = async ({
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
 
-  // Each (provider, lookupId) interpretation describes one way the inbound
-  // id can address an upstream — bare form for `[unprefixed]`-addressable
-  // upstreams, stripped form for `[prefixed]`-addressable upstreams when the
-  // inbound starts with the configured prefix. A dual-addressable upstream
-  // contributes both when applicable. The fan-out is shared with
-  // `resolveModelForRequest`; first-viable-wins ordering follows configured
-  // sort_order across upstreams, with the unprefixed interpretation pushed
-  // before the prefixed one within a single upstream.
-  const interpretations = enumerateModelInterpretations(model, providers);
-  const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
+  // The shared resolver expands each inbound id into (provider, lookupId)
+  // interpretations against the unprefixed and prefixed addressable
+  // surfaces, runs the SWR-cached per-upstream lookup, and retries once
+  // with the dated suffix stripped if the first pass found nothing. The
+  // chat path then narrows the resulting resolutions to bindings whose
+  // endpoint map satisfies the inbound source's target preference.
+  const { resolutions, failedUpstreams } = await resolveInterpretationsAcrossProviders(model, providers, fetcherForUpstream, scheduler);
 
   const candidates: ProviderCandidate[] = [];
   let sawModel = false;

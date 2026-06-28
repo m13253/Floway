@@ -358,6 +358,45 @@ export const collectInterpretationOutcomes = async (
   return { resolutions, failedUpstreams };
 };
 
+// Inbound id forms ending in an 8-digit dated suffix (`-YYYYMMDD`) are a
+// compatibility shape: vendor clients sometimes pin to a release date even
+// though the gateway's merged catalog only carries the base id. When the
+// initial resolution finds no match for such an id, the resolver strips
+// the suffix and retries against the full provider list once. The retry
+// runs the same interpretation + outcome fan-out, so the stripped id is
+// exposed to every visible upstream in the same enumeration order as the
+// original attempt. Failed catalog fetches across the two attempts dedupe
+// into a single `failedUpstreams` list for the caller's renderer.
+const DATED_SUFFIX = /-\d{8}$/;
+
+export const resolveInterpretationsAcrossProviders = async (
+  modelId: string,
+  providers: readonly ModelProviderInstance[],
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<{
+  readonly resolutions: ReadonlyArray<{ provider: ModelProviderInstance; resolved: ProviderModelResolution }>;
+  readonly failedUpstreams: readonly string[];
+}> => {
+  const first = await collectInterpretationOutcomes(
+    enumerateModelInterpretations(modelId, providers),
+    fetcherForUpstream,
+    scheduler,
+  );
+  if (first.resolutions.length > 0 || !DATED_SUFFIX.test(modelId)) return first;
+
+  const stripped = modelId.replace(DATED_SUFFIX, '');
+  const second = await collectInterpretationOutcomes(
+    enumerateModelInterpretations(stripped, providers),
+    fetcherForUpstream,
+    scheduler,
+  );
+  return {
+    resolutions: second.resolutions,
+    failedUpstreams: [...new Set([...first.failedUpstreams, ...second.failedUpstreams])],
+  };
+};
+
 export const resolveModelForRequest = async (
   modelId: string,
   upstreamFilter: readonly string[] | null,
@@ -368,9 +407,7 @@ export const resolveModelForRequest = async (
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
-
-  const interpretations = enumerateModelInterpretations(modelId, providers);
-  const { resolutions, failedUpstreams } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
+  const { resolutions, failedUpstreams } = await resolveInterpretationsAcrossProviders(modelId, providers, fetcherForUpstream, scheduler);
   return { matches: resolutions.map(r => r.resolved), failedUpstreams };
 };
 
@@ -383,11 +420,5 @@ export const resolveModelForProvider = async (
   const providedModels = await fetchUpstreamModelsCached(instance, { scheduler, fetcher });
   const disabled = new Set(instance.disabledPublicModelIds);
   const exact = providedModels.find(model => model.id === modelId && !disabled.has(model.id));
-  if (exact) return { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) };
-
-  const aliasTarget = instance.resolveRequestedModelId?.(modelId);
-  if (!aliasTarget || aliasTarget === modelId) return undefined;
-
-  const alias = providedModels.find(model => model.id === aliasTarget && !disabled.has(model.id));
-  return alias ? { id: alias.id, model: alias, binding: providerModelRecord(instance, alias) } : undefined;
+  return exact ? { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) } : undefined;
 };

@@ -4,7 +4,6 @@ import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, enumerateModelInterpretations, getInternalModels, listModelProviders, resolveModelForProvider, resolveModelForRequest } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type ModelProviderInstance } from '@floway-dev/provider';
-import { createCopilotProvider } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
@@ -85,17 +84,6 @@ test('compareModelIds keeps case-only differences adjacent via lowercase tie-bre
     'gpt-4O',
     'GPT-4o',
   ]);
-});
-
-test('createCopilotProvider exposes provider-owned requested model aliases', async () => {
-  const { copilotUpstream } = await setupAppTest();
-  const instance = await createCopilotProvider(copilotUpstream);
-  const resolveAlias = instance.resolveRequestedModelId;
-
-  assertEquals(resolveAlias?.('claude-opus-4-7-20300101'), 'claude-opus-4-7');
-  assertEquals(resolveAlias?.('claude-opus-4-7-xhigh-20300101'), 'claude-opus-4-7');
-  assertEquals(resolveAlias?.('claude-opus-4.7'), 'claude-opus-4-7');
-  assertEquals(resolveAlias?.('codex-auto-review'), undefined);
 });
 
 test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
@@ -198,7 +186,7 @@ test('getInternalModels returns the catalog projection without execution binding
   );
 });
 
-test('resolveModelForRequest applies provider-owned aliases only to that provider', async () => {
+test('resolveModelForRequest strips an -YYYYMMDD suffix when nothing matched and retries across every visible upstream', async () => {
   const { repo } = await setupAppTest();
 
   await repo.upstreams.save(
@@ -242,12 +230,42 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
     async () => {
       const resolved = await resolveModelForRequest('claude-opus-4-7-20300101', null, () => directFetcher, testScheduler);
 
-      // Only the Copilot upstream's `resolveRequestedModelId` aliases the
-      // dated id back to `claude-opus-4-7`; the custom upstream resolves
-      // nothing for the dated id, so only one match emerges.
-      assertEquals(resolved.matches.map(m => m.binding.upstream), ['up_copilot']);
-      assertEquals(resolved.matches[0]?.id, 'claude-opus-4-7');
-      assertEquals(resolved.matches[0]?.model.endpoints, { messages: {} });
+      // No upstream's catalog literally lists `claude-opus-4-7-20300101`,
+      // so the resolver retries against the stripped `claude-opus-4-7`,
+      // which both upstreams expose. Both bindings end up in the match
+      // list in configured `sort_order`.
+      assertEquals(resolved.matches.map(m => m.binding.upstream).sort(), ['up_copilot', 'up_custom'].sort());
+      assertEquals(resolved.matches.map(m => m.id), ['claude-opus-4-7', 'claude-opus-4-7']);
+    },
+  );
+});
+
+test('resolveModelForRequest does not retry when the inbound id has no dated suffix', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(
+    buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://custom.example.com',
+        authStyle: 'bearer',
+        apiKey: 'sk-custom',
+        endpoints: { messages: {} },
+      },
+    }),
+  );
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'claude-opus-4-7' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      // Plain typo / unknown id — no dated suffix, no retry.
+      const resolved = await resolveModelForRequest('claude-opus-4-7-unknown', null, () => directFetcher, testScheduler);
+      assertEquals(resolved.matches.length, 0);
     },
   );
 });
