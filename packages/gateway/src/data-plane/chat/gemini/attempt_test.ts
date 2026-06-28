@@ -7,7 +7,7 @@ import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -84,6 +84,7 @@ const makeChatCompletionsEvents = (): readonly ChatCompletionsStreamEvent[] => [
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  endpoints?: ModelEndpoints;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
@@ -101,7 +102,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(),
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -124,7 +125,6 @@ test('generate translates through Chat Completions when targetApi is chat-comple
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
-    targetApi: 'chat-completions',
     headers: new Headers(),
   });
 
@@ -143,8 +143,7 @@ test('generate translates through Messages when targetApi is messages', async ()
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callMessages }),
-    targetApi: 'messages',
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
 
@@ -163,8 +162,7 @@ test('generate translates through Responses when targetApi is responses', async 
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callResponses }),
-    targetApi: 'responses',
+    candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
 
@@ -192,7 +190,6 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessagesCountTokens }),
-    targetApi: 'messages',
     headers: new Headers(),
   });
 
@@ -220,7 +217,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
         modelKey: 'k',
       }),
     }),
-    targetApi: 'messages',
     headers: new Headers(),
   });
   assertEquals(totalTokensResp.type, 'plain');
@@ -237,7 +233,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
         modelKey: 'k',
       }),
     }),
-    targetApi: 'messages',
     headers: new Headers(),
   });
   assertEquals(unexpectedResp.type, 'plain');
@@ -248,7 +243,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(body.error.status, 'UNAVAILABLE');
 });
 
-test('countTokens refuses a non-messages candidate', async () => {
+test('countTokens refuses a candidate without a messages endpoint', async () => {
   installRepo();
   let thrown: unknown = null;
   try {
@@ -256,15 +251,14 @@ test('countTokens refuses a non-messages candidate', async () => {
       payload: makePayload(),
       ctx: makeGatewayCtx(),
       store: createNonResponsesSourceStore(API_KEY_ID),
-      candidate: makeCandidate(),
-      targetApi: 'responses',
+      candidate: makeCandidate({ endpoints: { responses: {} } }),
       headers: new Headers(),
     });
   } catch (error) {
     thrown = error;
   }
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
-  assertEquals(thrown.message.includes("targetApi='messages'"), true);
+  assertEquals(thrown.message.includes('picker rejects'), true);
 });
 
 test('generate propagates upstream response headers through the chat-completions translation', async () => {
@@ -281,7 +275,6 @@ test('generate propagates upstream response headers through the chat-completions
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
-    targetApi: 'chat-completions',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');

@@ -1,12 +1,14 @@
+import { pickResponsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
-import { planChatCandidates, type ProviderCandidate } from '../shared/candidates.ts';
+import type { ProviderCandidate } from '../shared/candidates.ts';
+import { isChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult, ChatTargetApi } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -73,7 +75,7 @@ const stageUserInputItems = async (input: ResponsesPayload['input'], store: Stat
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate; readonly targetApi: ChatTargetApi };
+  | { readonly kind: 'ready'; readonly prepared: ResponsesPayload; readonly candidate: ProviderCandidate };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
@@ -85,9 +87,8 @@ export const prepareResponsesServePlan = async (args: {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly pickTarget: (endpoints: ModelEndpoints) => ChatTargetApi | null;
 }): Promise<ResponsesServePlan> => {
-  const { payload, ctx, store, pickTarget } = args;
+  const { payload, ctx, store } = args;
   const prepared = await expandPreviousResponseId(payload, store);
   const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
     upstreamIds: ctx.upstreamIds,
@@ -96,9 +97,9 @@ export const prepareResponsesServePlan = async (args: {
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
   });
-  const planItems = planChatCandidates(candidates, pickTarget);
-  const decision = await planResponsesRouting({ payload: prepared, candidates: planItems, store });
-  if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
+  const viable = candidates.filter(c => pickResponsesTarget(c.model.endpoints) !== null);
+  const decision = await planResponsesRouting({ payload: prepared, candidates: viable, store });
+  if (isChatServeFailure(decision)) return { kind: 'failure', result: renderResponsesFailure(decision) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
   // up the new user items in addition to the prior snapshot history.
@@ -110,8 +111,8 @@ export const prepareResponsesServePlan = async (args: {
   // internal-error — IS the answer for this request: an upstream 4xx/5xx
   // from the first viable candidate is final, not a hint to try another
   // upstream.
-  const [item] = decision.candidates;
-  if (item === undefined) {
+  const [candidate] = decision;
+  if (candidate === undefined) {
     return {
       kind: 'failure',
       result: renderResponsesFailure(
@@ -121,5 +122,5 @@ export const prepareResponsesServePlan = async (args: {
       ),
     };
   }
-  return { kind: 'ready', prepared, candidate: item.candidate, targetApi: item.targetApi };
+  return { kind: 'ready', prepared, candidate };
 };

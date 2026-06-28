@@ -77,7 +77,7 @@ const rewrite = async (
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   // Simulate the affinity classification that populates the store cache.
-  await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [{ candidate: cand, targetApi: 'responses' }] });
+  await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
   const result = await rewriteResponsesItemsForCandidate(makePayload(input), store, cand);
   return result.payload.input as ResponsesInputItem[];
 };

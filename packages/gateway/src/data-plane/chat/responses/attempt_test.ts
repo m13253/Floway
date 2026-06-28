@@ -130,7 +130,6 @@ test('generate native success wraps the upstream event stream once', async () =>
     ctx,
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -197,7 +196,6 @@ test('generate derives snapshotMode=replace when the upstream emits a compaction
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -246,7 +244,6 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -276,7 +273,6 @@ test('generate passes non-events provider result through unchanged', async () =>
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -329,7 +325,6 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 
@@ -358,7 +353,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Headers | undefined;
-  const upstreamModel = stubUpstreamModel();
+  const upstreamModel = stubUpstreamModel({ endpoints: { messages: {} } });
   const messagesProvider = stubProvider({
     callMessages: async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
       observedHeaders = opts.headers;
@@ -395,7 +390,6 @@ test('generate inherits invocation headers across translation to Messages', asyn
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     candidate,
-    targetApi: 'messages',
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -505,7 +499,6 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');
@@ -554,7 +547,6 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store,
     candidate,
-    targetApi: 'responses',
     headers: new Headers(),
   });
 

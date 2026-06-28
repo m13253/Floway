@@ -7,7 +7,7 @@ import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -70,6 +70,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
@@ -85,7 +86,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(),
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -114,7 +115,6 @@ test('generate native chat-completions target calls provider.callChatCompletions
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
-    targetApi: 'chat-completions',
     headers: new Headers(),
   });
 
@@ -133,8 +133,7 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callMessages }),
-    targetApi: 'messages',
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
 
@@ -164,8 +163,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callResponses }),
-    targetApi: 'responses',
+    candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
 
@@ -186,8 +184,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callMessages }),
-    targetApi: 'messages',
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -220,8 +217,7 @@ test('generate inherits invocation headers across translation to Responses', asy
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ callResponses }),
-    targetApi: 'responses',
+    candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers({ 'x-test': 'abc' }),
   });
   assertEquals(result.type, 'events');
@@ -244,7 +240,6 @@ test('generate propagates upstream response headers onto the EventResult so resp
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
-    targetApi: 'chat-completions',
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');

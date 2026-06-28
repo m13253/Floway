@@ -1,9 +1,8 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ChatPlanItem } from '../../shared/candidates.ts';
+import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
-import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -99,17 +98,17 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
 };
 
 const orderCandidatesByStoredResponsesAffinity = (
-  candidates: readonly ChatPlanItem[],
+  candidates: readonly ProviderCandidate[],
   preferredUpstreamIds: ReadonlySet<string>,
-): readonly ChatPlanItem[] => {
+): readonly ProviderCandidate[] => {
   const preferred = [...preferredUpstreamIds].reverse();
   if (preferred.length === 0) return candidates;
 
   const order = new Map(preferred.map((upstreamId, index) => [upstreamId, index]));
   const preferredCandidates = candidates
-    .filter(cand => order.has(cand.candidate.provider.upstream))
-    .toSorted((a, b) => order.get(a.candidate.provider.upstream)! - order.get(b.candidate.provider.upstream)!);
-  const remainingCandidates = candidates.filter(cand => !order.has(cand.candidate.provider.upstream));
+    .filter(cand => order.has(cand.provider.upstream))
+    .toSorted((a, b) => order.get(a.provider.upstream)! - order.get(b.provider.upstream)!);
+  const remainingCandidates = candidates.filter(cand => !order.has(cand.provider.upstream));
   return [...preferredCandidates, ...remainingCandidates];
 };
 
@@ -117,13 +116,13 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
   sourceItems: TSourceItems;
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;
-  candidates: readonly ChatPlanItem[];
+  candidates: readonly ProviderCandidate[];
   // Items the caller will stage as inputs after the affinity walk; passed
   // here so `loadInputItems` can pre-load any stored row whose content hash
   // matches one of them. Without this, a duplicate user message resent on
   // a later turn cannot be reused — it would mint a fresh row each time.
   inputItemsToStage?: readonly ResponsesInputItem[];
-}): Promise<RoutingDecision> => {
+}): Promise<readonly ProviderCandidate[] | ChatServeFailure> => {
   const { sourceItems, view, store, candidates, inputItemsToStage } = input;
   await store.loadInputItems({
     sourceItems,
@@ -177,43 +176,37 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     }
   }
 
-  if (failures.length > 0) return { kind: 'failure', failure: failures[0] };
+  if (failures.length > 0) return failures[0];
 
   const forcingUpstreamList = [...collectForcingUpstreams(references)];
 
   if (forcingUpstreamList.length > 1) {
     return {
-      kind: 'failure',
-      failure: {
-        kind: 'routing-unavailable',
-        message: `Stored Responses items in this request require multiple incompatible upstreams: ${forcingUpstreamList.map(id => `'${id}'`).join(', ')}.`,
-      },
+      kind: 'routing-unavailable',
+      message: `Stored Responses items in this request require multiple incompatible upstreams: ${forcingUpstreamList.map(id => `'${id}'`).join(', ')}.`,
     };
   }
 
   if (forcingUpstreamList.length === 1) {
     const [upstreamId] = forcingUpstreamList;
-    const matching = candidates.filter(cand => cand.candidate.provider.upstream === upstreamId);
+    const matching = candidates.filter(cand => cand.provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
-        kind: 'failure',
-        failure: {
-          kind: 'routing-unavailable',
-          message: `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
-        },
+        kind: 'routing-unavailable',
+        message: `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
       };
     }
     const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
     if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.candidate.provider.supportsResponsesItemReference);
+      const itemReferenceCapable = matching.filter(cand => cand.provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
-        return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
+        return { kind: 'item-not-found', itemId: unexpandedReferenceId };
       }
-      return { kind: 'success', candidates: itemReferenceCapable };
+      return itemReferenceCapable;
     }
-    return { kind: 'success', candidates: matching };
+    return matching;
   }
 
   const preferredUpstreamIds = collectPreferredUpstreams(references);
-  return { kind: 'success', candidates: orderCandidatesByStoredResponsesAffinity(candidates, preferredUpstreamIds) };
+  return orderCandidatesByStoredResponsesAffinity(candidates, preferredUpstreamIds);
 };

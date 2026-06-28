@@ -1,13 +1,13 @@
-import { geminiAttempt } from './attempt.ts';
+import { geminiAttempt, pickGeminiGenerateTarget, pickGeminiCountTokensTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { planChatCandidates } from '../shared/candidates.ts';
+import { isChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { ChatTargetApi, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 export interface GeminiServeGenerateArgs {
   readonly payload: GeminiPayload;
@@ -28,19 +28,6 @@ export interface GeminiServeCountTokensArgs {
   readonly headers: Headers;
 }
 
-// Gemini has no native upstream target in the provider API; prefer Chat
-// Completions, then Messages, then Responses for generate. countTokens has
-// no translation path beyond native Messages count_tokens, so only
-// Messages-endpoint candidates qualify there.
-const pickGeminiGenerateTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.chatCompletions ? 'chat-completions'
-    : endpoints.messages ? 'messages'
-      : endpoints.responses ? 'responses'
-        : null;
-
-const pickGeminiCountTokensTarget = (endpoints: ModelEndpoints): ChatTargetApi | null =>
-  endpoints.messages ? 'messages' : null;
-
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, model, headers } = args;
@@ -51,16 +38,16 @@ export const geminiServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const planItems = planChatCandidates(candidates, pickGeminiGenerateTarget);
-    const decision = await planGeminiRouting({ payload, candidates: planItems, store });
-    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
+    const viable = candidates.filter(c => pickGeminiGenerateTarget(c.model.endpoints) !== null);
+    const decision = await planGeminiRouting({ payload, candidates: viable, store });
+    if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
     // upstream.
-    const [item] = decision.candidates;
-    if (item === undefined) {
+    const [candidate] = decision;
+    if (candidate === undefined) {
       return renderGeminiFailure(
         sawModel
           ? { kind: 'model-unsupported', model, failedUpstreams }
@@ -68,7 +55,7 @@ export const geminiServe = {
         'generate',
       );
     }
-    return await geminiAttempt.generate({ payload, ctx, store, candidate: item.candidate, targetApi: item.targetApi, headers });
+    return await geminiAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
@@ -80,15 +67,15 @@ export const geminiServe = {
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const planItems = planChatCandidates(candidates, pickGeminiCountTokensTarget);
-    const decision = await planGeminiRouting({ payload, candidates: planItems, store });
-    if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
+    const viable = candidates.filter(c => pickGeminiCountTokensTarget(c.model.endpoints) !== null);
+    const decision = await planGeminiRouting({ payload, candidates: viable, store });
+    if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
     // errors come back as a `plain` envelope, so the first candidate's result
     // is the answer. Provider-level transport errors throw and propagate.
-    const [item] = decision.candidates;
-    if (item === undefined) {
+    const [candidate] = decision;
+    if (candidate === undefined) {
       return renderGeminiFailure(
         sawModel
           ? { kind: 'model-unsupported', model, failedUpstreams }
@@ -96,6 +83,6 @@ export const geminiServe = {
         'countTokens',
       );
     }
-    return await geminiAttempt.countTokens({ payload, ctx, store, candidate: item.candidate, targetApi: item.targetApi, headers });
+    return await geminiAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };
