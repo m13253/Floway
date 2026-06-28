@@ -62,7 +62,7 @@ export const isStoredResponsesItemId = (value: string): boolean =>
 // items back with their `encrypted_content` blob but no gateway id (the id is
 // stripped client-side). The blob is signed against the producing upstream
 // account, so we key such items by its hash to recover the owning upstream for
-// affinity routing.
+// affinity narrowing.
 export const responsesItemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
   return typeof id === 'string' && id.length > 0 ? id : null;

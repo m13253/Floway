@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { planChatCompletionsRouting } from './routing.ts';
+import { pickChatCompletionsCandidates } from './pick.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createStoredResponsesItemId } from '../responses/items/format.ts';
@@ -43,7 +43,7 @@ test('chat-completions payload with no reasoning carriers passes candidates thro
   installRepo();
   const candidates = [candidate('up_a'), candidate('up_b')];
 
-  const decision = await planChatCompletionsRouting({
+  const decision = await pickChatCompletionsCandidates({
     payload: payload([{ role: 'user', content: 'hello' }]),
     candidates,
     store: createNonResponsesSourceStore(API_KEY_ID),
@@ -58,7 +58,7 @@ test('an assistant reasoning_items carrier naming an unknown stored id fails rou
   installRepo();
   const reasoningId = createStoredResponsesItemId('reasoning');
 
-  const decision = await planChatCompletionsRouting({
+  const decision = await pickChatCompletionsCandidates({
     payload: payload([
       {
         role: 'assistant',

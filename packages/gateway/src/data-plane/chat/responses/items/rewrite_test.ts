@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { classifyResponsesItemAffinity } from './affinity.ts';
+import { pickCandidatesByItemAffinity } from './pick-by-affinity.ts';
 import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
 import { rewriteResponsesItemsForCandidate } from './rewrite.ts';
 import { createNonResponsesSourceStore } from './store.ts';
@@ -77,7 +77,7 @@ const rewrite = async (
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   // Simulate the affinity classification that populates the store cache.
-  await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
+  await pickCandidatesByItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
   const result = await rewriteResponsesItemsForCandidate(makePayload(input), store, cand);
   return result.payload.input as ResponsesInputItem[];
 };

@@ -27,9 +27,9 @@ export const throwChatServeFailure = (failure: ChatServeFailure): never => {
 export const tryCatchChatServeFailure = (error: unknown): ChatServeFailure | null =>
   error instanceof ChatServeFailureError ? error.failure : null;
 
-// Type guard for the routing planners' `T[] | ChatServeFailure` return
-// shape. `Array.isArray` does narrow this union in most TS versions, but
-// not all — using a named predicate keeps the call sites readable and
-// independent of that quirk.
+// Type guard for the `pick*Candidates` planners' `T[] | ChatServeFailure`
+// return shape. `Array.isArray` does narrow this union in most TS
+// versions, but not all — using a named predicate keeps the call sites
+// readable and independent of that quirk.
 export const isChatServeFailure = (value: unknown): value is ChatServeFailure =>
   value !== null && typeof value === 'object' && !Array.isArray(value) && 'kind' in value;

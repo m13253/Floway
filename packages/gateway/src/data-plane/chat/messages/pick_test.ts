@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { planMessagesRouting } from './routing.ts';
+import { pickMessagesCandidates } from './pick.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createStoredResponsesItemId } from '../responses/items/format.ts';
@@ -44,7 +44,7 @@ test('messages payload with no reasoning carriers passes candidates through unch
   installRepo();
   const candidates = [candidate('up_a'), candidate('up_b')];
 
-  const decision = await planMessagesRouting({
+  const decision = await pickMessagesCandidates({
     payload: payload([{ role: 'user', content: 'hello' }]),
     candidates,
     store: createNonResponsesSourceStore(API_KEY_ID),
@@ -62,7 +62,7 @@ test('a reasoning signature naming an unknown stored id fails routing as item-no
   // when the referenced id is one of our queryable ids.
   const reasoningId = createStoredResponsesItemId('reasoning');
 
-  const decision = await planMessagesRouting({
+  const decision = await pickMessagesCandidates({
     payload: payload([
       {
         role: 'assistant',

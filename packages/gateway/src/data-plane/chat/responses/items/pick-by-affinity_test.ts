@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { classifyResponsesItemAffinity } from './affinity.ts';
+import { pickCandidatesByItemAffinity } from './pick-by-affinity.ts';
 import { createStoredResponsesItemId, hashResponsesItemEncryptedContent } from './format.ts';
 import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -66,7 +66,7 @@ const classifyItems = async (
   candidates: readonly ProviderCandidate[],
 ) => {
   const store = createNonResponsesSourceStore(API_KEY_ID);
-  return await classifyResponsesItemAffinity({
+  return await pickCandidatesByItemAffinity({
     sourceItems,
     view: responsesItemsView,
     store,

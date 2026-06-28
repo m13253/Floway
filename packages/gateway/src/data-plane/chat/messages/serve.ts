@@ -1,6 +1,6 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
-import { planMessagesRouting } from './routing.ts';
+import { pickMessagesCandidates } from './pick.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
@@ -26,22 +26,22 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, store });
-    if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'generate');
+    const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
+    const candidates = await pickMessagesCandidates({ payload, candidates: viable, store });
+    if (isChatServeFailure(candidates)) return renderMessagesFailure(candidates, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
     // upstream.
-    const [candidate] = decision;
+    const [candidate] = candidates;
     if (candidate === undefined) {
       return renderMessagesFailure(
         sawModel
@@ -55,21 +55,21 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await planMessagesRouting({ payload, candidates: viable, store });
-    if (isChatServeFailure(decision)) return renderMessagesFailure(decision, 'countTokens');
+    const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
+    const candidates = await pickMessagesCandidates({ payload, candidates: viable, store });
+    if (isChatServeFailure(candidates)) return renderMessagesFailure(candidates, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
     // errors come back as a `plain` envelope, so the first candidate's result
     // is the answer. Provider-level transport errors throw and propagate.
-    const [candidate] = decision;
+    const [candidate] = candidates;
     if (candidate === undefined) {
       return renderMessagesFailure(
         sawModel

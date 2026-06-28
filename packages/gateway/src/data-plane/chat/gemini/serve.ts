@@ -1,6 +1,6 @@
 import { geminiAttempt, geminiGenerateTarget, geminiCountTokensTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
-import { planGeminiRouting } from './routing.ts';
+import { pickGeminiCandidates } from './pick.ts';
 import { enumerateProviderCandidates } from '../../providers/candidates.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { isChatServeFailure } from '../shared/errors.ts';
@@ -31,22 +31,22 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, model, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
-    const decision = await planGeminiRouting({ payload, candidates: viable, store });
-    if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'generate');
+    const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
+    const candidates = await pickGeminiCandidates({ payload, candidates: viable, store });
+    if (isChatServeFailure(candidates)) return renderGeminiFailure(candidates, 'generate');
 
     // Any non-throwing attempt result — events, api-error, or
     // internal-error — IS the answer for this request: an upstream 4xx/5xx
     // from the first viable candidate is final, not a hint to try another
     // upstream.
-    const [candidate] = decision;
+    const [candidate] = candidates;
     if (candidate === undefined) {
       return renderGeminiFailure(
         sawModel
@@ -60,21 +60,21 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, model, headers } = args;
-    const { candidates, sawModel, failedUpstreams } = await enumerateProviderCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateProviderCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    const viable = candidates.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
-    const decision = await planGeminiRouting({ payload, candidates: viable, store });
-    if (isChatServeFailure(decision)) return renderGeminiFailure(decision, 'countTokens');
+    const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
+    const candidates = await pickGeminiCandidates({ payload, candidates: viable, store });
+    if (isChatServeFailure(candidates)) return renderGeminiFailure(candidates, 'countTokens');
 
     // PlainResult always represents a final response — both 2xx and upstream
     // errors come back as a `plain` envelope, so the first candidate's result
     // is the answer. Provider-level transport errors throw and propagate.
-    const [candidate] = decision;
+    const [candidate] = candidates;
     if (candidate === undefined) {
       return renderGeminiFailure(
         sawModel

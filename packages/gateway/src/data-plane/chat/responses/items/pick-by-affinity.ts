@@ -112,7 +112,7 @@ const orderCandidatesByStoredResponsesAffinity = (
   return [...preferredCandidates, ...remainingCandidates];
 };
 
-export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
+export const pickCandidatesByItemAffinity = async <TSourceItems>(input: {
   sourceItems: TSourceItems;
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;

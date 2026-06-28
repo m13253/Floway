@@ -1,11 +1,11 @@
-import { classifyResponsesItemAffinity } from './items/affinity.ts';
+import { pickCandidatesByItemAffinity } from './items/pick-by-affinity.ts';
 import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
-export const planResponsesRouting = async (input: {
+export const pickResponsesCandidates = async (input: {
   readonly payload: ResponsesPayload;
   readonly candidates: readonly ProviderCandidate[];
   readonly store: StatefulResponsesStore;
@@ -19,7 +19,7 @@ export const planResponsesRouting = async (input: {
   } = typeof input.payload.input === 'string'
     ? { sourceItems: [], inputItemsToStage: [{ type: 'message', role: 'user', content: input.payload.input }] }
     : { sourceItems: input.payload.input, inputItemsToStage: input.payload.input };
-  return await classifyResponsesItemAffinity({
+  return await pickCandidatesByItemAffinity({
     sourceItems,
     view: responsesItemsView,
     store: input.store,
