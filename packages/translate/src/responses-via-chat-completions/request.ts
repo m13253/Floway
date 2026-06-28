@@ -204,11 +204,11 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       // translator runs. Reaching here means the reverse path was
       // skipped.
       if (item.type === 'web_search_call') {
-        throw new TranslatorInputError('Responses → Chat Completions translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
+        throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
       }
 
       if (item.type !== 'message') {
-        throw new TranslatorInputError(`Responses → Chat Completions translator does not accept ${item.type} input items.`);
+        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
       }
 
       if (item.role === 'assistant') {

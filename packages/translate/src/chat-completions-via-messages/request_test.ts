@@ -222,7 +222,7 @@ test('image content part in leading system message throws', async () => {
         }),
       ),
     Error,
-    'does not accept image content parts in system or developer messages',
+    "Invalid 'image_url' content part in system or developer message",
   );
 });
 
@@ -244,7 +244,7 @@ test('image content part in non-leading system message throws', async () => {
         }),
       ),
     Error,
-    'does not accept image content parts in system or developer messages',
+    "Invalid 'image_url' content part in system or developer message",
   );
 });
 
@@ -1255,7 +1255,7 @@ test('translateChatCompletionsToMessages rejects an unknown message role', async
         messages: [{ role: 'function', content: 'hi' } as unknown as ChatCompletionsMessage],
       }),
     Error,
-    'does not accept function messages',
+    "Invalid role 'function'",
   );
 });
 
@@ -1267,6 +1267,6 @@ test('translateChatCompletionsToMessages rejects an unknown user content part ty
         messages: [{ role: 'user', content: [{ type: 'video_url' }] } as unknown as ChatCompletionsMessage],
       }),
     Error,
-    'does not accept video_url content parts',
+    "Invalid 'video_url' content part",
   );
 });

@@ -24,7 +24,7 @@ const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] |
 
   for (const block of content) {
     if (block.type !== 'text' && block.type !== 'image') {
-      throw new TranslatorInputError(`Messages → Chat Completions translator does not accept ${block.type} content blocks in message content.`);
+      throw new TranslatorInputError(`messages.content.type: '${block.type}' content blocks are not supported on this model`);
     }
   }
 
@@ -203,7 +203,7 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatComp
       });
       break;
     default:
-      throw new TranslatorInputError(`Messages → Chat Completions translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
+      throw new TranslatorInputError(`messages.content.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
     }
   }
 
@@ -245,7 +245,7 @@ const translateMessagesInput = (messages: MessagesMessage[], system: string | Me
       case 'user': return translateMessagesUser(message);
       case 'assistant': return translateMessagesAssistant(message);
       case 'system': return translateMessagesSystem(message);
-      default: throw new TranslatorInputError(`Messages → Chat Completions translator does not accept role ${(message as { role: string }).role}.`);
+      default: throw new TranslatorInputError(`messages.role: role '${(message as { role: string }).role}' is not supported on this model`);
       }
     }),
   ];

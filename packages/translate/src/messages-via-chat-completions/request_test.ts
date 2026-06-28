@@ -391,7 +391,7 @@ test('translateMessagesToChatCompletions rejects an unknown assistant content bl
         messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
       }),
     Error,
-    'does not accept audio assistant content blocks',
+    "'audio' assistant content blocks are not supported",
   );
 });
 
@@ -404,7 +404,7 @@ test('translateMessagesToChatCompletions rejects an unknown user content block t
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
       }),
     Error,
-    'does not accept audio content blocks',
+    "'audio' content blocks are not supported",
   );
 });
 
@@ -517,7 +517,7 @@ test('translateMessagesToChatCompletions rejects an unknown message role', () =>
         messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
       }),
     Error,
-    'does not accept role tool',
+    "role 'tool' is not supported",
   );
 });
 

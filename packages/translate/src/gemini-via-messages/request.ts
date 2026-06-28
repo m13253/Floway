@@ -67,7 +67,7 @@ const buildUserMessage = (content: GeminiContent, turnIndex: number, unmatchedTo
       return;
     }
     default:
-      throw new TranslatorInputError(`Gemini → Messages translator does not accept ${kind} parts in user content.`);
+      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
     }
   });
 
@@ -137,7 +137,7 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
       return;
     }
     default:
-      throw new TranslatorInputError(`Gemini → Messages translator does not accept ${kind} parts in model content.`);
+      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
     }
   });
 
@@ -255,7 +255,7 @@ export const buildTargetRequest = (
       message = buildUserMessage(content, turnIndex, unmatchedToolCallIds);
       break;
     default:
-      throw new TranslatorInputError(`Gemini → Messages translator does not accept ${(content as { role: string }).role} content roles.`);
+      throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
     }
     if (message) request.messages.push(message);
   });

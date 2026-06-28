@@ -501,7 +501,7 @@ test('translateResponsesToMessages throws on a stray web_search_call input item 
       parallel_tool_calls: true,
     }),
     Error,
-    'Responses → Messages translator does not accept web_search_call input items',
+    "Invalid input item type 'web_search_call'",
   );
 });
 
@@ -529,7 +529,7 @@ test('translateResponsesToMessages throws on a stray compaction_trigger input it
       parallel_tool_calls: true,
     }),
     Error,
-    'Unexpected Responses input item variant',
+    'Invalid input item:',
   );
 });
 
@@ -557,7 +557,7 @@ test('translateResponsesToMessages throws on a stray compaction input item (comp
       parallel_tool_calls: true,
     }),
     Error,
-    'Unexpected Responses input item variant',
+    'Invalid input item:',
   );
 });
 
@@ -808,7 +808,7 @@ test('translateResponsesToMessages throws when a system input message contains a
         { loadRemoteImage: stubRemoteImageLoader(null) },
       ),
     Error,
-    'does not accept image content parts in system messages',
+    "Invalid 'input_image' content part in system message",
   );
 });
 
@@ -843,6 +843,6 @@ test('translateResponsesToMessages throws when a non-leading developer input mes
         { loadRemoteImage: stubRemoteImageLoader(null) },
       ),
     Error,
-    'does not accept image content parts in developer messages',
+    "Invalid 'input_image' content part in developer message",
   );
 });

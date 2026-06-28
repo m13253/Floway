@@ -11,7 +11,7 @@ const bodyOf = (result: ReturnType<typeof translatorInputErrorResult>): unknown 
 
 test('translatorInputErrorResult renders an OpenAI 400 invalid_request_error envelope with default `messages` param', () => {
   const result = translatorInputErrorResult(
-    new TranslatorInputError('Chat Completions → Messages translator does not accept tool messages without tool_call_id.'),
+    new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message."),
   );
   const apiError = apiErrorOf(result);
 
@@ -20,7 +20,7 @@ test('translatorInputErrorResult renders an OpenAI 400 invalid_request_error env
   assertEquals(apiError.status, 400);
   assertEquals(bodyOf(result), {
     error: {
-      message: 'Chat Completions → Messages translator does not accept tool messages without tool_call_id.',
+      message: "Missing required field 'tool_call_id' on a 'tool' role message.",
       type: 'invalid_request_error',
       param: 'messages',
       code: null,

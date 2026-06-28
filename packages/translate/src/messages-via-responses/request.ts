@@ -35,7 +35,7 @@ const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, Mess
     };
   }
 
-  throw new TranslatorInputError(`Messages → Responses translator does not accept ${(block as { type: string }).type} user content blocks.`);
+  throw new TranslatorInputError(`messages.content.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
 const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
@@ -135,7 +135,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
       continue;
     }
 
-    throw new TranslatorInputError(`Messages → Responses translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
+    throw new TranslatorInputError(`messages.content.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');
@@ -160,7 +160,7 @@ const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem
     case 'user': return translateUserMessage(message);
     case 'assistant': return translateAssistantMessage(message);
     case 'system': return translateMessagesSystem(message);
-    default: throw new TranslatorInputError(`Messages → Responses translator does not accept role ${(message as { role: string }).role}.`);
+    default: throw new TranslatorInputError(`messages.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
   });
 

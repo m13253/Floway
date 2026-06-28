@@ -1,3 +1,4 @@
+import { translatorInputErrorResult } from './errors.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse, respondGemini } from './respond.ts';
 import { geminiServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -7,6 +8,7 @@ import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 interface GeminiModelAction {
   readonly model: string;
@@ -45,17 +47,22 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
 
 // Surfaces a pre-stream throw as a Gemini-RPC envelope, routing through
 // `respondGemini` so the dump records the failure exactly as the sibling
-// HTTP handlers do. A `ProviderModelsUnavailableError` carrying an upstream
-// HTTP body relays that body through the `api-error` path with `source:
-// 'upstream'`; everything else collapses to an `internal-error` result
-// rendered as the Gemini internal-error envelope (status, code, message,
-// stack, cause, target_api).
+// HTTP handlers do. `TranslatorInputError` renders a 400 INVALID_ARGUMENT
+// envelope (caller-input violation). A `ProviderModelsUnavailableError`
+// carrying an upstream HTTP body relays that body through the `api-error`
+// path with `source: 'upstream'`; everything else collapses to an
+// `internal-error` result rendered as the Gemini internal-error envelope
+// (status, code, message, stack, cause, target_api).
 const respondWithGeminiError = async (
   c: AuthedContext,
   error: unknown,
   ctx: GatewayCtx,
   wantsStream: boolean,
 ): Promise<Response> => {
+  if (error instanceof TranslatorInputError) {
+    const { response } = await respondGemini(c, translatorInputErrorResult(error), wantsStream, ctx);
+    return (ctx.dump?.finalize(response) ?? response);
+  }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
     const apiErrorResult = {

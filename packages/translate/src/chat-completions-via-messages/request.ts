@@ -74,7 +74,7 @@ const convertUserContent = async (message: ChatCompletionsMessage, loadRemoteIma
         return resolveImageUrlToMessagesImage(part.image_url.url, loadRemoteImage);
       }
 
-      throw new TranslatorInputError(`Chat Completions → Messages translator does not accept ${(part as { type: string }).type} content parts.`);
+      throw new TranslatorInputError(`Invalid '${(part as { type: string }).type}' content part. Only 'text' and 'image_url' are supported in user content.`);
     }),
   );
 
@@ -98,7 +98,7 @@ const convertSystemContent = (content: ChatCompletionsMessage['content']): Messa
   const blocks: MessagesTextBlock[] = [];
   for (const part of content) {
     if (part.type === 'image_url') {
-      throw new TranslatorInputError('Chat Completions → Messages translator does not accept image content parts in system or developer messages — Anthropic Messages only permits text in the system field.');
+      throw new TranslatorInputError("Invalid 'image_url' content part in system or developer message. Only 'text' content parts are supported in system messages on this model.");
     }
     if (part.type === 'text') {
       blocks.push({ type: 'text', text: part.text });
@@ -124,7 +124,7 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
       break;
     case 'tool':
       if (!message.tool_call_id) {
-        throw new TranslatorInputError('tool message requires tool_call_id for Messages translation');
+        throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
       }
 
       appendUserBlocks(result, [
@@ -152,7 +152,7 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
       break;
     }
     default:
-      throw new TranslatorInputError(`Chat Completions → Messages translator does not accept ${message.role} messages.`);
+      throw new TranslatorInputError(`Invalid role '${message.role}'.`);
     }
   }
 

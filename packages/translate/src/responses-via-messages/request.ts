@@ -121,14 +121,14 @@ const responsesSystemBlocks = (message: ResponsesInputMessage): MessagesTextBloc
   const blocks: MessagesTextBlock[] = [];
   for (const block of message.content) {
     if (block.type === 'input_image') {
-      throw new TranslatorInputError(`Responses → Messages translator does not accept image content parts in ${message.role} messages — Anthropic Messages only permits text in the system field.`);
+      throw new TranslatorInputError(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
     }
     if (block.type !== 'input_text' && block.type !== 'output_text') {
       // Exhaustiveness guard: today ResponsesInputContent is
       // input_text|input_image|output_text; a future variant must opt into
       // translator behavior rather than be silently dropped from system
       // content.
-      throw new TranslatorInputError(`Responses → Messages translator: unexpected content block variant ${(block as { type: string }).type} in ${message.role} message.`);
+      throw new TranslatorInputError(`Invalid content block type '${(block as { type: string }).type}' in ${message.role} message.`);
     }
     blocks.push({ type: 'text', text: block.text });
   }
@@ -170,7 +170,7 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
 };
 
 const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
-  throw new TranslatorInputError(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
+  throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(value)}`);
 };
 
 const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
@@ -210,7 +210,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
         messages.push(translateSystemMessage(item));
         break;
       default:
-        throw new TranslatorInputError(`Responses → Messages translator: unexpected message role ${(item as { role: string }).role}.`);
+        throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
       }
       break;
     case 'function_call':
@@ -260,9 +260,9 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
       // into function_call + function_call_output pairs before this
       // translator runs. Reaching here means the reverse path was
       // skipped.
-      throw new TranslatorInputError('Responses → Messages translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
+      throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
     case 'image_generation_call':
-      throw new TranslatorInputError('Responses → Messages translator does not accept image_generation_call input items until item-by-id image storage is available.');
+      throw new TranslatorInputError("Invalid input item type 'image_generation_call'.");
     default:
       // Exhaustiveness guard: a future ResponsesInputItem variant must
       // explicitly opt into translator behavior.

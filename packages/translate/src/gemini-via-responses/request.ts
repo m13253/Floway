@@ -65,7 +65,7 @@ const buildUserInputItems = (content: GeminiContent, turnIndex: number, unmatche
       return;
     }
     default:
-      throw new TranslatorInputError(`Gemini → Responses translator does not accept ${kind} parts in user content.`);
+      throw new TranslatorInputError(`"${kind}" parts are not supported in user content.`);
     }
   });
 
@@ -110,7 +110,7 @@ const buildAssistantInputItems = (content: GeminiContent, turnIndex: number, unm
       return;
     }
     default:
-      throw new TranslatorInputError(`Gemini → Responses translator does not accept ${kind} parts in model content.`);
+      throw new TranslatorInputError(`"${kind}" parts are not supported in model content.`);
     }
   });
 
@@ -188,7 +188,7 @@ export const buildTargetRequest = (payload: GeminiPayload, model: string): Respo
       input.push(...buildUserInputItems(content, turnIndex, unmatchedToolCallIds));
       return;
     default:
-      throw new TranslatorInputError(`Gemini → Responses translator does not accept ${(content as { role: string }).role} content roles.`);
+      throw new TranslatorInputError(`"${(content as { role: string }).role}" is not a supported content role.`);
     }
   });
 

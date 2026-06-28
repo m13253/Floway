@@ -11,7 +11,7 @@ const bodyOf = (result: ReturnType<typeof translatorInputErrorResult>): unknown 
 
 test('translatorInputErrorResult renders an OpenAI 400 invalid_request_error envelope with default `input` param', () => {
   const result = translatorInputErrorResult(
-    new TranslatorInputError('Responses → Messages translator does not accept image_generation_call input items.'),
+    new TranslatorInputError("Invalid input item type 'image_generation_call'."),
   );
   const apiError = apiErrorOf(result);
 
@@ -20,7 +20,7 @@ test('translatorInputErrorResult renders an OpenAI 400 invalid_request_error env
   assertEquals(apiError.status, 400);
   assertEquals(bodyOf(result), {
     error: {
-      message: 'Responses → Messages translator does not accept image_generation_call input items.',
+      message: "Invalid input item type 'image_generation_call'.",
       type: 'invalid_request_error',
       param: 'input',
       code: null,

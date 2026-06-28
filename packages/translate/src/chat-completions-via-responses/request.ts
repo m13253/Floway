@@ -97,11 +97,11 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
     }
 
     if (message.role !== 'tool') {
-      throw new TranslatorInputError(`Chat Completions → Responses translator does not accept ${(message as { role: string }).role} messages.`);
+      throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
     }
 
     if (!message.tool_call_id) {
-      throw new TranslatorInputError('tool message requires tool_call_id for Responses translation');
+      throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
     }
 
     input.push({

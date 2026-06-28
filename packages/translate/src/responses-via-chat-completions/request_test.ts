@@ -1419,7 +1419,7 @@ test('translateResponsesToChatCompletions throws on a stray web_search_call inpu
       parallel_tool_calls: true,
     }),
     Error,
-    'Responses → Chat Completions translator does not accept web_search_call input items',
+    "Invalid input item type 'web_search_call'",
   );
 });
 
@@ -1447,7 +1447,7 @@ test('translateResponsesToChatCompletions throws on a stray compaction_trigger i
       parallel_tool_calls: true,
     }),
     Error,
-    'Responses → Chat Completions translator does not accept compaction_trigger input items',
+    "Invalid input item type 'compaction_trigger'",
   );
 });
 
@@ -1475,7 +1475,7 @@ test('translateResponsesToChatCompletions throws on a stray compaction input ite
       parallel_tool_calls: true,
     }),
     Error,
-    'Responses → Chat Completions translator does not accept compaction input items',
+    "Invalid input item type 'compaction'",
   );
 });
 
