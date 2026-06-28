@@ -25,7 +25,11 @@ const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesI
   pending.length = 0;
 };
 
-const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>): ResponsesInputContent => {
+const translateUserContentBlock = (
+  block: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>,
+  messageIdx: number,
+  blockIdx: number,
+): ResponsesInputContent => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
   if (block.type === 'image') {
     return {
@@ -35,7 +39,7 @@ const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, Mess
     };
   }
 
-  throw new TranslatorInputError(`messages.content.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
+  throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
 const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
@@ -73,7 +77,7 @@ const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] 
   return clientTools.length > 0 ? clientTools : undefined;
 };
 
-const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[] => {
+const translateUserMessage = (message: MessagesUserMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
   }
@@ -81,7 +85,7 @@ const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_result') {
       // Responses can represent alternating user content and tool outputs, so
       // preserve Messages block chronology instead of moving all tool results to
@@ -96,14 +100,14 @@ const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[
       continue;
     }
 
-    pendingContent.push(translateUserContentBlock(block));
+    pendingContent.push(translateUserContentBlock(block, messageIdx, blockIdx));
   }
 
   flushPendingContent(pendingContent, input, 'user');
   return input;
 };
 
-const translateAssistantMessage = (message: MessagesAssistantMessage): ResponsesInputItem[] => {
+const translateAssistantMessage = (message: MessagesAssistantMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
@@ -111,7 +115,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_use' || block.type === 'server_tool_use') {
       flushPendingContent(pendingContent, input, 'assistant');
       input.push(toResponsesFunctionCall(block));
@@ -135,7 +139,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
       continue;
     }
 
-    throw new TranslatorInputError(`messages.content.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
+    throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');
@@ -155,12 +159,12 @@ const translateMessagesSystem = (message: MessagesSystemMessage): ResponsesInput
 ];
 
 const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem[] =>
-  messages.flatMap((message): ResponsesInputItem[] => {
+  messages.flatMap((message, messageIdx): ResponsesInputItem[] => {
     switch (message.role) {
-    case 'user': return translateUserMessage(message);
-    case 'assistant': return translateAssistantMessage(message);
+    case 'user': return translateUserMessage(message, messageIdx);
+    case 'assistant': return translateAssistantMessage(message, messageIdx);
     case 'system': return translateMessagesSystem(message);
-    default: throw new TranslatorInputError(`messages.role: role '${(message as { role: string }).role}' is not supported on this model`);
+    default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
   });
 
