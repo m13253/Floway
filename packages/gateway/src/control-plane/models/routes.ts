@@ -9,7 +9,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
+import type { CatalogModel, ModelProviderInstance, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every provider binding for this model as { kind, id, name }
@@ -24,9 +24,9 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
+const toControlPlaneModel = (model: CatalogModel, instances: readonly ModelProviderInstance[]): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: model.providers.map(binding => ({ kind: binding.providerKind, id: binding.upstream, name: binding.upstreamName })),
+  upstreams: instances.map(instance => ({ kind: instance.providerKind, id: instance.upstream, name: instance.name })),
 });
 
 export const controlPlaneModels = async (c: Context) => {
@@ -36,8 +36,8 @@ export const controlPlaneModels = async (c: Context) => {
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
-    const models = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c));
-    const data = models.map(toControlPlaneModel);
+    const { models, upstreamsByPublicId } = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c));
+    const data = models.map(model => toControlPlaneModel(model, upstreamsByPublicId.get(model.id) ?? []));
     const response: ControlPlaneModelsResponse = {
       object: 'list',
       has_more: false,

@@ -19,19 +19,14 @@ import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@f
 // turn against the SUMMARIZATION_PROMPT).
 export type ResponsesAction = 'generate' | 'compact';
 
-export interface ProviderModelRecord {
-  upstream: string;
-  upstreamName: string;
-  providerKind: UpstreamProviderKind;
-  provider: ModelProvider;
-  upstreamModel: UpstreamModel;
-  enabledFlags: ReadonlySet<string>;
-  supportsResponsesItemReference: boolean;
-}
-
-export interface ResolvedModel extends InternalModel {
+// A gateway-wide catalog row: InternalModel metadata plus the merged
+// endpoint capability map. `/v1/models`, `/models`, `/v1beta/models`, and
+// the control-plane catalog endpoint all project this onto their wire DTOs.
+// The `endpoints` field is the OR-union across every upstream that emitted
+// an entry under the same public id; per-request dispatch still reads each
+// upstream's own `UpstreamModel.endpoints` instead of this merged view.
+export interface CatalogModel extends InternalModel {
   endpoints: ModelEndpoints;
-  providers: readonly ProviderModelRecord[];
 }
 
 export interface ModelProviderInstance {

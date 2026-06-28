@@ -19,7 +19,7 @@ import type {
   ResponsesPayload,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import type { Fetcher, PerformanceTelemetryContext, ProviderModelRecord } from '@floway-dev/provider';
+import type { Fetcher, ModelProviderInstance, PerformanceTelemetryContext, UpstreamModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -452,14 +452,14 @@ interface ShimState {
   imageDispatchCount: number;
 }
 
-const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelKey: string, responseBody: unknown): void => {
+const recordImageUsage = (state: ShimState, provider: ModelProviderInstance, model: UpstreamModel, modelKey: string, responseBody: unknown): void => {
   const usage = tokenUsageFromImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
-    model: binding.upstreamModel.id,
-    upstream: binding.upstream,
+    model: model.id,
+    upstream: provider.upstream,
     modelKey,
-    cost: binding.provider.getPricingForModelKey(modelKey) ?? null,
+    cost: provider.provider.getPricingForModelKey(modelKey) ?? null,
   }, usage).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });
@@ -523,14 +523,15 @@ const serverError = (e: unknown): ImageError => ({
   retryable: true,
 });
 
-// Resolve the binding that serves the configured image model for the target
-// endpoint. A resolution/availability failure is normalized into an
-// `ImageError` so the caller always produces a terminal image item.
+// Resolve the (provider, model) pair that serves the configured image
+// model for the target endpoint. A resolution/availability failure is
+// normalized into an `ImageError` so the caller always produces a
+// terminal image item.
 const resolveImageBinding = async (
   isEdit: boolean,
   state: ShimState,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
-): Promise<{ ok: true; binding: ProviderModelRecord } | { ok: false; error: ImageError }> => {
+): Promise<{ ok: true; provider: ModelProviderInstance; model: UpstreamModel } | { ok: false; error: ImageError }> => {
   const endpointKey = isEdit ? 'imagesEdits' : 'imagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
@@ -551,7 +552,7 @@ const resolveImageBinding = async (
       },
     };
   }
-  return { ok: true, binding: match.binding };
+  return { ok: true, provider: match.provider, model: match.model };
 };
 
 // 60s cap matches the per-minute refill window of Azure TPM/RPM and
@@ -596,7 +597,8 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 // unread body — intermediate failed responses are drained inside the loop so
 // the underlying socket can be reused while we sleep.
 const issueImageCall = async (
-  binding: ProviderModelRecord,
+  provider: ModelProviderInstance,
+  model: UpstreamModel,
   fetcher: Fetcher,
   prompt: string,
   isEdit: boolean,
@@ -607,12 +609,12 @@ const issueImageCall = async (
   for (let attempt = 0; ; attempt++) {
     const recorder = createUpstreamLatencyRecorder();
     const { response, modelKey } = await (isEdit
-      ? binding.provider.callImagesEdits(binding.upstreamModel, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() })
-      : binding.provider.callImagesGenerations(binding.upstreamModel, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() }));
+      ? provider.provider.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() })
+      : provider.provider.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() }));
     const context: PerformanceTelemetryContext = {
       keyId: state.apiKeyId,
-      model: binding.upstreamModel.id,
-      upstream: binding.upstream,
+      model: model.id,
+      upstream: provider.upstream,
       modelKey,
       stream: false,
       runtimeLocation: state.runtimeLocation,
@@ -639,7 +641,8 @@ const issueImageCall = async (
 // outcome. Transport/backend failures become `{ok:false}` rather than
 // throwing, so the caller always produces a terminal image item.
 const consumeImageResponse = async (
-  binding: ProviderModelRecord,
+  provider: ModelProviderInstance,
+  model: UpstreamModel,
   modelKey: string,
   response: Response,
   state: ShimState,
@@ -665,7 +668,7 @@ const consumeImageResponse = async (
   if (b64 === null) {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }
-  recordImageUsage(state, binding, modelKey, parsed);
+  recordImageUsage(state, provider, model, modelKey, parsed);
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
@@ -760,20 +763,20 @@ const streamImageGeneration = (
   const fetcherForUpstream = await createPerRequestFetcher(state.currentColo);
   const resolved = await resolveImageBinding(isEdit, state, fetcherForUpstream);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const { binding } = resolved;
-  const fetcher = fetcherForUpstream(binding.upstream);
+  const { provider, model } = resolved;
+  const fetcher = fetcherForUpstream(provider.upstream);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(binding, fetcher, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials));
   } catch (e) {
     return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
   }
 
   if (!wantsPartials) {
-    return imageTerminal(prompt, action, await consumeImageResponse(binding, modelKey, response, state));
+    return imageTerminal(prompt, action, await consumeImageResponse(provider, model, modelKey, response, state));
   }
 
   if (!response.ok) {
@@ -803,7 +806,7 @@ const streamImageGeneration = (
   if (finalB64 === undefined) {
     return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
-  recordImageUsage(state, binding, modelKey, { usage });
+  recordImageUsage(state, provider, model, modelKey, { usage });
   return imageTerminal(prompt, action, { ok: true, b64: finalB64, echo: finalEcho });
 };
 

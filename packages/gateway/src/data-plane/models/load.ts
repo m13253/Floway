@@ -1,9 +1,12 @@
-import { getInternalModels } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { CatalogModel, Fetcher } from '@floway-dev/provider';
 
-export const toPublicModel = (model: InternalModel): PublicModel => {
+// Project a CatalogModel onto the public-facing `/v1/models` wire DTO,
+// dropping the merged `endpoints` capability map (an internal artefact
+// of catalog assembly that the public API does not surface).
+export const toPublicModel = (model: CatalogModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
     object: 'model',
@@ -27,7 +30,8 @@ export const loadModels = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<PublicModelsResponse> => {
-  const data = (await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler)).map(toPublicModel);
+  const { models } = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
+  const data = models.map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

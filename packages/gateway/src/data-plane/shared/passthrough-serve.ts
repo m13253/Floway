@@ -28,7 +28,7 @@ import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ModelProviderInstance, ProviderCallResult, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -102,14 +102,14 @@ interface PassthroughServeContext {
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
   readonly model: string;
-  readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
-  // Performs the upstream HTTP call for the chosen binding. Any throw here
-  // is preserved and becomes a 502 with the internal-debug envelope —
-  // exceptions thrown from the actual fetch must not be silently swallowed.
-  // `opts` carries the per-call hooks the gateway threads in (the
-  // recordUpstreamLatency wrapper for the upstream_success metric); the
-  // callback forwards it verbatim to the chosen provider call method.
-  readonly call: (binding: ProviderModelRecord, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  readonly modelServesEndpoint: (model: UpstreamModel) => boolean;
+  // Performs the upstream HTTP call for the chosen (provider, model) pair.
+  // Any throw here is preserved and becomes a 502 with the internal-debug
+  // envelope — exceptions thrown from the actual fetch must not be silently
+  // swallowed. `opts` carries the per-call hooks the gateway threads in
+  // (the recordUpstreamLatency wrapper for the upstream_success metric);
+  // the callback forwards it verbatim to the chosen provider call method.
+  readonly call: (provider: ModelProviderInstance, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }
 
@@ -118,7 +118,7 @@ export const passthroughApiError = (c: Context, message: string, status: Content
   c.json({ error: { message, type: 'api_error' } }, status);
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling } = input;
+  const { c, ctx, sourceApi, model, modelServesEndpoint, call, response: responseHandling } = input;
   const requestStartedAt = performance.now();
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
@@ -127,8 +127,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // Each match is one (upstream, upstream-catalog id) pair that interprets
     // the inbound public id. Iteration order follows configured sort_order
     // across upstreams, with the unprefixed interpretation pushed before the
-    // prefixed one within a single upstream. The first match whose binding
-    // satisfies the endpoint capability wins.
+    // prefixed one within a single upstream. The first match whose upstream
+    // model satisfies the endpoint capability wins.
     const { matches, failedUpstreams } = await resolveModelForRequest(model, ctx.upstreamIds, fetcherForUpstream, ctx.backgroundScheduler);
     if (matches.length === 0) {
       ctx.dump?.error('gateway');
@@ -136,11 +136,11 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     for (const match of matches) {
-      if (!bindingServesEndpoint(match.binding)) continue;
+      if (!modelServesEndpoint(match.model)) continue;
 
       const recorder = createUpstreamLatencyRecorder();
-      const { response, modelKey } = await call(match.binding, {
-        fetcher: fetcherForUpstream(match.binding.upstream),
+      const { response, modelKey } = await call(match.provider, match.model, {
+        fetcher: fetcherForUpstream(match.provider.upstream),
         recordUpstreamLatency: recorder.record,
         waitUntil: ctx.backgroundScheduler,
         headers: inboundHeadersForUpstream(c),
@@ -150,9 +150,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // user-facing error bodies echo the inbound `model`.
       const identity = {
         model: match.id,
-        upstream: match.binding.upstream,
+        upstream: match.provider.upstream,
         modelKey,
-        cost: match.binding.provider.getPricingForModelKey(modelKey),
+        cost: match.provider.provider.getPricingForModelKey(modelKey),
       };
       const performanceContext: PerformanceTelemetryContext = {
         keyId: ctx.apiKeyId,
@@ -165,7 +165,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-        ctx.dump?.error('upstream', match.binding.upstream);
+        ctx.dump?.error('upstream', match.provider.upstream);
         return forwardUpstreamResponse(response);
       }
 

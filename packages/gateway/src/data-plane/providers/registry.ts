@@ -2,7 +2,7 @@ import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, Fetcher, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { CatalogModel, Fetcher, ModelProviderInstance, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -11,7 +11,11 @@ import { createCustomProvider } from '@floway-dev/provider-custom';
 import { createOllamaProvider } from '@floway-dev/provider-ollama';
 
 interface ProviderModelsResult {
-  models: ResolvedModel[];
+  models: CatalogModel[];
+  // Reverse index: every upstream instance that emitted an entry under the
+  // given public id, in enumeration order. The control-plane catalog
+  // endpoint reads this to render `upstreams: [{kind, id, name}]` per row.
+  upstreamsByPublicId: Map<string, ModelProviderInstance[]>;
   sawSuccess: boolean;
   lastError: unknown;
   // Upstream names whose catalog fetch rejected this round, in the same
@@ -37,10 +41,9 @@ export const createProviderInstance = (record: UpstreamRecord): ModelProviderIns
   providerFactories[record.provider](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
-// (this, getModels, getInternalModels) so a caller can never omit it and
-// silently receive the full, unscoped catalog — a missing scope is a compile
-// error, not a runtime leak. Pass `null` to deliberately request every enabled
-// upstream.
+// (this, getModels) so a caller can never omit it and silently receive the
+// full, unscoped catalog — a missing scope is a compile error, not a runtime
+// leak. Pass `null` to deliberately request every enabled upstream.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
 ): Promise<ModelProviderInstance[]> => {
@@ -91,39 +94,29 @@ const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints =>
   return result;
 };
 
-const resolvedFromUpstreamModel = (upstreamModel: UpstreamModel, record: ProviderModelRecord): ResolvedModel => {
+const catalogFromUpstreamModel = (upstreamModel: UpstreamModel): CatalogModel => {
   const { providerData: _providerData, endpoints, ...internal } = upstreamModel;
-  return {
-    ...internal,
-    endpoints: { ...endpoints },
-    providers: [record],
-  };
+  return { ...internal, endpoints: { ...endpoints } };
 };
 
-const providerModelRecord = (instance: ModelProviderInstance, upstreamModel: UpstreamModel): ProviderModelRecord => ({
-  upstream: instance.upstream,
-  upstreamName: instance.name,
-  providerKind: instance.providerKind,
-  provider: instance.provider,
-  upstreamModel,
-  enabledFlags: upstreamModel.enabledFlags,
-  supportsResponsesItemReference: instance.supportsResponsesItemReference,
-});
-
 // When multiple upstreams expose the same public model id, the first wins
-// for /models metadata and later ones union-merge their endpoints + provider
-// binding. Runtime execution still uses each provider's own UpstreamModel, so
-// capability-sensitive calls do not depend on this merged view.
+// for /models metadata and later ones union-merge their endpoint capability
+// flags. Runtime execution still uses each provider's own UpstreamModel, so
+// capability-sensitive calls do not depend on this merged view. The reverse
+// index `upstreamsByPublicId` accumulates every upstream that surfaced the
+// id, in enumeration order, so the control plane can render its per-model
+// upstream chips without re-walking the catalog.
 const mergeIntoCatalog = (
-  byId: Map<string, ResolvedModel>,
+  byId: Map<string, CatalogModel>,
+  upstreamsByPublicId: Map<string, ModelProviderInstance[]>,
   instance: ModelProviderInstance,
   surfacedModel: UpstreamModel,
   publicId: string,
 ): void => {
-  const record = providerModelRecord(instance, surfacedModel);
   const existing = byId.get(publicId);
   if (!existing) {
-    byId.set(publicId, resolvedFromUpstreamModel(surfacedModel, record));
+    byId.set(publicId, catalogFromUpstreamModel(surfacedModel));
+    upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
   const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
@@ -131,8 +124,8 @@ const mergeIntoCatalog = (
     ...existing,
     endpoints,
     kind: kindForEndpoints(endpoints),
-    providers: [...existing.providers, record],
   });
+  upstreamsByPublicId.get(publicId)?.push(instance);
 };
 
 const collectProviderModels = async (
@@ -140,7 +133,8 @@ const collectProviderModels = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
-  const byId = new Map<string, ResolvedModel>();
+  const byId = new Map<string, CatalogModel>();
+  const upstreamsByPublicId = new Map<string, ModelProviderInstance[]>();
   let sawSuccess = false;
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
@@ -198,15 +192,15 @@ const collectProviderModels = async (
           const surfacedModel: UpstreamModel = form === 'prefixed'
             ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
             : upstreamModel;
-          mergeIntoCatalog(byId, instance, surfacedModel, publicId);
+          mergeIntoCatalog(byId, upstreamsByPublicId, instance, surfacedModel, publicId);
         }
       } else {
-        mergeIntoCatalog(byId, instance, upstreamModel, upstreamModel.id);
+        mergeIntoCatalog(byId, upstreamsByPublicId, instance, upstreamModel, upstreamModel.id);
       }
     }
   }
 
-  return { models: [...byId.values()], sawSuccess, lastError, failedUpstreams };
+  return { models: [...byId.values()], upstreamsByPublicId, sawSuccess, lastError, failedUpstreams };
 };
 
 // Public-facing model-id ordering, applied in getModels() to every list that
@@ -244,30 +238,26 @@ export const compareModelIds = (a: string, b: string): number => {
 };
 
 // `fetcherForUpstream` routes each upstream's catalog fetch through its
-// per-upstream proxy chain.
+// per-upstream proxy chain. Returns the merged catalog together with the
+// reverse `upstreamsByPublicId` map; callers that only want the bare
+// metadata projection (`/v1/models`, `/models`, etc.) destructure
+// `models` and ignore the map.
 export const getModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<ResolvedModel[]> => {
+): Promise<{ models: CatalogModel[]; upstreamsByPublicId: Map<string, ModelProviderInstance[]> }> => {
   const providers = await listModelProviders(upstreamFilter);
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
 
-  const { models, sawSuccess, lastError } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
+  const { models, upstreamsByPublicId, sawSuccess, lastError } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
 
-  if (sawSuccess) return models.sort((a, b) => compareModelIds(a.id, b.id));
+  if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId };
   if (lastError) throw lastError;
-  return [];
+  return { models: [], upstreamsByPublicId };
 };
-
-export const getInternalModels = async (
-  upstreamFilter: readonly string[] | null,
-  fetcherForUpstream: (upstreamId: string) => Fetcher,
-  scheduler: BackgroundScheduler,
-): Promise<InternalModel[]> =>
-  (await getModels(upstreamFilter, fetcherForUpstream, scheduler)).map(({ providers: _providers, endpoints: _endpoints, ...model }) => model);
 
 interface ModelResolution {
   matches: readonly ProviderModelResolution[];
@@ -279,10 +269,15 @@ interface ModelResolution {
   failedUpstreams: readonly string[];
 }
 
+// A single (provider, upstream-catalog model) pair the resolver matched
+// against an inbound id. `id` is the upstream's bare catalog id (which
+// equals `model.id` and differs from the inbound id when the inbound
+// matched the prefixed surface); telemetry and dump records key on that
+// canonical id while error envelopes echo the inbound `model` instead.
 export interface ProviderModelResolution {
   id: string;
   model: UpstreamModel;
-  binding: ProviderModelRecord;
+  provider: ModelProviderInstance;
 }
 
 export interface ModelInterpretation {
@@ -420,5 +415,5 @@ export const resolveModelForProvider = async (
   const providedModels = await fetchUpstreamModelsCached(instance, { scheduler, fetcher });
   const disabled = new Set(instance.disabledPublicModelIds);
   const exact = providedModels.find(model => model.id === modelId && !disabled.has(model.id));
-  return exact ? { id: exact.id, model: exact, binding: providerModelRecord(instance, exact) } : undefined;
+  return exact ? { id: exact.id, model: exact, provider: instance } : undefined;
 };
