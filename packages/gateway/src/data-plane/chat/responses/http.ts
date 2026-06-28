@@ -62,16 +62,9 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
-// Pre-stream caller-input failure raised by a translator. Surface as a
-// Responses-shaped 400 invalid_request_error instead of routing through
-// the internal-error 502 path.
-const respondWithTranslatorInputError = async (c: AuthedContext, error: TranslatorInputError, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
-  const result = translatorInputErrorResult(error);
-  const { response } = await respondResponses(c, result, false, effectiveCtx);
-  return (effectiveCtx.dump?.finalize(response) ?? response);
-};
-
+// Pre-stream throw dispatcher. `PreviousResponseNotFoundError` and the
+// translator-input case render protocol-shaped 400s; anything else falls
+// through to the internal-error 502 path.
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (error instanceof PreviousResponseNotFoundError) {
     const response = previousResponseNotFoundResponse(error.previousResponseId);
@@ -79,7 +72,9 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
     return (ctx?.dump?.finalize(response) ?? response);
   }
   if (error instanceof TranslatorInputError) {
-    return await respondWithTranslatorInputError(c, error, requestBody, ctx);
+    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+    const { response } = await respondResponses(c, translatorInputErrorResult(error), false, effectiveCtx);
+    return (effectiveCtx.dump?.finalize(response) ?? response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);
 };

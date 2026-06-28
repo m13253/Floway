@@ -2,7 +2,7 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ApiErrorResult, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI error envelope. `param` / `code` reproduce OpenAI's native fields; a
@@ -13,7 +13,7 @@ const openAiErrorResult = (
   status: number,
   message: string,
   extra?: { readonly param: string; readonly code: string | null },
-): ApiErrorResult => ({
+): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -30,7 +30,7 @@ const openAiErrorResult = (
 // did not carry a more specific path.
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
-): ApiErrorResult =>
+): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
   openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: null });
 
 export const renderResponsesFailure = (

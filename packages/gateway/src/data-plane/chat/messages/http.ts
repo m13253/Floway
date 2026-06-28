@@ -49,20 +49,15 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
-// Pre-stream caller-input failure raised by a translator. Surface as a
-// Messages-shaped 400 invalid_request_error instead of routing through the
+// Pre-stream caller-input failure raised by a translator → Messages-shaped
+// 400 invalid_request_error envelope. Anything else falls through to the
 // internal-error 502 path.
-const respondWithTranslatorInputError = async (c: AuthedContext, error: TranslatorInputError, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
-  const result = translatorInputErrorResult(error);
-  const { response } = await respondMessages(c, result, false, effectiveCtx);
+  const { response } = await respondMessages(c, translatorInputErrorResult(error), false, effectiveCtx);
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
-
-const respondToThrow = (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> =>
-  error instanceof TranslatorInputError
-    ? respondWithTranslatorInputError(c, error, requestBody, ctx)
-    : respondWithInternalError(c, error, requestBody, ctx);
 
 const parsePayload = (requestBody: RequestBody): MessagesPayload =>
   JSON.parse(new TextDecoder().decode(requestBody.bytes)) as MessagesPayload;

@@ -2,7 +2,7 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ApiErrorResult, ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Anthropic Messages error envelope used to render pre-stream
@@ -12,7 +12,7 @@ const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,
-): ApiErrorResult => ({
+): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -29,7 +29,7 @@ const anthropicErrorResult = (
 // instead of the internal-error 502 envelope.
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
-): ApiErrorResult =>
+): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> =>
   anthropicErrorResult(400, 'invalid_request_error', error.message);
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
