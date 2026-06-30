@@ -1,3 +1,4 @@
+import { translatorInputErrorResult } from './errors.ts';
 import { respondChatCompletions } from './respond.ts';
 import { chatCompletionsServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -8,6 +9,7 @@ import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as a Chat Completions-shaped 502 with the same internal-error
@@ -24,6 +26,16 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondChatCompletions(c, result, false, false, effectiveCtx);
+  return (effectiveCtx.dump?.finalize(response) ?? response);
+};
+
+// Pre-stream caller-input failure raised by a translator → Chat
+// Completions-shaped 400 invalid_request_error envelope. Anything else
+// falls through to the internal-error 502 path.
+const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+  const { response } = await respondChatCompletions(c, translatorInputErrorResult(error), false, false, effectiveCtx);
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
@@ -46,7 +58,7 @@ export const chatCompletionsHttp = {
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return await respondToThrow(c, error, requestBody, ctx);
     }
   },
 };

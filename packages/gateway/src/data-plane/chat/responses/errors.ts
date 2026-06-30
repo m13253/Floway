@@ -3,6 +3,7 @@ import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
+import type { TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI error envelope. `param` / `code` reproduce OpenAI's native fields; a
 // stored-item miss must byte-match OpenAI's own "not found" body — stateless
@@ -21,6 +22,16 @@ const openAiErrorResult = (
     error: { message, type: 'invalid_request_error', ...extra },
   })),
 });
+
+// Translator surfaced a caller-input violation. Render as a 400
+// invalid_request_error so the caller sees a protocol-shaped failure
+// instead of the internal-error 502 envelope. `param` falls back to
+// `input` (the Responses canonical input field name) when the translator
+// did not carry a more specific path.
+export const translatorInputErrorResult = (
+  error: TranslatorInputError,
+): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> =>
+  openAiErrorResult(400, error.message, { param: error.param ?? 'input', code: null });
 
 export const renderResponsesFailure = (
   failure: ChatServeFailure,

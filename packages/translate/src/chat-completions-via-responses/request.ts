@@ -1,5 +1,6 @@
 import { chatCompletionsContentToResponsesInputContent, chatCompletionsContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { scalarToResponsesReasoningItem, translateChatCompletionsReasoningItems } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
@@ -96,11 +97,11 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
     }
 
     if (message.role !== 'tool') {
-      throw new Error(`Chat Completions → Responses translator does not accept ${(message as { role: string }).role} messages.`);
+      throw new TranslatorInputError(`Invalid role '${(message as { role: string }).role}'.`);
     }
 
     if (!message.tool_call_id) {
-      throw new Error('tool message requires tool_call_id for Responses translation');
+      throw new TranslatorInputError("Missing required field 'tool_call_id' on a 'tool' role message.");
     }
 
     input.push({

@@ -16,6 +16,7 @@ const chat = (id: string, displayName?: string, ctx = 100000): InternalModel => 
   display_name: displayName,
   kind: 'chat',
   limits: { max_context_window_tokens: ctx },
+  endpoints: { chatCompletions: {} },
 });
 
 describe('computeCatalog', () => {

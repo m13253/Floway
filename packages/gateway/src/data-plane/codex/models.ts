@@ -24,7 +24,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { InternalModel } from '@floway-dev/provider';
 
 export const computeCatalog = (
@@ -90,9 +90,9 @@ export const codexModels = async (c: Context): Promise<Response> => {
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
-  const [bundled, internalModels] = await Promise.all([
+  const [bundled, { models: internalModels }] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
+    getModels(upstreamIds, fetcherForUpstream, scheduler),
   ]);
   return Response.json(computeCatalog(bundled, internalModels));
 };

@@ -52,6 +52,11 @@ type CacheableContentBlock = MessagesTextBlock | MessagesImageBlock | MessagesTo
 const isCacheableBlock = (block: MessagesUserContentBlock | MessagesAssistantContentBlock): block is CacheableContentBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
+export const applyLastSystemCacheBreakpoint = (system: MessagesTextBlock[] | undefined): void => {
+  if (!system || system.length === 0) return;
+  system[system.length - 1].cache_control = EPHEMERAL_CACHE_CONTROL;
+};
+
 export const applyLastMessageCacheBreakpoint = (messages: MessagesMessage[]): void => {
   for (let m = messages.length - 1; m >= 0; m--) {
     const message = messages[m];

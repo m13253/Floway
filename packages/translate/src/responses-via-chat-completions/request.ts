@@ -1,6 +1,7 @@
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
@@ -203,11 +204,11 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       // translator runs. Reaching here means the reverse path was
       // skipped.
       if (item.type === 'web_search_call') {
-        throw new Error('Responses → Chat Completions translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
+        throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
       }
 
       if (item.type !== 'message') {
-        throw new Error(`Responses → Chat Completions translator does not accept ${item.type} input items.`);
+        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
       }
 
       if (item.role === 'assistant') {

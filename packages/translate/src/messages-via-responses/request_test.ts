@@ -234,7 +234,7 @@ test('translateMessagesToResponses omits temperature when the source omitted it'
   assertFalse('temperature' in result);
 });
 
-test('translateMessagesToResponses joins multi-block system text with double newlines', () => {
+test('translateMessagesToResponses prepends multi-block top-level system as a leading input system message preserving block boundaries', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -245,7 +245,29 @@ test('translateMessagesToResponses joins multi-block system text with double new
     messages: [{ role: 'user', content: 'hi' }],
   });
 
-  assertEquals(result.instructions, 'Alpha\n\nBeta');
+  assertFalse('instructions' in result);
+  const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
+  assertEquals(input[0], {
+    type: 'message',
+    role: 'system',
+    content: [
+      { type: 'input_text', text: 'Alpha' },
+      { type: 'input_text', text: 'Beta' },
+    ],
+  });
+});
+
+test('translateMessagesToResponses keeps a single-block top-level system in canonical `instructions` slot', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    system: [{ type: 'text', text: 'You are helpful.' }],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.instructions, 'You are helpful.');
+  const input = result.input as Array<{ type: string; role?: string }>;
+  assertEquals(input[0].role, 'user');
 });
 
 test('translateMessagesToResponses preserves redacted_thinking as a native-signature reasoning item', () => {
@@ -413,7 +435,7 @@ test('translateMessagesToResponses rejects an unknown assistant content block ty
         messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
       }),
     Error,
-    'does not accept audio assistant content blocks',
+    "messages.0.content.0.type: 'audio' assistant content blocks are not supported",
   );
 });
 
@@ -426,7 +448,7 @@ test('translateMessagesToResponses rejects an unknown user content block type', 
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
       }),
     Error,
-    'does not accept audio user content blocks',
+    "messages.0.content.0.type: 'audio' user content blocks are not supported",
   );
 });
 
@@ -448,7 +470,7 @@ test('translateMessagesToResponses emits in-array role:"system" inline as a Resp
   assertEquals(input[2].role, 'user');
 });
 
-test('translateMessagesToResponses joins in-array system text blocks with double newline', () => {
+test('translateMessagesToResponses preserves in-array system text blocks as separate input_text parts', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -465,7 +487,14 @@ test('translateMessagesToResponses joins in-array system text blocks with double
   });
 
   const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
-  assertEquals(input[0], { type: 'message', role: 'system', content: 'Para A\n\nPara B' });
+  assertEquals(input[0], {
+    type: 'message',
+    role: 'system',
+    content: [
+      { type: 'input_text', text: 'Para A' },
+      { type: 'input_text', text: 'Para B' },
+    ],
+  });
 });
 
 test('translateMessagesToResponses preserves chronology of multiple in-array system messages', () => {
@@ -499,7 +528,7 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
         messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
       }),
     Error,
-    'does not accept role tool',
+    "messages.0.role: role 'tool' is not supported",
   );
 });
 

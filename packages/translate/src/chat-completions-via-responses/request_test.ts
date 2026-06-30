@@ -428,6 +428,6 @@ test('translateChatCompletionsToResponses rejects an unknown message role', () =
         messages: [{ role: 'function', content: 'hi' } as unknown as ChatCompletionsMessage],
       }),
     Error,
-    'does not accept function messages',
+    "Invalid role 'function'",
   );
 });

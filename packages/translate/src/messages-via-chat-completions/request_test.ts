@@ -391,7 +391,7 @@ test('translateMessagesToChatCompletions rejects an unknown assistant content bl
         messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as MessagesAssistantContentBlock] }],
       }),
     Error,
-    'does not accept audio assistant content blocks',
+    "messages.0.content.0.type: 'audio' assistant content blocks are not supported",
   );
 });
 
@@ -404,7 +404,7 @@ test('translateMessagesToChatCompletions rejects an unknown user content block t
         messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as MessagesUserContentBlock] }],
       }),
     Error,
-    'does not accept audio content blocks',
+    "messages.0.content.0.type: 'audio' content blocks are not supported",
   );
 });
 
@@ -425,7 +425,7 @@ test('translateMessagesToChatCompletions emits in-array role:"system" inline as 
   assertEquals(result.messages[2].role, 'user');
 });
 
-test('translateMessagesToChatCompletions joins in-array system text blocks with double newline', () => {
+test('translateMessagesToChatCompletions preserves in-array system text blocks as separate content parts', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -441,7 +441,47 @@ test('translateMessagesToChatCompletions joins in-array system text blocks with 
     ],
   });
 
-  assertEquals(result.messages[0], { role: 'system', content: 'Para A\n\nPara B' });
+  assertEquals(result.messages[0], {
+    role: 'system',
+    content: [
+      { type: 'text', text: 'Para A' },
+      { type: 'text', text: 'Para B' },
+    ],
+  });
+});
+
+test('translateMessagesToChatCompletions preserves top-level system text blocks as separate content parts', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    system: [
+      { type: 'text', text: 'instructions' },
+      { type: 'text', text: 'extra context' },
+    ],
+    messages: [
+      { role: 'user', content: 'hi' },
+    ],
+  });
+
+  assertEquals(result.messages[0], {
+    role: 'system',
+    content: [
+      { type: 'text', text: 'instructions' },
+      { type: 'text', text: 'extra context' },
+    ],
+  });
+});
+
+test('translateMessagesToChatCompletions skips system message when top-level system is empty array', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    system: [],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.messages.length, 1);
+  assertEquals(result.messages[0].role, 'user');
 });
 
 test('translateMessagesToChatCompletions preserves chronology of multiple in-array system messages', () => {
@@ -477,7 +517,7 @@ test('translateMessagesToChatCompletions rejects an unknown message role', () =>
         messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
       }),
     Error,
-    'does not accept role tool',
+    "messages.0.role: role 'tool' is not supported",
   );
 });
 

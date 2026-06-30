@@ -1,3 +1,4 @@
+import { translatorInputErrorResult } from './errors.ts';
 import { respondMessages } from './respond.ts';
 import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -8,6 +9,7 @@ import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 // Reject `anthropic_beta` / `betas` in the body; the Messages protocol carries
 // them via the `anthropic-beta` HTTP header.
@@ -47,6 +49,16 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 
+// Pre-stream caller-input failure raised by a translator → Messages-shaped
+// 400 invalid_request_error envelope. Anything else falls through to the
+// internal-error 502 path.
+const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+  if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+  const { response } = await respondMessages(c, translatorInputErrorResult(error), false, effectiveCtx);
+  return (effectiveCtx.dump?.finalize(response) ?? response);
+};
+
 const parsePayload = (requestBody: RequestBody): MessagesPayload =>
   JSON.parse(new TextDecoder().decode(requestBody.bytes)) as MessagesPayload;
 
@@ -66,7 +78,7 @@ export const messagesHttp = {
       const { response } = await respondMessages(c, result, wantsStream, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return await respondToThrow(c, error, requestBody, ctx);
     }
   },
 
@@ -84,7 +96,7 @@ export const messagesHttp = {
       const { response } = await respondMessages(c, result, false, ctx);
       return (ctx.dump?.finalize(response) ?? response);
     } catch (error) {
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return await respondToThrow(c, error, requestBody, ctx);
     }
   },
 };
