@@ -30,7 +30,7 @@ const rewriteItemForCandidate = (
   // An `item_reference` whose stored row has no inline payload can only
   // travel as a reference on the wire; a provider that doesn't support
   // `item_reference` input has no way to expand it.
-  if (item.type === 'item_reference' && row.payload === null && !candidate.binding.supportsResponsesItemReference) {
+  if (item.type === 'item_reference' && row.payload === null && !candidate.provider.supportsResponsesItemReference) {
     throwChatServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
 
@@ -45,13 +45,13 @@ const rewriteItemForCandidate = (
 
   // Owned reasoning is bound to the upstream that produced it; drop it when
   // routing elsewhere.
-  if (row.itemType === 'reasoning' && row.upstreamId !== candidate.binding.upstream) return null;
+  if (row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return null;
 
-  if (row.upstreamId === candidate.binding.upstream && row.upstreamItemId) {
+  if (row.upstreamId === candidate.provider.upstream && row.upstreamItemId) {
     // Same upstream: substitute the original upstream-issued id. A
     // reference-capable provider keeps the wire item as `item_reference`;
     // others inline-expand against the stored payload.
-    return item.type === 'item_reference' && candidate.binding.supportsResponsesItemReference
+    return item.type === 'item_reference' && candidate.provider.supportsResponsesItemReference
       ? itemWithId(item, row.upstreamItemId)
       : itemWithId(storedItemReplacementBase(item, row), row.upstreamItemId);
   }

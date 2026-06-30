@@ -1,42 +1,47 @@
 // One enumeration per (effective upstream cap) of every inbound model id the
 // gateway accepts — the union of the listed catalog surface and the
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
-// alternates and by each provider's `resolveRequestedModelId` redirect map.
-// Listing-side availability checks (alias-listing, codex catalog) must see
-// the same set the request-time resolver routes through
-// (`enumerateModelInterpretations` + `resolveRequestedModelId`); recomputing
-// it once here gives every consumer one consistent answer.
+// alternates. Listing-side availability checks (alias-listing, codex catalog)
+// must see the same set the request-time resolver routes through (the
+// per-upstream walk inside `enumerateRealModelCandidates`); recomputing it
+// once here gives every consumer one consistent answer.
 //
-// Each entry carries the `ResolvedModel` the addressable id will route to,
-// so consumers (alias intersection, codex catalog, control-plane DTO) read
-// `limits` / `chat` / `endpoints` directly off the entry without a second
-// registry round trip.
+// Each entry carries the merged `InternalModel` the addressable id will
+// route to, so consumers (alias intersection, codex catalog, control-plane
+// DTO) read `limits` / `chat` / `endpoints` directly off the entry without
+// a second registry round trip.
 
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { compareModelIds, getModelsFromProviders, listModelProviders } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type ModelProviderInstance } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
   readonly id: string;
   // Absent on default-listed entries (the public-id surface the listing
   // already emits); present-and-`true` on entries that are only reachable
-  // through `modelPrefix.addressable` alternates or provider-side redirects.
-  // The negative carry pairs with the `PublicModel.unlisted?: true` wire
-  // shape so a listed entry's wire bytes stay byte-identical.
+  // through `modelPrefix.addressable` alternates. The negative carry pairs
+  // with the `PublicModel.unlisted?: true` wire shape so a listed entry's
+  // wire bytes stay byte-identical.
   readonly unlisted: true | undefined;
   // Real catalog row this id routes to. For multi-provider models this is
-  // the same `ResolvedModel` instance `getModels` returns (one row per
-  // public-listed id, with the union-merged endpoints + `providers[]`
-  // already applied).
-  readonly model: ResolvedModel;
+  // the same `InternalModel` instance `getModels` returns (one row per
+  // public-listed id, with the union-merged endpoints already applied).
+  readonly model: InternalModel;
+  // Every upstream instance that surfaces this addressable id in its
+  // catalog, in enumeration order. Mirrors `upstreamsByPublicId` for the
+  // canonical listed row the addressable id resolves to — addressable-only
+  // alternates inherit the same list (the prefix-stripped id resolves
+  // through the same upstream). Lets the control-plane DTO render per-
+  // model upstream chips without re-walking the registry.
+  readonly upstreams: readonly ModelProviderInstance[];
 }
 
-// Project the listed (real-catalog) `ResolvedModel`s out of an addressable
+// Project the listed (real-catalog) `InternalModel`s out of an addressable
 // surface — every listing caller wants this same slice to feed
 // `mergeAliasesIntoModels`'s `realModels` arg.
-export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly ResolvedModel[] =>
+export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly InternalModel[] =>
   entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
 
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
@@ -56,7 +61,7 @@ export const enumerateAddressableModelIds = async (
   // empty; surface it the same way here so /v1/models keeps its 502 +
   // hint behavior on a brand-new gateway.
   const providers = await listModelProviders(upstreamFilter);
-  const realModels = await getModelsFromProviders(providers, fetcherForUpstream, scheduler);
+  const { models: realModels, upstreamsByPublicId } = await getModelsFromProviders(providers, fetcherForUpstream, scheduler);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
@@ -68,56 +73,47 @@ export const enumerateAddressableModelIds = async (
   };
 
   for (const model of realModels) {
-    push({ id: model.id, unlisted: undefined, model });
+    push({ id: model.id, unlisted: undefined, model, upstreams: upstreamsByPublicId.get(model.id) ?? [] });
   }
 
-  // Per-upstream walk: (a) prefix-addressable alternates the listed surface
-  // chose not to publish, then (b) the provider's redirect enumeration. The
-  // catalog round-trip is the same SWR cache the listed surface just
-  // consumed, so this loop never pays a second upstream hit.
+  // Per-upstream walk for the prefix-addressable alternates the listed
+  // surface chose not to publish. The catalog round-trip is the same SWR
+  // cache the listed surface just consumed, so this loop never pays a
+  // second upstream hit.
   //
-  // A rejected per-upstream catalog refresh collapses to no addressable-only
-  // contribution from THAT upstream — its listed rows already came (or were
-  // dropped) through `getModels`. Mirrors the `Promise.allSettled` tolerance
-  // there so a transiently-down upstream cannot tank /v1/models on a
-  // cold-start gateway.
+  // A rejected per-upstream catalog refresh collapses to no addressable-
+  // only contribution from THAT upstream — its listed rows already came
+  // (or were dropped) through `getModels`. Mirrors the `Promise.allSettled`
+  // tolerance there so a transiently-down upstream cannot tank /v1/models
+  // on a cold-start gateway.
   const perUpstream = await Promise.allSettled(providers.map(async provider => {
     const cfg = provider.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
-    if (addressableOnly.length === 0 && provider.enumerateAddressableRedirects === undefined) {
-      return [] as AddressableIdEntry[];
-    }
+    if (cfg === null || addressableOnly.length === 0) return [] as AddressableIdEntry[];
 
     const upstreamModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher: fetcherForUpstream(provider.upstream) });
     const disabled = new Set(provider.disabledPublicModelIds);
     const out: AddressableIdEntry[] = [];
 
-    if (cfg !== null && addressableOnly.length > 0) {
-      // The canonical listed form for this upstream — the row the listing
-      // surface emitted, and the row a redirect-only addressable id should
-      // resolve back into so consumers find one consistent `ResolvedModel`.
-      const canonicalForm = cfg.listed.includes('prefixed') ? 'prefixed' : 'unprefixed';
+    // The canonical listed form for this upstream — the row the listing
+    // surface emitted, and the row a redirect-only addressable id should
+    // resolve back into so consumers find one consistent `InternalModel`.
+    const canonicalForm = cfg.listed.includes('prefixed') ? 'prefixed' : 'unprefixed';
 
-      for (const upstreamModel of upstreamModels) {
-        if (!upstreamModel.id || disabled.has(upstreamModel.id)) continue;
-        const canonicalPublicId = canonicalForm === 'prefixed'
-          ? `${cfg.prefix}${upstreamModel.id}`
-          : upstreamModel.id;
-        const canonical = byId.get(canonicalPublicId);
-        if (canonical === undefined) continue;
-        for (const form of addressableOnly) {
-          const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          out.push({ id, unlisted: true, model: canonical });
-        }
+    for (const upstreamModel of upstreamModels) {
+      if (!upstreamModel.id || disabled.has(upstreamModel.id)) continue;
+      const canonicalPublicId = canonicalForm === 'prefixed'
+        ? `${cfg.prefix}${upstreamModel.id}`
+        : upstreamModel.id;
+      const canonical = byId.get(canonicalPublicId);
+      if (canonical === undefined) continue;
+      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId) ?? [];
+      for (const form of addressableOnly) {
+        const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
+        out.push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
       }
     }
 
-    const redirects = provider.enumerateAddressableRedirects?.({ upstreamModels }) ?? [];
-    for (const redirect of redirects) {
-      const target = byId.get(redirect.resolvesTo);
-      if (target === undefined) continue;
-      out.push({ id: redirect.addressable, unlisted: true, model: target });
-    }
     return out;
   }));
 
@@ -128,7 +124,7 @@ export const enumerateAddressableModelIds = async (
       // rejection. Other failures (catalog 5xx, parse, transport) collapse
       // to no addressable-only contribution from that upstream per the
       // contract above.
-      if (result.reason instanceof Error && result.reason.name === 'AbortError') throw result.reason;
+      if (isAbortError(result.reason)) throw result.reason;
       continue;
     }
     for (const entry of result.value) push(entry);

@@ -6,7 +6,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -84,15 +84,13 @@ const makeChatCompletionsEvents = (): readonly ChatCompletionsStreamEvent[] => [
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -104,11 +102,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom', provider, upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: overrides.endpoints ? stubUpstreamModel({ endpoints: overrides.endpoints }) : stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -130,7 +124,7 @@ test('generate translates through Chat Completions when targetApi is chat-comple
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'chat-completions', callChatCompletions }),
+    candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });
 
@@ -149,7 +143,7 @@ test('generate translates through Messages when targetApi is messages', async ()
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
 
@@ -168,7 +162,7 @@ test('generate translates through Responses when targetApi is responses', async 
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
 
@@ -195,7 +189,7 @@ test('countTokens translates Gemini to Messages count_tokens and reshapes to tot
     payload: makePayload({ systemInstruction: { parts: [{ text: 'system' }] } }),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessagesCountTokens }),
+    candidate: makeCandidate({ callMessagesCountTokens }),
     headers: new Headers(),
   });
 
@@ -218,7 +212,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({
-      targetApi: 'messages',
       callMessagesCountTokens: async () => ({
         response: new Response(JSON.stringify({ total_tokens: 19 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
@@ -235,7 +228,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({
-      targetApi: 'messages',
       callMessagesCountTokens: async () => ({
         response: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
@@ -259,14 +251,14 @@ test('countTokens refuses a non-messages candidate', async () => {
       payload: makePayload(),
       ctx: makeGatewayCtx(),
       store: createNonResponsesSourceStore(API_KEY_ID),
-      candidate: makeCandidate({ targetApi: 'responses' }),
+      candidate: makeCandidate({ endpoints: { responses: {} } }),
       headers: new Headers(),
     });
   } catch (error) {
     thrown = error;
   }
   if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
-  assertEquals(thrown.message.includes("targetApi='messages'"), true);
+  assertEquals(thrown.message.includes('chatTargetPicker.pick'), true);
 });
 
 test('generate propagates upstream response headers through the chat-completions translation', async () => {
@@ -282,7 +274,7 @@ test('generate propagates upstream response headers through the chat-completions
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'chat-completions', callChatCompletions }),
+    candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });
   assertEquals(result.type, 'events');

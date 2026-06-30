@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { mergeAliasesIntoModels } from '../../data-plane/models/alias-listing.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../../data-plane/providers/addressable.ts';
+import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/providers/addressable.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -11,10 +11,10 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, ModelProviderInstance, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
-// `upstreams` lists every provider binding for this model as { kind, id, name }
+// `upstreams` lists every upstream that surfaces this model as { kind, id, name }
 // triples. A single model id can be served by mixed provider kinds (e.g. one
 // azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
 // `provider`/`upstream_ids` split would misrepresent that. Alias-synthesized
@@ -28,9 +28,9 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
+const toControlPlaneModel = (model: InternalModel, instances: readonly ModelProviderInstance[]): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: model.providers.map(binding => ({ kind: binding.providerKind, id: binding.upstream, name: binding.upstreamName })),
+  upstreams: instances.map(instance => ({ kind: instance.providerKind, id: instance.upstream, name: instance.name })),
 });
 
 // Wrap an addressable-but-not-listed entry as a control-plane row. The
@@ -40,10 +40,10 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
 // combobox renders the actual id the operator can type. `unlisted: true`
 // carries the addressability tag through to the dashboard so a future UI
 // badge does not need a second registry call.
-const toUnlistedControlPlaneModel = (id: string, model: ResolvedModel): ControlPlaneModel => ({
-  ...toControlPlaneModel(model),
-  id,
-  display_name: model.display_name ?? id,
+const toUnlistedControlPlaneModel = (entry: AddressableIdEntry): ControlPlaneModel => ({
+  ...toControlPlaneModel(entry.model, entry.upstreams),
+  id: entry.id,
+  display_name: entry.model.display_name ?? entry.id,
   unlisted: true,
 });
 
@@ -75,6 +75,8 @@ export const controlPlaneModels = async (c: Context) => {
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
     const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+    const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
+    const mapReal = (model: InternalModel) => toControlPlaneModel(model, upstreamsByListedId.get(model.id) ?? []);
     const realModels = listedRealModels(callerAddressable);
     const listedRows = includeAliases
       ? mergeAliasesIntoModels({
@@ -86,10 +88,10 @@ export const controlPlaneModels = async (c: Context) => {
           // cap models) so the alias-edit dialog can render the full
           // configuration; non-admin sessions get the narrowed projection.
           narrowTargets: !isAdmin,
-          mapReal: toControlPlaneModel,
+          mapReal,
           wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
-      : realModels.map(toControlPlaneModel);
+      : realModels.map(mapReal);
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
     // Copilot variant) would otherwise emit two rows with the same id but
@@ -99,7 +101,7 @@ export const controlPlaneModels = async (c: Context) => {
     const unlistedRows = includeUnlisted
       ? callerAddressable
           .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
-          .map(entry => toUnlistedControlPlaneModel(entry.id, entry.model))
+          .map(toUnlistedControlPlaneModel)
       : [];
     const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {

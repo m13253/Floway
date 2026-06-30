@@ -24,7 +24,8 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> =>
 
 const invocation = (payload: GeminiPayload): GeminiInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'messages' }),
+  candidate: stubProviderCandidate(),
+  targetApi: 'messages',
   headers: new Headers(),
 });
 

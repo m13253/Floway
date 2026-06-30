@@ -22,7 +22,8 @@ const stubCtx: GatewayCtx = {
 
 const invocation = (payload: ChatCompletionsPayload = { model: 'test-model', messages: [] }): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
+  candidate: stubProviderCandidate(),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 

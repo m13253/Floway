@@ -174,10 +174,9 @@ export interface PublicModel {
   aliasedFrom?: PublicModelAliasedFrom;
   // Sidecar flag carried only on entries that are addressable-but-not-
   // listed: ids the data plane accepts (via `modelPrefix.addressable`
-  // alternates or per-provider `resolveRequestedModelId` redirects) but
-  // that do NOT appear in the default `/v1/models` payload. Absent on
-  // every default-listed row and on alias rows — both are part of the
-  // public catalog. The field surfaces only on
+  // alternates) but that do NOT appear in the default `/v1/models`
+  // payload. Absent on every default-listed row and on alias rows — both
+  // are part of the public catalog. The field surfaces only on
   // `/api/models?include_unlisted=true` rows that the dashboard's alias
   // edit combobox shows alongside the listed catalog. Wire shape is
   // intentionally `unlisted?: true` — boolean would add a wire byte to

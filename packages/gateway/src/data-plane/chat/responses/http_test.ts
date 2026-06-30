@@ -6,33 +6,24 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
 // provider candidates it wants, with an optional queued alias resolution.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
-  const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    resolveModelCandidates: vi.fn(async (args: { modelName: string; scheduler: () => void }) => {
-      const aliasResolution = await resolveAlias({
-        modelName: args.modelName,
-        providers: [],
-        fetcherForUpstream: () => directFetcher,
-        scheduler: args.scheduler,
-        endpointAccepts: () => true,
-        repo: { getByName: () => Promise.resolve(null) } as never,
-      });
-      lastSeenModel.value = aliasResolution?.targetModelId ?? args.modelName;
+    enumerateRealModelCandidatesWithDatedRetry: vi.fn(async (modelId: string) => {
+      lastSeenModel.value = modelId;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return { ...next, failedUpstreams: [], aliasResolution };
+      return next;
     }),
   };
 });
@@ -58,7 +49,7 @@ const { responsesHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -129,12 +120,10 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'responses';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
   });
@@ -148,16 +137,7 @@ const makeCandidate = (overrides: {
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -375,4 +355,25 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   const observed = observedBodies[0];
   if (observed === undefined) throw new Error('expected callResponses to receive a body');
   assertEquals(observed.reasoning?.effort, 'low');
+});
+
+test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {
+  installRepo();
+  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // responsesTarget (responses > messages > chat-completions) rejects it,
+  // leaving zero viable candidates, and with sawModel=true the serve renders
+  // model-unsupported as a 400.
+  queueCandidates([makeCandidate({ endpoints: { completions: {} } })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'wrong-endpoint-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { error: { type: string; message: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('does not support'));
 });

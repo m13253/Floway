@@ -2,6 +2,7 @@ import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/struc
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   type MessagesAssistantMessage,
   type MessagesClientTool,
@@ -24,7 +25,11 @@ const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesI
   pending.length = 0;
 };
 
-const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>): ResponsesInputContent => {
+const translateUserContentBlock = (
+  block: Exclude<MessagesUserContentBlock, MessagesToolResultBlock>,
+  messageIdx: number,
+  blockIdx: number,
+): ResponsesInputContent => {
   if (block.type === 'text') return { type: 'input_text', text: block.text };
   if (block.type === 'image') {
     return {
@@ -34,7 +39,7 @@ const translateUserContentBlock = (block: Exclude<MessagesUserContentBlock, Mess
     };
   }
 
-  throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} user content blocks.`);
+  throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' user content blocks are not supported on this model`);
 };
 
 const toResponsesToolResultOutput = (content: MessagesToolResultBlock['content']): string => {
@@ -72,7 +77,7 @@ const getClientTools = (tools?: MessagesPayload['tools']): MessagesClientTool[] 
   return clientTools.length > 0 ? clientTools : undefined;
 };
 
-const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[] => {
+const translateUserMessage = (message: MessagesUserMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'user', content: message.content }];
   }
@@ -80,7 +85,7 @@ const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_result') {
       // Responses can represent alternating user content and tool outputs, so
       // preserve Messages block chronology instead of moving all tool results to
@@ -95,14 +100,14 @@ const translateUserMessage = (message: MessagesUserMessage): ResponsesInputItem[
       continue;
     }
 
-    pendingContent.push(translateUserContentBlock(block));
+    pendingContent.push(translateUserContentBlock(block, messageIdx, blockIdx));
   }
 
   flushPendingContent(pendingContent, input, 'user');
   return input;
 };
 
-const translateAssistantMessage = (message: MessagesAssistantMessage): ResponsesInputItem[] => {
+const translateAssistantMessage = (message: MessagesAssistantMessage, messageIdx: number): ResponsesInputItem[] => {
   if (typeof message.content === 'string') {
     return [{ type: 'message', role: 'assistant', content: message.content }];
   }
@@ -110,7 +115,7 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
   const input: ResponsesInputItem[] = [];
   const pendingContent: ResponsesInputContent[] = [];
 
-  for (const block of message.content) {
+  for (const [blockIdx, block] of message.content.entries()) {
     if (block.type === 'tool_use' || block.type === 'server_tool_use') {
       flushPendingContent(pendingContent, input, 'assistant');
       input.push(toResponsesFunctionCall(block));
@@ -134,39 +139,61 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
       continue;
     }
 
-    throw new Error(`Messages → Responses translator does not accept ${(block as { type: string }).type} assistant content blocks.`);
+    throw new TranslatorInputError(`messages.${messageIdx}.content.${blockIdx}.type: '${(block as { type: string }).type}' assistant content blocks are not supported on this model`);
   }
 
   flushPendingContent(pendingContent, input, 'assistant');
   return input;
 };
 
+// Preserve per-block boundaries when the source carries a
+// MessagesTextBlock[]; single-string source stays as string content.
 const translateMessagesSystem = (message: MessagesSystemMessage): ResponsesInputItem[] => [
   {
     type: 'message',
     role: 'system',
-    content: typeof message.content === 'string' ? message.content : message.content.map(block => block.text).join('\n\n'),
+    content: typeof message.content === 'string'
+      ? message.content
+      : message.content.map(block => ({ type: 'input_text', text: block.text })),
   },
 ];
 
 const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem[] =>
-  messages.flatMap((message): ResponsesInputItem[] => {
+  messages.flatMap((message, messageIdx): ResponsesInputItem[] => {
     switch (message.role) {
-    case 'user': return translateUserMessage(message);
-    case 'assistant': return translateAssistantMessage(message);
+    case 'user': return translateUserMessage(message, messageIdx);
+    case 'assistant': return translateAssistantMessage(message, messageIdx);
     case 'system': return translateMessagesSystem(message);
-    default: throw new Error(`Messages → Responses translator does not accept role ${(message as { role: string }).role}.`);
+    default: throw new TranslatorInputError(`messages.${messageIdx}.role: role '${(message as { role: string }).role}' is not supported on this model`);
     }
   });
 
-const translateSystemPrompt = (system: string | MessagesTextBlock[] | undefined): string | null => {
-  if (typeof system === 'string') return system;
-  if (!system) return null;
+// Responses' `instructions` field is `string | null` — it cannot carry
+// multiple text blocks faithfully. When the source `MessagesPayload.system`
+// is a single string or a single block, the canonical `instructions` slot
+// is the right home. When the source is a multi-block array, the canonical
+// slot would silently merge the boundaries, so emit a leading input
+// system message with multi-part `input_text` content instead and leave
+// `instructions` null; both placements act as a system prompt prefix at
+// the upstream and the multi-part form preserves the caller-visible block
+// structure.
+interface SystemPlacement {
+  readonly instructions: string | null;
+  readonly prependItems: readonly ResponsesInputItem[];
+}
 
-  // Messages system blocks are prompt boundaries. Keep paragraph separation on
-  // OpenAI fallbacks instead of collapsing headings or lists with spaces.
-  const text = system.map(block => block.text).join('\n\n');
-  return text.length > 0 ? text : null;
+const placeMessagesSystem = (system: string | MessagesTextBlock[] | undefined): SystemPlacement => {
+  if (typeof system === 'string') return { instructions: system, prependItems: [] };
+  if (!system || system.length === 0) return { instructions: null, prependItems: [] };
+  if (system.length === 1) return { instructions: system[0].text, prependItems: [] };
+  return {
+    instructions: null,
+    prependItems: [{
+      type: 'message',
+      role: 'system',
+      content: system.map(block => ({ type: 'input_text', text: block.text })),
+    }],
+  };
 };
 
 const translateTools = (tools: MessagesClientTool[] | undefined): ResponsesTool[] | null => {
@@ -209,7 +236,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   const effort = resolveMessagesReasoningEffort(payload);
   const reasoning = effort ? { effort } : undefined;
   const clientTools = getClientTools(payload.tools);
-  const instructions = translateSystemPrompt(payload.system);
+  const { instructions, prependItems } = placeMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
   const formatPart = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
   const verbosityPart = payload.verbosity != null ? { verbosity: payload.verbosity } : undefined;
@@ -226,7 +253,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   // Messages source did not express those knobs.
   return {
     model: payload.model,
-    input: translateMessagesInput(payload.messages),
+    input: [...prependItems, ...translateMessagesInput(payload.messages)],
     ...(instructions !== null ? { instructions } : {}),
     ...(payload.temperature !== undefined ? { temperature: payload.temperature } : {}),
     ...(payload.top_p !== undefined ? { top_p: payload.top_p } : {}),

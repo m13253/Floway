@@ -13,7 +13,7 @@ import { enumerateAddressableModelIds, listedRealModels } from '../providers/add
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
 
@@ -98,6 +98,7 @@ const loadGeminiModels = async (
       display_name: entry.display_name,
       limits: entry.limits,
       kind: entry.kind,
+      endpoints: entry.endpoints,
       ...(entry.cost !== undefined ? { cost: entry.cost } : {}),
       ...(entry.chat !== undefined ? { chat: entry.chat } : {}),
     }),

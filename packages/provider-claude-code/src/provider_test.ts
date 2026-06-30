@@ -144,19 +144,6 @@ describe('createClaudeCodeProvider — factory surface', () => {
     expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });
-
-  test('resolveRequestedModelId maps a dated id to its alias', async () => {
-    const instance = await createClaudeCodeProvider(currentRecord);
-    expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5');
-    expect(instance.resolveRequestedModelId?.('claude-sonnet-4-5')).toBeUndefined();
-  });
-
-  test('enumerateAddressableRedirects returns []: the dated-id domain is unbounded so the hook intentionally publishes nothing', async () => {
-    stubModelsListFetch();
-    const instance = await createClaudeCodeProvider(currentRecord);
-    const upstreamModels = await instance.provider.getProvidedModels(noopUpstreamCallOptions().fetcher);
-    expect(instance.enumerateAddressableRedirects?.({ upstreamModels })).toEqual([]);
-  });
 });
 
 describe('createClaudeCodeProvider — callMessages routes through chain', () => {

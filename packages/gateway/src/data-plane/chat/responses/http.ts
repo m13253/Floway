@@ -1,3 +1,4 @@
+import { translatorInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -9,6 +10,7 @@ import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError } from '@floway-dev/translate';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -44,6 +46,23 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
+// Pre-stream throw dispatcher. `PreviousResponseNotFoundError` and the
+// translator-input case render protocol-shaped 400s; anything else falls
+// through to the internal-error 502 path.
+const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+  if (error instanceof PreviousResponseNotFoundError) {
+    const response = previousResponseNotFoundResponse(error.previousResponseId);
+    ctx?.dump?.error('gateway');
+    return ctx ? finalizeGatewayResponse(ctx, response) : response;
+  }
+  if (error instanceof TranslatorInputError) {
+    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
+    const { response } = await respondResponses(c, translatorInputErrorResult(error), false, effectiveCtx);
+    return finalizeGatewayResponse(effectiveCtx, response);
+  }
+  return await respondWithInternalError(c, error, requestBody, ctx);
+};
+
 const parsePayload = (requestBody: RequestBody): ResponsesPayload =>
   JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload;
 
@@ -60,12 +79,7 @@ export const responsesHttp = {
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) {
-        const response = previousResponseNotFoundResponse(error.previousResponseId);
-        ctx?.dump?.error('gateway');
-        return ctx ? finalizeGatewayResponse(ctx, response) : response;
-      }
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return await respondToThrow(c, error, requestBody, ctx);
     }
   },
 
@@ -85,12 +99,7 @@ export const responsesHttp = {
       const { response } = await respondResponses(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
-      if (error instanceof PreviousResponseNotFoundError) {
-        const response = previousResponseNotFoundResponse(error.previousResponseId);
-        ctx?.dump?.error('gateway');
-        return ctx ? finalizeGatewayResponse(ctx, response) : response;
-      }
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return await respondToThrow(c, error, requestBody, ctx);
     }
   },
 };

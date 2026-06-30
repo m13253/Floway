@@ -1,40 +1,33 @@
 // Behavioral coverage for the alias resolver. Mocks the lower-layer
-// catalog seam (`enumerateModelInterpretations` + `collectInterpretationOutcomes`
-// out of `providers/registry.ts`) so each test can hand-script which
-// target model ids look routable AND what endpoint map their binding
-// advertises; the resolver itself runs unmocked, so its filter logic
-// (availability via the endpointAccepts predicate, selection strategy)
-// is the thing under test.
+// catalog seam (`enumerateRealModelCandidates` out of `providers/registry.ts`)
+// so each test can hand-script which target model ids look routable AND
+// what endpoint map their candidate advertises; the resolver itself runs
+// unmocked, so its filter logic (availability via the endpointAccepts
+// predicate, selection strategy) is the thing under test.
 
 import { test, vi } from 'vitest';
 
 import type { ModelAliasRecord, ModelAliasesRepo } from '../../repo/types.ts';
-import type { ModelInterpretation, ProviderModelResolution } from '../providers/registry.ts';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type ProviderCandidate } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // id → endpoint map. Absent ids look unroutable; present ids return
-// resolutions whose binding advertises the given endpoints, so the
-// resolver's `endpointAccepts` predicate can filter them.
+// candidates whose model advertises the given endpoints, so the resolver's
+// `endpointAccepts` predicate can filter them.
 const routableModels = new Map<string, ModelEndpoints>();
 
 vi.mock('../providers/registry.ts', () => ({
-  enumerateModelInterpretations: vi.fn((modelId: string, providers: readonly { upstream: string }[]): ModelInterpretation[] =>
-    providers.map(p => ({ provider: p, lookupId: modelId } as unknown as ModelInterpretation))),
-  collectInterpretationOutcomes: vi.fn(async (interpretations: readonly { provider: { upstream: string }; lookupId: string }[]) => ({
-    resolutions: interpretations
-      .filter(i => routableModels.has(i.lookupId))
-      .map(i => ({
-        provider: i.provider,
-        resolved: {
-          id: i.lookupId,
-          model: { id: i.lookupId, endpoints: routableModels.get(i.lookupId) },
-          binding: { upstream: i.provider.upstream, upstreamModel: { id: i.lookupId, endpoints: routableModels.get(i.lookupId) } },
-        } as unknown as ProviderModelResolution,
-      })),
-    failedUpstreams: [],
-  })),
+  enumerateRealModelCandidates: vi.fn(async (modelId: string, _kind: string, providers: readonly { upstream: string }[]) => {
+    const endpoints = routableModels.get(modelId);
+    if (endpoints === undefined) return { candidates: [], sawAnyId: false, failedUpstreams: [] };
+    const candidates = providers.map(p => ({
+      provider: p,
+      model: { id: modelId, endpoints },
+      fetcher: directFetcher,
+    } as unknown as ProviderCandidate));
+    return { candidates, sawAnyId: true, failedUpstreams: [] };
+  }),
 }));
 
 const { resolveAlias, AliasNoTargetAvailableError } = await import('./resolve.ts');
@@ -69,6 +62,7 @@ const RESOLVE_DEFAULTS = {
   providers,
   fetcherForUpstream,
   scheduler: () => {},
+  kind: 'chat' as const,
 };
 
 // Mark these ids routable with the full chat-three endpoint set — most

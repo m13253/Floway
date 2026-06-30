@@ -404,7 +404,7 @@ test('buildTargetRequest rejects an unknown content role', () => {
         'gpt-test',
       ),
     Error,
-    'does not accept system content roles',
+    '"system" is not a supported content role.',
   );
 });
 
@@ -418,7 +418,7 @@ test('buildTargetRequest rejects a part with an unsupported kind in user content
         'gpt-test',
       ),
     Error,
-    'does not accept executable_code parts in user content',
+    '"executable_code" parts are not supported in user content.',
   );
 });
 
@@ -432,7 +432,7 @@ test('buildTargetRequest rejects a function_call part in user content', () => {
         'gpt-test',
       ),
     Error,
-    'does not accept function_call parts in user content',
+    '"function_call" parts are not supported in user content.',
   );
 });
 
@@ -446,7 +446,7 @@ test('buildTargetRequest rejects a function_response part in model content', () 
         'gpt-test',
       ),
     Error,
-    'does not accept function_response parts in model content',
+    '"function_response" parts are not supported in model content.',
   );
 });
 

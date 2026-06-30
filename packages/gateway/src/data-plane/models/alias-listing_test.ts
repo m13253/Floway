@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { synthesizeListedAliases } from './alias-listing.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { AddressableIdEntry } from '../providers/addressable.ts';
-import type { ResolvedModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   name: 'gpt-fast',
@@ -19,24 +19,22 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
   ...overrides,
 });
 
-const realModel = (overrides: Partial<ResolvedModel> & { id: string }): ResolvedModel => ({
+const realModel = (overrides: Partial<InternalModel> & { id: string }): InternalModel => ({
   kind: 'chat',
   limits: {},
   endpoints: { chatCompletions: {}, messages: {}, responses: {} },
-  providers: [],
   ...overrides,
 });
 
 // Adapt the fixtures' "list of real models" view to the addressable surface
 // the synthesizer now consumes — every fixture entry is a listed catalog row.
-const listed = (models: readonly ResolvedModel[]): AddressableIdEntry[] =>
-  models.map(model => ({ id: model.id, unlisted: undefined, model }));
+const listed = (models: readonly InternalModel[]): AddressableIdEntry[] =>
+  models.map(model => ({ id: model.id, unlisted: undefined, model, upstreams: [] }));
 
 // Test-only addressable surface that pretends a model is reachable through
-// a redirect (e.g. a Copilot variant id). The synthesizer should treat
-// such targets as available even though they never appear in the listed
-// catalog.
-const unlisted = (id: string, model: ResolvedModel): AddressableIdEntry => ({ id, unlisted: true, model });
+// a prefix-only addressable form. The synthesizer should treat such targets
+// as available even though they never appear in the listed catalog.
+const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [] });
 
 describe('synthesizeListedAliases', () => {
   test('single-target alias with a pinned reasoning.effort drops the effort block', () => {

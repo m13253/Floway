@@ -36,7 +36,7 @@ import type { AddressableIdEntry } from '../providers/addressable.ts';
 import { unionEndpoints } from '../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
-import type { ResolvedModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
@@ -197,7 +197,7 @@ const buildAliasedFrom = (
 // alias's currently-available targets. Caller decides whether to use
 // the result directly or overlay it under an operator override.
 const computeAutomaticMetadata = (
-  availableTargets: readonly { target: AliasTarget; real: ResolvedModel }[],
+  availableTargets: readonly { target: AliasTarget; real: InternalModel }[],
 ): { limits: PublicModelLimits; chat: ChatModelInfo | undefined } => {
   const limits = intersectLimits(availableTargets.map(({ real }) => real.limits));
 
@@ -245,7 +245,7 @@ const synthesizeOne = (
   const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
-    .filter((entry): entry is { target: AliasTarget; real: ResolvedModel } => entry.real !== undefined && entry.real.kind === alias.kind);
+    .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
   if (gatewayAvailable.length === 0) return null;
 
   // Caller-scope visibility: the alias appears only if at least one
@@ -330,12 +330,12 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[]
 // visibility split; the merge step never promotes addressable-but-not-
 // listed ids to real-model rows.
 export const mergeAliasesIntoModels = <T>(input: {
-  readonly realModels: readonly ResolvedModel[];
+  readonly realModels: readonly InternalModel[];
   readonly gatewayAddressableModelIds: readonly AddressableIdEntry[];
   readonly callerAddressableModelIds: readonly AddressableIdEntry[];
   readonly aliases: readonly ModelAliasRecord[];
   readonly narrowTargets: boolean;
-  readonly mapReal: (model: ResolvedModel) => T;
+  readonly mapReal: (model: InternalModel) => T;
   readonly wrapAlias: (entry: PublicModel) => T;
 }): T[] => {
   const { realModels, gatewayAddressableModelIds, callerAddressableModelIds, aliases, narrowTargets, mapReal, wrapAlias } = input;

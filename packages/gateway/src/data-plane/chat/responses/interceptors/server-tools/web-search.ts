@@ -65,9 +65,10 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
 const buildShimFunctionTool = (
+  canonical: ResponsesHostedTool,
   name: string,
-  userLocation?: ShimToolFilters['userLocation'],
 ): ResponsesFunctionTool => {
+  const userLocation = canonical.user_location;
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -137,6 +138,33 @@ const buildShimFunctionTool = (
 
 export const isHostedWebSearchTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   typeof tool.type === 'string' && WEB_SEARCH_HOSTED_TYPES.has(tool.type);
+
+// Canonical form of a hosted web_search tool: client's `type` alias is
+// preserved (so round-trip fidelity holds), and the documented defaults
+// for `search_context_size`, `search_content_types`, and
+// `return_token_budget` are filled. `filters` and `user_location` pass
+// through verbatim when present — never synthesized (the latter is
+// IP-derived on real upstreams and we have no IP context to fake).
+//
+// References:
+//   `search_context_size` default `'medium'` — openai-python
+//   `WebSearchTool.search_context_size` docstring:
+//     https://github.com/openai/openai-python/blob/main/src/openai/types/responses/web_search_tool.py
+//   `return_token_budget` default `'default'` and
+//   `search_content_types` default `['text']` — observed verbatim in
+//   Copilot's `/responses` echo for `tools: [{type: 'web_search'}]`.
+export const canonicalizeWebSearchTool = (raw: ResponsesTool): ResponsesHostedTool | undefined => {
+  if (!isHostedWebSearchTool(raw)) return undefined;
+  const canonical: ResponsesHostedTool = {
+    type: raw.type,
+    search_context_size: raw.search_context_size ?? DEFAULT_SEARCH_CONTEXT_SIZE,
+    search_content_types: raw.search_content_types ?? ['text'],
+    return_token_budget: raw.return_token_budget ?? 'default',
+  };
+  if (raw.filters !== undefined) canonical.filters = raw.filters;
+  if (raw.user_location !== undefined) canonical.user_location = raw.user_location;
+  return canonical;
+};
 
 const extractFilters = (tool: ResponsesHostedTool): ShimToolFilters => {
   const out: ShimToolFilters = {};
@@ -235,26 +263,28 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
   return null;
 };
 
-// Validate every hosted web_search entry and return the filters the
-// shim will act on. When a request carries multiple hosted blocks the
-// LAST one's filters win (most-recent declaration), so callers don't
-// have to define a tie-break. Name-collision resolution and the
-// hosted-tool → shim's function-tool replacement are the shim's
-// responsibility (`resolveServerToolName` /
-// `replaceHostedToolsWithFunctionTool`); this function only reads the
-// hosted entries.
+// First hosted block's filters win, matching the framework's
+// dedupe-to-first rule for hosted entries. Validation still runs
+// across every hosted entry so a malformed later block rejects the
+// request rather than slipping through behind the chosen first one.
+// Name-collision resolution and the hosted-tool → function-tool
+// replacement are the framework's responsibility.
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {
-  let lastHostedFilters: ShimToolFilters = {};
+  let firstHostedFilters: ShimToolFilters = {};
+  let captured = false;
   for (const tool of tools) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
       if (reject !== null) return { ok: false, error: reject };
-      lastHostedFilters = extractFilters(tool);
+      if (!captured) {
+        firstHostedFilters = extractFilters(tool);
+        captured = true;
+      }
     }
   }
-  return { ok: true, filters: lastHostedFilters };
+  return { ok: true, filters: firstHostedFilters };
 };
 
 // ── Shim call parsing ──
@@ -1276,7 +1306,7 @@ const planShimSlots = (
 };
 
 export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
-  if (invocation.candidate.targetApi === 'responses' && !invocation.candidate.binding.enabledFlags.has('responses-web-search-shim')) {
+  if (invocation.targetApi === 'responses' && !invocation.candidate.model.enabledFlags.has('responses-web-search-shim')) {
     return { type: 'inactive' };
   }
 
@@ -1317,8 +1347,9 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
     ...(hasHostedWebSearch
       ? {
           hosted: {
-            isHostedTool: isHostedWebSearchTool,
-            buildFunctionTool: toolName => buildShimFunctionTool(toolName, filters.userLocation),
+            hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
+            canonicalize: canonicalizeWebSearchTool,
+            buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const slot = planShimSlots(parseShimOperations(intercepted.arguments), intercepted.name, state, loopState);
               const functionCallItem: ResponsesFunctionToolCallItem = {

@@ -3,7 +3,7 @@ import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
-import { buildClaudeCodeCatalog, claudeCodeResolveRequestedModelId, fetchClaudeCodeModelsList } from './models.ts';
+import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -106,14 +106,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: false,
-    resolveRequestedModelId: claudeCodeResolveRequestedModelId,
-    // Claude Code's redirect rule collapses any `<base>-YYYYMMDD` id to its
-    // de-dated base. The date axis is unbounded, so there is no finite
-    // enumeration to publish — the canonical de-dated id is already in the
-    // catalog, and a power-user dated form still routes through the
-    // `resolveRequestedModelId` path at request time without showing up in
-    // the addressable surface.
-    enumerateAddressableRedirects: () => [],
   };
 };
 

@@ -1,37 +1,26 @@
-import { test, vi } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 const lastCandidatesCall: { model?: string } = {};
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
-  const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    resolveModelCandidates: vi.fn(async (args: { modelName: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
-      // Pull the queued alias resolution so the serve sees a resolved target id and overlays rules from `aliasResolution`.
-      const aliasResolution = await resolveAlias({
-        modelName: args.modelName,
-        providers: [],
-        fetcherForUpstream: () => directFetcher,
-        scheduler: args.scheduler,
-        endpointAccepts: () => true,
-        repo: { getByName: () => Promise.resolve(null) } as never,
-      });
-      const effectiveModel = aliasResolution?.targetModelId ?? args.modelName;
-      lastCandidatesCall.model = effectiveModel;
+    enumerateRealModelCandidatesWithDatedRetry: vi.fn(async (modelId: string) => {
+      lastCandidatesCall.model = modelId;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return { ...next, failedUpstreams: [], aliasResolution };
+      return next;
     }),
   };
 });
@@ -57,8 +46,10 @@ const { messagesServe } = await import('./serve.ts');
 const API_KEY_ID = 'key_messages_serve_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
+
+afterEach(() => { candidatesQueue.length = 0; });
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -145,7 +136,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   providerKind?: ProviderCandidate['provider']['providerKind'];
   enabledFlags?: ReadonlySet<string>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -153,9 +144,7 @@ const makeCandidate = (overrides: {
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'messages';
   const providerKind = overrides.providerKind ?? 'custom';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -163,24 +152,13 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream,
-      providerKind,
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
+      upstream, providerKind, name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind,
-      provider,
-      upstreamModel,
-      enabledFlags: overrides.enabledFlags ?? upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel({
+      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    }),
     fetcher: directFetcher,
   };
 };
@@ -239,7 +217,7 @@ test('generate translates through the Responses target when only that endpoint i
     modelKey: 'responses-model-key',
     headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ upstream: 'up_r', targetApi: 'responses', callResponses })]);
+  queueCandidates([makeCandidate({ upstream: 'up_r', endpoints: { responses: {} }, callResponses })]);
 
   const result = await messagesServe.generate({
     payload: makePayload(),
@@ -325,6 +303,28 @@ test('generate renders model-missing when no candidates are available', async ()
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
 
+test('generate filters out candidates whose endpoints do not satisfy the messages-generate preference and renders model-unsupported as a 400', async () => {
+  installRepo();
+  const callMessages = vi.fn();
+  // messagesGenerateTarget prefers messages > responses > chat-completions; an
+  // endpoints-only `completions` candidate matches none and is filtered out.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callMessages })]);
+
+  const result = await messagesServe.generate({
+    payload: makePayload({ model: 'wrong-endpoint-model' }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+
+  const failure = assertResultType(result, 'api-error');
+  assertEquals(failure.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  assertEquals(callMessages.mock.calls.length, 0);
+});
+
 test('countTokens proxies the upstream measurement response as a plain result', async () => {
   installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
@@ -350,11 +350,51 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
 });
 
+test('countTokens renders model-missing as a 404 when no candidates are available', async () => {
+  installRepo();
+  queueCandidates([]);
+
+  const result = await messagesServe.countTokens({
+    payload: makePayload({ model: 'unknown-model' }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+
+  const failure = assertResultType(result, 'api-error');
+  assertEquals(failure.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  assertEquals(body.error.type, 'not_found_error');
+  assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
+});
+
+test('countTokens filters out candidates whose endpoints do not satisfy the messages-countTokens preference and renders model-unsupported as a 400', async () => {
+  installRepo();
+  const callMessagesCountTokens = vi.fn();
+  // messagesCountTokensTarget = chatTargetPicker(['messages']); a candidate
+  // exposing only chatCompletions matches none and is filtered out.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callMessagesCountTokens })]);
+
+  const result = await messagesServe.countTokens({
+    payload: makePayload({ model: 'wrong-endpoint-model' }),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+
+  const failure = assertResultType(result, 'api-error');
+  assertEquals(failure.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  assertEquals(callMessagesCountTokens.mock.calls.length, 0);
+});
+
 // strip-billing-attribution defaults OFF for claude-code, so a request whose
 // system prompt carries the `x-anthropic-billing-header:` block must reach
 // the claude-code provider's callMessages with the block intact — otherwise
 // Anthropic loses the plan-tier attribution it bills against.
-test('claude-code binding preserves x-anthropic-billing-header system block through the interceptor chain', async () => {
+test('claude-code candidate preserves x-anthropic-billing-header system block through the interceptor chain', async () => {
   installRepo();
 
   // Pre-confirm the flag catalog is wired the expected way; an edit that
@@ -409,11 +449,11 @@ test('claude-code binding preserves x-anthropic-billing-header system block thro
   assertEquals(observed.system[1].text, "You are Claude Code, Anthropic's official CLI for Claude.");
 });
 
-// The same request routed to a copilot binding (which carries the
+// The same request routed to a copilot candidate (which carries the
 // strip-billing-attribution default-on flag) must have the billing block
 // stripped before the upstream call — the mirror image of the claude-code
 // assertion above.
-test('copilot binding strips x-anthropic-billing-header system block via the default-on flag', async () => {
+test('copilot candidate strips x-anthropic-billing-header system block via the default-on flag', async () => {
   installRepo();
 
   const copilotDefaults = defaultsForProvider('copilot');

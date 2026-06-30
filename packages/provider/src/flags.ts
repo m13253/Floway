@@ -7,7 +7,7 @@
 // catalog free of runtime closures.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
-// mutually exclusive per binding: a vendor interceptor translates the
+// mutually exclusive per model: a vendor interceptor translates the
 // gateway's OpenAI-canonical request and response shape into the vendor's
 // wire dialect; with no vendor flag set, behavior defaults to the OpenAI
 // standard and no vendor rewrite runs.
@@ -73,6 +73,12 @@ export const OPTIONAL_FLAGS = [
     defaultFor: ALL_PROVIDER_KINDS.filter(p => !['codex', 'claude-code'].includes(p)),
   },
   {
+    id: 'responses-compact-shim',
+    label: 'Responses compact shim',
+    description: "Simulate `response.compaction` against upstreams that don't expose a native compact wire. The shim swaps a compact request's instructions for the Codex SUMMARIZATION_PROMPT, runs a normal generate turn, and packs the upstream's summary back into a synthetic compaction envelope. Default on for `claude-code` and `ollama` (no native compaction); default off for `codex`, `copilot`, `azure`, `custom` (each has a native compact wire).",
+    defaultFor: ['claude-code', 'ollama'],
+  },
+  {
     id: 'disable-reasoning-on-forced-tool-choice',
     label: 'Disable reasoning when caller forces a tool',
     description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
@@ -84,21 +90,23 @@ export const OPTIONAL_FLAGS = [
     description: "Pick this when the upstream rejects `role: 'system'` after the first non-system message (e.g. DeepSeek-R1). The leading contiguous run of system messages is preserved; any later inline system message has its role rewritten to `user`, with content kept verbatim. For Anthropic Messages — where `payload.system` is conceptually the only first-position system slot — every inline `role: 'system'` message is demoted unconditionally.",
     defaultFor: [],
   },
-  // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
-  // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
-  // subscription endpoint reads the placeholder block itself to attribute
-  // billing.
   {
     id: 'demote-developer-to-system',
     label: 'Demote developer role to system',
     description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
     defaultFor: [],
   },
+  // The `x-anthropic-billing-header:` line the Claude Code CLI injects is a
+  // literal `cch=00000;` placeholder, not a per-request hash — Anthropic's
+  // subscription endpoint reads the placeholder block itself to attribute
+  // billing. So strip it on every non-Anthropic upstream (it would only
+  // pollute their prompt-cache key) and keep it only on `claude-code`,
+  // where the same block is what bills the request against the user's plan.
   {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',
-    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for copilot/azure/custom — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for claude-code, where the same block is the input Anthropic uses to bill the request against the user's plan.",
-    defaultFor: ['copilot', 'azure', 'custom'],
+    description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for every upstream kind except `claude-code` — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for `claude-code`, where the same block is the input Anthropic uses to bill the request against the user's plan.",
+    defaultFor: ALL_PROVIDER_KINDS.filter(p => p !== 'claude-code'),
   },
 ] as const satisfies readonly Flag[];
 

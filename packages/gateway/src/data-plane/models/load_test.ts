@@ -1,14 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
 import { toPublicModel } from './load.ts';
-import type { ResolvedModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
-const base: ResolvedModel = {
+const base: InternalModel = {
   id: 'm1',
   kind: 'chat',
   limits: { max_context_window_tokens: 100000 },
-  endpoints: { chatCompletions: {}, messages: {}, responses: {} },
-  providers: [],
+  endpoints: { chatCompletions: {} },
 };
 
 describe('toPublicModel', () => {
@@ -25,7 +24,7 @@ describe('toPublicModel', () => {
   });
 
   test('stamps the upstream endpoint map onto the wire entry verbatim', () => {
-    expect(toPublicModel(base).endpoints).toEqual({ chatCompletions: {}, messages: {}, responses: {} });
+    expect(toPublicModel(base).endpoints).toEqual({ chatCompletions: {} });
   });
 });
 

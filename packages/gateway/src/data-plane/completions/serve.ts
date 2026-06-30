@@ -100,9 +100,10 @@ export const completions = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/completions',
     model: request.model,
+    kind: 'chat',
     endpointKey: 'completions',
-    call: (binding, opts) =>
-      binding.provider.callCompletions(binding.upstreamModel, upstreamBody, ctx.abortSignal, opts),
+    call: (provider, model, opts) =>
+      provider.provider.callCompletions(model, upstreamBody, ctx.abortSignal, opts),
     response: request.wantsStream
       ? { format: 'sse', transformFrame, settleUsage }
       : {

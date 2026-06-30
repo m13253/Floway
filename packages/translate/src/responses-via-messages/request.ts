@@ -2,8 +2,9 @@ import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
-import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
+import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -108,24 +109,43 @@ const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssi
   return { role: 'assistant', content: content.length > 0 ? content : '' };
 };
 
-// Both `role: 'system'` and `role: 'developer'` Responses input messages flow
-// through as Messages system items. The Messages role enum admits 'system'
-// directly (https://platform.claude.com/docs/en/api/messages); developer
-// content is the same intent layer and normalizes to 'system' on the
-// Messages wire.
-const translateSystemMessage = (message: ResponsesInputMessage): MessagesSystemMessage => {
+// Anthropic's Messages system field (top-level `MessagesPayload.system` and
+// inline `MessagesSystemMessage.content`) accepts only text. Image parts in
+// system / developer Responses input messages are rejected here at the
+// translator boundary so the caller hits an explicit failure instead of
+// having the image silently dropped on the wire.
+const responsesSystemBlocks = (message: ResponsesInputMessage): MessagesTextBlock[] => {
   if (typeof message.content === 'string') {
-    return { role: 'system', content: message.content };
+    return message.content ? [{ type: 'text', text: message.content }] : [];
   }
 
-  const content: MessagesTextBlock[] = [];
+  const blocks: MessagesTextBlock[] = [];
   for (const block of message.content) {
-    if (block.type === 'input_text' || block.type === 'output_text') {
-      content.push({ type: 'text', text: (block as ResponsesInputText).text });
+    if (block.type === 'input_image') {
+      throw new TranslatorInputError(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
     }
+    if (block.type !== 'input_text' && block.type !== 'output_text') {
+      // Exhaustiveness guard: today ResponsesInputContent is
+      // input_text|input_image|output_text; a future variant must opt into
+      // translator behavior rather than be silently dropped from system
+      // content.
+      throw new TranslatorInputError(`Invalid content block type '${(block as { type: string }).type}' in ${message.role} message.`);
+    }
+    blocks.push({ type: 'text', text: block.text });
   }
+  return blocks;
+};
 
-  return { role: 'system', content: content.length > 0 ? content : '' };
+// Inline path for non-leading system / developer Responses input messages
+// (the leading prefix was hoisted earlier). Anthropic upstreams diverge on
+// inline role:'system' here (Bedrock accepts it under placement rules;
+// Vertex rejects it outright), so the gateway's
+// `demote-interleaved-system-to-user` interceptor flag is the safety net
+// for any inline system that would otherwise reach an upstream that does
+// not accept it.
+const translateSystemMessage = (message: ResponsesInputMessage): MessagesSystemMessage => {
+  const blocks = responsesSystemBlocks(message);
+  return { role: 'system', content: blocks.length > 0 ? blocks : '' };
 };
 
 const appendAssistantBlock = (messages: MessagesMessage[], block: MessagesAssistantContentBlock): void => {
@@ -151,17 +171,32 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
 };
 
 const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
-  throw new Error(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
+  throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(value)}`);
 };
 
-const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<MessagesMessage[]> => {
+const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
   if (typeof input === 'string') {
-    return [{ role: 'user', content: input }];
+    return {
+      messages: [{ role: 'user', content: input }],
+      systemBlocks: [],
+    };
+  }
+
+  // Hoist the leading contiguous run of system/developer input messages into
+  // systemBlocks (→ top-level Messages.system), preserving each input_text
+  // part as its own MessagesTextBlock so part boundaries survive the hoist.
+  // Non-leading system/developer messages stay inline as MessagesSystemMessage.
+  const systemBlocks: MessagesTextBlock[] = [];
+  let prefixEnd = 0;
+  for (const item of input) {
+    if (item.type !== 'message' || (item.role !== 'system' && item.role !== 'developer')) break;
+    systemBlocks.push(...responsesSystemBlocks(item));
+    prefixEnd++;
   }
 
   const messages: MessagesMessage[] = [];
 
-  for (const item of input) {
+  for (const item of input.slice(prefixEnd)) {
     switch (item.type) {
     case 'message':
       switch (item.role) {
@@ -176,7 +211,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
         messages.push(translateSystemMessage(item));
         break;
       default:
-        throw new Error(`Responses → Messages translator: unexpected message role ${(item as { role: string }).role}.`);
+        throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
       }
       break;
     case 'function_call':
@@ -226,9 +261,9 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
       // into function_call + function_call_output pairs before this
       // translator runs. Reaching here means the reverse path was
       // skipped.
-      throw new Error('Responses → Messages translator does not accept web_search_call input items; their reverse-path translation must happen before this translator runs.');
+      throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
     case 'image_generation_call':
-      throw new Error('Responses → Messages translator does not accept image_generation_call input items until item-by-id image storage is available.');
+      throw new TranslatorInputError("Invalid input item type 'image_generation_call'.");
     default:
       // Exhaustiveness guard: a future ResponsesInputItem variant must
       // explicitly opt into translator behavior.
@@ -236,7 +271,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
     }
   }
 
-  return messages;
+  return { messages, systemBlocks };
 };
 
 const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
@@ -300,18 +335,21 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): Messa
 
 export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
   const customToolNames = new Set<string>();
-  const messages = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
+  const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
   const tools = translateTools(payload.tools, customToolNames);
-  // `payload.instructions` is the Responses canonical system field; it maps
-  // to the Messages top-level `system`. Any `role: 'system'`/`'developer'`
-  // input items are emitted inline as MessagesSystemMessage by the input
-  // translator, preserving chronology.
-  const system = payload.instructions ?? '';
+  // `payload.instructions` is the Responses canonical system field; leading
+  // system/developer input items contribute additional blocks immediately
+  // after it. Each source — the instructions field and each leading input
+  // message — is preserved as its own MessagesTextBlock so the boundary
+  // between "canonical instructions" and "leading input system" survives
+  // and the downstream prompt cache sees stable per-source segments.
+  const systemBlocks: MessagesTextBlock[] = [
+    ...(payload.instructions ? [{ type: 'text' as const, text: payload.instructions }] : []),
+    ...hoistedSystemBlocks,
+  ];
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
-  const systemBlocks: MessagesTextBlock[] | undefined = system
-    ? [{ type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL }]
-    : undefined;
+  applyLastSystemCacheBreakpoint(systemBlocks);
   applyLastToolCacheBreakpoint(tools);
   applyLastMessageCacheBreakpoint(messages);
 
@@ -362,7 +400,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(systemBlocks ? { system: systemBlocks } : {}),
+    ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,

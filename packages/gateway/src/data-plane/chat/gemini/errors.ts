@@ -3,6 +3,7 @@ import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult } from '@floway-dev/provider';
+import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
@@ -37,6 +38,15 @@ const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<Pr
     error: { code: status, message, status: geminiStatusForHttpStatus(status) },
   })),
 });
+
+// Translator surfaced a caller-input violation (unsupported content part,
+// disallowed role, missing required field, etc.). Render as a 400
+// INVALID_ARGUMENT envelope so the caller sees a Gemini-shaped failure
+// instead of the internal-error 500 envelope.
+export const translatorInputErrorResult = (
+  error: TranslatorInputError,
+): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> =>
+  geminiRpcErrorResult(400, error.message);
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.

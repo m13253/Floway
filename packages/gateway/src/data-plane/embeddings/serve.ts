@@ -58,10 +58,11 @@ export const embeddings = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/embeddings',
     model: request.model,
+    kind: 'embedding',
     endpointKey: 'embeddings',
-    call: async (binding, opts) => {
+    call: async (provider, model, opts) => {
       const { model: _model, ...body } = request.body;
-      return await binding.provider.callEmbeddings(binding.upstreamModel, body, undefined, opts);
+      return await provider.provider.callEmbeddings(model, body, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromEmbeddingsBody },
   });

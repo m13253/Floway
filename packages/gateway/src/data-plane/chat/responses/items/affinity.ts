@@ -107,9 +107,9 @@ const orderCandidatesByStoredResponsesAffinity = <T extends ProviderCandidate>(
 
   const order = new Map(preferred.map((upstreamId, index) => [upstreamId, index]));
   const preferredCandidates = candidates
-    .filter(cand => order.has(cand.binding.upstream))
-    .toSorted((a, b) => order.get(a.binding.upstream)! - order.get(b.binding.upstream)!);
-  const remainingCandidates = candidates.filter(cand => !order.has(cand.binding.upstream));
+    .filter(cand => order.has(cand.provider.upstream))
+    .toSorted((a, b) => order.get(a.provider.upstream)! - order.get(b.provider.upstream)!);
+  const remainingCandidates = candidates.filter(cand => !order.has(cand.provider.upstream));
   return [...preferredCandidates, ...remainingCandidates];
 };
 
@@ -193,7 +193,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
   if (forcingUpstreamList.length === 1) {
     const [upstreamId] = forcingUpstreamList;
-    const matching = candidates.filter(cand => cand.binding.upstream === upstreamId);
+    const matching = candidates.filter(cand => cand.provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
         kind: 'failure',
@@ -205,7 +205,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
     }
     const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
     if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.binding.supportsResponsesItemReference);
+      const itemReferenceCapable = matching.filter(cand => cand.provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
         return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
       }

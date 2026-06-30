@@ -1,24 +1,22 @@
 // Alias resolver. Runs once per request, above prefix routing. The target
-// string it returns is fed verbatim back into the existing prefix-router
-// (enumerateModelInterpretations → resolveModelForProvider); alias names
-// never re-enter the alias layer, so recursion is impossible by
-// construction and the shadow-the-real-model pattern (an alias whose first
-// target is its own name) Just Works.
+// string it returns is fed verbatim back into the real-model resolver
+// (`enumerateRealModelCandidatesWithDatedRetry`); alias names never re-enter
+// the alias layer, so recursion is impossible by construction and the
+// shadow-the-real-model pattern (an alias whose first target is its own
+// name) Just Works.
 //
-// The resolver is endpoint-aware on the pool-narrowing axis but
-// kind-blind on the alias-rejection axis. The caller hands in an
-// `endpointAccepts` predicate that decides whether a candidate target's
-// resolved binding actually serves the inbound endpoint; the pool only
-// keeps targets that satisfy it, so first-available / random pick from a
-// set that the prefix router can serve end-to-end. The resolver does NOT
-// reject an alias just because its kind disagrees with the inbound
-// endpoint — that responsibility stays with the predicate, and a
-// kind-mismatched alias surfaces the natural "no target available" 404.
+// The resolver is endpoint-aware on the pool-narrowing axis: the caller
+// hands in an `endpointAccepts` predicate that decides whether a candidate
+// target's resolved binding actually serves the inbound endpoint, and the
+// pool only keeps targets that satisfy it. The pool walk itself uses the
+// kind-aware `enumerateRealModelCandidates` — a target whose only catalog
+// matches are wrong-kind is dropped at the walk, not at the predicate;
+// `endpointAccepts` narrows further within the candidate's kind.
 
 import type { ModelAliasesRepo, ModelAliasRecord } from '../../repo/types.ts';
-import { collectInterpretationOutcomes, enumerateModelInterpretations } from '../providers/registry.ts';
+import { enumerateRealModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { AliasRules, ModelEndpoints } from '@floway-dev/protocols/common';
+import type { AliasRules, ModelEndpoints, ModelKind } from '@floway-dev/protocols/common';
 import type { Fetcher, ModelProviderInstance } from '@floway-dev/provider';
 
 export interface AliasResolution {
@@ -30,9 +28,9 @@ export interface AliasResolution {
 }
 
 // Why the alias's target pool is empty. The resolver keeps targets whose
-// resolved binding exists AND serves the inbound endpoint (per the caller's
-// `endpointAccepts`); a target lost to either check counts toward its
-// respective bucket here.
+// candidate walk yielded at least one kind-matching match AND whose
+// endpoint map satisfies the caller's `endpointAccepts` predicate; a
+// target lost to either check counts toward its respective bucket here.
 type CandidateRoutability =
   | { readonly routable: true }
   | { readonly routable: false; readonly reason: 'no-binding' | 'endpoint-mismatch' };
@@ -76,11 +74,14 @@ interface ResolveAliasArgs {
   // factory cost paid once per request rather than twice.
   readonly providers: readonly ModelProviderInstance[];
   readonly fetcherForUpstream: (upstreamId: string) => Fetcher;
+  // Inbound kind threaded into the per-target candidate walk so wrong-kind
+  // catalog entries cannot enter the pool.
+  readonly kind: ModelKind;
   // Predicate the caller supplies to narrow the pool to targets whose
   // resolved binding serves the inbound endpoint. Chat callers wrap
   // `pickTarget`; passthrough callers check the specific endpoint key.
-  // A target enters the pool iff at least one of its resolved bindings
-  // returns true here.
+  // A target enters the pool iff at least one of its candidates returns
+  // true here.
   readonly endpointAccepts: (endpoints: ModelEndpoints) => boolean;
   // Injected so tests can hand in a stub; the per-request ctx already owns
   // a concrete one via `getRepo().modelAliases`.
@@ -96,13 +97,13 @@ const candidateRoutability = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  kind: ModelKind,
   endpointAccepts: (endpoints: ModelEndpoints) => boolean,
 ): Promise<CandidateRoutability> => {
   if (providers.length === 0) return { routable: false, reason: 'no-binding' };
-  const interpretations = enumerateModelInterpretations(targetModelId, providers);
-  const { resolutions } = await collectInterpretationOutcomes(interpretations, fetcherForUpstream, scheduler);
-  if (resolutions.length === 0) return { routable: false, reason: 'no-binding' };
-  if (resolutions.some(r => endpointAccepts(r.resolved.binding.upstreamModel.endpoints))) return { routable: true };
+  const { candidates } = await enumerateRealModelCandidates(targetModelId, kind, providers, fetcherForUpstream, scheduler);
+  if (candidates.length === 0) return { routable: false, reason: 'no-binding' };
+  if (candidates.some(c => endpointAccepts(c.model.endpoints))) return { routable: true };
   return { routable: false, reason: 'endpoint-mismatch' };
 };
 
@@ -116,21 +117,22 @@ const buildAvailablePool = async (
   providers: readonly ModelProviderInstance[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  kind: ModelKind,
   endpointAccepts: (endpoints: ModelEndpoints) => boolean,
 ): Promise<{ readonly pool: ModelAliasRecord['targets']; readonly rejections: readonly ('no-binding' | 'endpoint-mismatch')[] }> => {
   const outcomes = await Promise.all(record.targets.map(target =>
-    candidateRoutability(target.target_model_id, providers, fetcherForUpstream, scheduler, endpointAccepts)));
+    candidateRoutability(target.target_model_id, providers, fetcherForUpstream, scheduler, kind, endpointAccepts)));
   const pool = record.targets.filter((_, index) => outcomes[index].routable);
   const rejections = outcomes.flatMap(o => o.routable ? [] : [o.reason]);
   return { pool, rejections };
 };
 
 export const resolveAlias = async (args: ResolveAliasArgs): Promise<AliasResolution | null> => {
-  const { modelName, providers, fetcherForUpstream, scheduler, endpointAccepts, repo } = args;
+  const { modelName, providers, fetcherForUpstream, scheduler, kind, endpointAccepts, repo } = args;
   const record = await repo.getByName(modelName);
   if (!record) return null;
 
-  const { pool, rejections } = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler, endpointAccepts);
+  const { pool, rejections } = await buildAvailablePool(record, providers, fetcherForUpstream, scheduler, kind, endpointAccepts);
   if (pool.length === 0) {
     const allEndpointMismatch = rejections.length > 0 && rejections.every(r => r === 'endpoint-mismatch');
     throw new AliasNoTargetAvailableError({

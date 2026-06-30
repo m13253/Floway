@@ -12,8 +12,8 @@ type TerminalKind = 'success' | 'failure';
 // dimensions off the chosen candidate plus the upstream-reported model key.
 export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ProviderCandidate, modelKey: string): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
-  model: candidate.binding.upstreamModel.id,
-  upstream: candidate.binding.upstream,
+  model: candidate.model.id,
+  upstream: candidate.provider.upstream,
   modelKey,
   stream: ctx.wantsStream,
   runtimeLocation: ctx.runtimeLocation,

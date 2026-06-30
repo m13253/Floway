@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 
 import { createStoredResponsesItemId } from './items/format.ts';
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from './items/store.ts';
@@ -7,41 +7,31 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-// `resolveModelCandidates` is the only seam between serve and the
+// `enumerateRealModelCandidatesWithDatedRetry` is the registry-side seam the
+// alias prelude calls into — mocking it directly keeps the serve tests narrow
 // provider registry — mocking it directly keeps the serve tests narrow
 // (no fake fetch, no repo upstream rows for provider catalogs) and lets
 // each test hand the serve exactly the candidates it wants to exercise.
 // `sawModel` defaults to true when at least one candidate was queued; the
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 const lastCandidatesCall: { model?: string } = {};
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
-  const { resolveAlias } = await import('../../model-aliases/resolve.ts');
   return {
     ...original,
-    resolveModelCandidates: vi.fn(async (args: { modelName: string; upstreamIds: readonly string[] | null; scheduler: () => void }) => {
-      // Pull the queued alias resolution so the serve sees a resolved target id and overlays rules from `aliasResolution`.
-      const aliasResolution = await resolveAlias({
-        modelName: args.modelName,
-        providers: [],
-        fetcherForUpstream: () => directFetcher,
-        scheduler: args.scheduler,
-        endpointAccepts: () => true,
-        repo: { getByName: () => Promise.resolve(null) } as never,
-      });
-      const effectiveModel = aliasResolution?.targetModelId ?? args.modelName;
-      lastCandidatesCall.model = effectiveModel;
+    enumerateRealModelCandidatesWithDatedRetry: vi.fn(async (modelId: string) => {
+      lastCandidatesCall.model = modelId;
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return { ...next, failedUpstreams: [], aliasResolution };
+      return next;
     }),
   };
 });
@@ -68,8 +58,10 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 const API_KEY_ID = 'key_serve_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
+
+afterEach(() => { candidatesQueue.length = 0; });
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -95,6 +87,13 @@ const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayloa
   ...overrides,
 });
 
+// Compact tests need a real input array (a bare string can't carry the
+// compaction trigger or item_reference shapes the routing layer cares
+// about). Default to the kept-user-message the existing happy-path test
+// uses; override `input` when a test needs a different shape.
+const compactPayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload =>
+  makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }], ...overrides });
+
 const makeResponsesResult = (id = 'resp_test'): ResponsesResult => ({
   id,
   object: 'response',
@@ -119,14 +118,16 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
+  callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
+  callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'responses';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callResponses: overrides.callResponses,
+    callMessages: overrides.callMessages,
+    callChatCompletions: overrides.callChatCompletions,
   });
   return {
     provider: {
@@ -138,16 +139,9 @@ const makeCandidate = (overrides: {
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    // Default keeps stubUpstreamModel's three-endpoint map intact; tests that
+    // need a rejected candidate pass an explicit `endpoints` override.
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -206,7 +200,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   queueCandidates([candidate]);
 
   const result = await responsesServe.compact({
-    payload: makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }] }),
+    payload: compactPayload(),
     ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
@@ -271,6 +265,29 @@ test('generate renders model-missing when no candidates are available', async ()
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
+});
+
+test('generate filters out candidates whose endpoints do not satisfy the responses preference and renders model-unsupported as a 400', async () => {
+  installRepo();
+  const callResponses = vi.fn();
+  // responsesTarget prefers responses > messages > chat-completions; an
+  // endpoints-only `completions` candidate matches none and is filtered out.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
+
+  const result = await responsesServe.generate({
+    payload: makePayload({ model: 'wrong-endpoint-model' }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  assertEquals(callResponses.mock.calls.length, 0);
 });
 
 test('generate renders routing-unavailable as a 400 when a forcing item names an absent upstream', async () => {
@@ -338,6 +355,48 @@ test('compact renders routing-unavailable when no candidate exposes the response
   assertEquals(result.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
+});
+
+test('compact renders model-missing as a 404 when no candidates are available', async () => {
+  installRepo();
+  queueCandidates([]);
+
+  const result = await responsesServe.compact({
+    payload: compactPayload({ model: 'unknown-model' }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('not available'));
+});
+
+test('compact renders model-unsupported as a 400 when the only candidate\'s endpoints don\'t satisfy responses target preferences', async () => {
+  installRepo();
+  const callResponses = vi.fn();
+  // responsesTarget prefers responses > messages > chat-completions; an
+  // endpoints-only `completions` candidate matches none and is filtered out.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
+
+  const result = await responsesServe.compact({
+    payload: compactPayload({ model: 'wrong-endpoint-model' }),
+    ctx: makeGatewayCtx(),
+    store: createResponsesHttpStore(API_KEY_ID, true),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  assertEquals(callResponses.mock.calls.length, 0);
 });
 
 test('expandPreviousResponseId prepends snapshot items and strips the previous_response_id field', async () => {
@@ -460,21 +519,7 @@ test('generate falls through translate-out to messages target', async () => {
     modelKey: 'messages-key',
     headers: new Headers(),
   }));
-  const upstreamModel = stubUpstreamModel();
-  const provider = stubProvider({ callMessages });
-  const candidate: ProviderCandidate = {
-    provider: {
-      upstream: 'up_m', providerKind: 'custom', name: 'up_m',
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
-    },
-    binding: {
-      upstream: 'up_m', upstreamName: 'up_m', providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
-    fetcher: directFetcher,
-  };
+  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages });
   queueCandidates([candidate]);
 
   const result = await responsesServe.generate({
@@ -515,21 +560,7 @@ test('generate falls through translate-out to chat-completions target', async ()
     modelKey: 'chat-completions-key',
     headers: new Headers(),
   }));
-  const upstreamModel = stubUpstreamModel();
-  const provider = stubProvider({ callChatCompletions });
-  const candidate: ProviderCandidate = {
-    provider: {
-      upstream: 'up_c', providerKind: 'custom', name: 'up_c',
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
-    },
-    binding: {
-      upstream: 'up_c', upstreamName: 'up_c', providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'chat-completions',
-    fetcher: directFetcher,
-  };
+  const candidate = makeCandidate({ upstream: 'up_c', endpoints: { chatCompletions: {} }, callChatCompletions });
   queueCandidates([candidate]);
 
   const result = await responsesServe.generate({

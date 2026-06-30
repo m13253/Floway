@@ -15,9 +15,8 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 const API_KEY_ID = 'key_rewrite_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([upstreamModel]),
+    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
     provider: {
@@ -29,17 +28,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       provider: modelProvider,
       supportsResponsesItemReference,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider: modelProvider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };

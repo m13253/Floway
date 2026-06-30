@@ -3,9 +3,13 @@ import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { Fetcher, ResolvedModel } from '@floway-dev/provider';
+import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
-export const toPublicModel = (model: ResolvedModel): PublicModel => {
+// Project an InternalModel onto the public-facing `/v1/models` wire DTO.
+// `endpoints` rides through so listing clients can introspect each model's
+// reach without a per-endpoint probe; alias entries surface the union of
+// every currently-available target's reach (see `synthesizeListedAliases`).
+export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
     object: 'model',

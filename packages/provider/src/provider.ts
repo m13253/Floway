@@ -1,8 +1,8 @@
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
+import type { UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
@@ -14,32 +14,10 @@ import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@f
 // turn that some upstreams expose natively (`/v1/responses/compact`,
 // chatgpt.com's RemoteCompactionV2 over /codex/responses) and others have to
 // simulate. The same `callResponses` method dispatches on this tag, and
-// interceptors may flip it before the inner upstream call runs.
+// interceptors are free to flip it (the responses-compact-shim turns 'compact'
+// into 'generate' so the inner upstream call runs an ordinary summarization
+// turn against the SUMMARIZATION_PROMPT).
 export type ResponsesAction = 'generate' | 'compact';
-
-export interface ProviderModelRecord {
-  upstream: string;
-  upstreamName: string;
-  providerKind: UpstreamProviderKind;
-  provider: ModelProvider;
-  upstreamModel: UpstreamModel;
-  enabledFlags: ReadonlySet<string>;
-  supportsResponsesItemReference: boolean;
-}
-
-export interface ResolvedModel extends InternalModel {
-  endpoints: ModelEndpoints;
-  providers: readonly ProviderModelRecord[];
-}
-
-export interface AddressableRedirect {
-  // Inbound id the provider would silently redirect through
-  // `resolveRequestedModelId` to a different real catalog id.
-  readonly addressable: string;
-  // Real catalog id the redirect resolves to. Must appear in the
-  // provider's own `getProvidedModels` output for the entry to be useful.
-  readonly resolvesTo: string;
-}
 
 export interface ModelProviderInstance {
   upstream: string;
@@ -53,25 +31,6 @@ export interface ModelProviderInstance {
   modelPrefix: ModelPrefixConfig | null;
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
-  resolveRequestedModelId?(modelId: string): string | undefined;
-  // Enumerate the finite set of inbound ids this provider would accept
-  // through `resolveRequestedModelId` that are NOT already part of the
-  // public-listed catalog. Each entry pairs the addressable id with the
-  // real catalog id it resolves to. The catalog-addressable surface
-  // enumeration uses this to mark prefix-variant / collapsed-id forms as
-  // routable without forcing every consumer to walk the provider's
-  // redirect rule by hand.
-  //
-  // Implementations whose redirect domain is unbounded (e.g. arbitrary
-  // date suffixes that collapse to the same base id) return `[]` — the
-  // base id is still listed in the catalog, so the addressable surface
-  // already covers the canonical entry. The hook receives the SWR-cached
-  // upstream catalog the caller already fetched so the same upstream
-  // round-trip feeds both the listed projection and the redirect
-  // enumeration.
-  enumerateAddressableRedirects?(args: {
-    readonly upstreamModels: readonly UpstreamModel[];
-  }): readonly AddressableRedirect[];
 }
 
 export interface ProviderCallResult {
@@ -158,7 +117,7 @@ export interface ModelProvider {
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.completions`
   // to absent in getProvidedModels, so this method is unreachable for
-  // those bindings; the rejecting stubs in those providers are pure
+  // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // Same `opts.headers` shape across every protocol so provider impls never

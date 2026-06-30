@@ -1,12 +1,14 @@
+import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
 import { applyChatRulesToResponses } from '../../model-aliases/apply.ts';
 import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
+import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ChatTargetApi, ExecuteResult, ProviderCandidate } from '@floway-dev/provider';
+import type { ExecuteResult, ProviderCandidate } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -83,14 +85,14 @@ export const prepareResponsesServePlan = async (args: {
   readonly payload: ResponsesPayload;
   readonly ctx: GatewayCtx;
   readonly store: StatefulResponsesStore;
-  readonly pickTarget: (endpoints: ModelEndpoints) => ChatTargetApi | null;
 }): Promise<ResponsesServePlan> => {
-  const { payload, ctx, store, pickTarget } = args;
+  const { payload, ctx, store } = args;
   const prepared = await expandPreviousResponseId(payload, store);
   const resolved = await resolveCandidatesAndApplyAlias({
     ctx,
     modelName: prepared.model,
-    pickTarget,
+    kind: 'chat',
+    endpointAccepts: responsesTarget.canServe,
     applyAlias: resolution => {
       prepared.model = resolution.targetModelId;
       applyChatRulesToResponses(prepared, resolution.rules);
@@ -99,7 +101,8 @@ export const prepareResponsesServePlan = async (args: {
   });
   if (resolved.kind === 'failure') return { kind: 'failure', result: resolved.result };
   const { candidates, sawModel, failedUpstreams } = resolved;
-  const decision = await planResponsesRouting({ payload: prepared, candidates, store });
+  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
+  const decision = await planResponsesRouting({ payload: prepared, candidates: viable, store });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
@@ -116,11 +119,7 @@ export const prepareResponsesServePlan = async (args: {
   if (candidate === undefined) {
     return {
       kind: 'failure',
-      result: renderResponsesFailure(
-        sawModel
-          ? { kind: 'model-unsupported', model: prepared.model, failedUpstreams }
-          : { kind: 'model-missing', model: prepared.model, failedUpstreams },
-      ),
+      result: renderResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
   return { kind: 'ready', prepared, candidate };
