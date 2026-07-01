@@ -196,6 +196,30 @@ The resolver never mutates the inbound id on the request body. The
 returned candidates carry the actual `UpstreamModel` (with its own `id`
 and `providerData`), and the dispatch layer reads from there.
 
+## Alias Resolution
+
+Alias resolution runs **above** the resolver described above. Every chat
+serve and every passthrough seam invokes a shared prelude
+(`data-plane/model-aliases/prelude.ts`) before candidate enumeration; the
+prelude looks up the inbound id in the alias repo, and if a matching
+alias exists, picks one of its configured target ids according to the
+alias's `selection` mode (`first-available` or `random`). The picked
+target id is then fed back into `enumerateRealModelCandidatesWithDatedRetry`
+verbatim, and the rest of resolution runs against that id as if the
+client had asked for it directly.
+
+By construction alias names never re-enter the alias layer: the target
+id is a real model id, so the shadow pattern (an alias whose first
+target matches its own name) resolves to the real model on the first
+pass. The prelude also stashes the alias's rule overlay on `ctx` for the
+target-side wire call — the resolver itself never sees rules.
+
+The alias-resolved target id, not the alias name, is what dispatch
+addresses upstream. The alias name is preserved on `ctx.responseHeaders`
+as `x-floway-alias` for observability. Alias listing behavior on
+`/v1/models`, `/v1beta/models`, and the Codex catalog is covered in the
+alias implementation notes under `data-plane/model-aliases/`.
+
 ## Candidate Shape
 
 ```ts

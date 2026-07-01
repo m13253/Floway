@@ -152,6 +152,34 @@ events. WebSocket `store: false` keeps replay state only inside the open
 session, so same-socket `previous_response_id` works without writing those
 items or snapshots to durable storage.
 
+## Model Aliases
+
+An alias is an operator-defined virtual model id that maps to a list of
+real targets. When a client sends a request with the alias name as
+`model`, Floway picks one target from the list (per the alias's
+`selection` mode — `first-available` walks the list in order, `random`
+picks uniformly across the available subset), applies the target's
+per-request rule overrides onto the outbound wire body, and routes the
+request as if the client had asked for the picked id directly.
+
+Aliases surface on every listing endpoint (`/v1/models`,
+`/v1beta/models`, the Codex catalog); a visible alias whose name
+collides with a real id replaces the real entry on the wire so the row
+count stays one-per-id. Every response that went through an alias
+carries an `x-floway-alias: <alias-name>` header so downstream tooling
+can correlate the alias-side and upstream-side model ids.
+
+Chat aliases (kind `chat`) can carry per-target rules — reasoning
+effort, verbosity, service tier, and Anthropic thinking configuration.
+Rules apply post-translate on the chosen target IR; a rule with no
+native slot on that target is dropped by design. Passthrough aliases
+(kinds `embedding` / `image`) must have empty rules.
+
+Schema and the seeded `codex-auto-review` alias live in
+`packages/gateway/migrations/0046_model_aliases.sql`; behavior and
+rule-mapping details are covered in [RESOLUTION.md](./RESOLUTION.md) and
+[TRANSLATION.md](./TRANSLATION.md).
+
 ## Development
 
 ```bash
