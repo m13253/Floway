@@ -983,12 +983,9 @@ export const withResponsesServerToolShim = (
     ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
-  const canonicalInput: ResponsesInputItem[] = Array.isArray(ctx.payload.input) ? ctx.payload.input : [{ type: 'message', role: 'user', content: ctx.payload.input }];
-  const inputArray = Array.isArray(ctx.payload.input) ? ctx.payload.input : undefined;
-  if (inputArray !== undefined) {
-    const nextInput = transformServerToolItems(inputArray, active);
-    if (nextInput !== inputArray) ctx.payload = { ...ctx.payload, input: nextInput };
-  }
+  const canonicalInput = ctx.payload.input;
+  const nextInput = transformServerToolItems(canonicalInput, active);
+  if (nextInput !== canonicalInput) ctx.payload = { ...ctx.payload, input: nextInput };
 
   const hostedActive = active.filter(
     (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>

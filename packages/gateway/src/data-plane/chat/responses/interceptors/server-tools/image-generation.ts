@@ -922,7 +922,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
 
   const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
   const hasHostedTool = tools.some(isHostedImageGenerationTool);
-  const hasReplayInput = Array.isArray(invocation.payload.input) && invocation.payload.input.some(i => i.type === 'image_generation_call');
+  const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
 
   if (!hasHostedTool) {
