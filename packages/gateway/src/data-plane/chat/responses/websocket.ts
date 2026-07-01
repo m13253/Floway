@@ -4,7 +4,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -87,7 +87,7 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
 };
 
 const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
-  const session = createResponsesWsSession(apiKeyFromContext(c).id);
+  const session = createResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -171,7 +171,7 @@ const handleClientMessage = async (
       requestBody: { bytes: requestBytes, streamError: null },
       method: 'WS',
       model: payload.model,
-    }, () => session.createStore(payload.store ?? undefined));
+    }, apiKeyId => session.createStore(apiKeyId, payload.store ?? undefined));
 
     let result;
     try {

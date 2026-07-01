@@ -85,9 +85,11 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 
 // Chat-protocol counterpart of `createGatewayCtxFromHono`. Calls the base
 // factory, then attaches the stored-items store the caller chose for this
-// protocol (messages / gemini / chat-completions use
-// `createNonResponsesSourceStore`; responses HTTP/WS use
-// `createResponsesHttpStore(_, payload.store)`).
+// protocol. The factory receives `ctx.apiKeyId` so every entry threads the
+// same authoritative id into its store — messages / gemini / chat-completions
+// pass `createNonResponsesSourceStore`; responses HTTP passes
+// `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
+// WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
