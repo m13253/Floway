@@ -1,8 +1,8 @@
 import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';

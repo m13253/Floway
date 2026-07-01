@@ -1,10 +1,10 @@
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';

@@ -1,10 +1,10 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
