@@ -443,3 +443,13 @@ test('translateChatCompletionsToResponses forwards reasoning_effort and service_
   assertEquals(result.reasoning, { effort: 'medium' });
   assertEquals(result.service_tier, 'priority');
 });
+
+test("translateChatCompletionsToResponses drops reasoning_effort='none' since Responses has no equivalent", () => {
+  const result = translateChatCompletionsToResponses({
+    model: 'gpt-test',
+    messages: [{ role: 'user', content: 'hi' }],
+    reasoning_effort: 'none',
+  });
+
+  assertEquals(result.reasoning, undefined);
+});
