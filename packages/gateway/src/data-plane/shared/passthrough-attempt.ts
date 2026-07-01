@@ -16,7 +16,6 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from './telemetry/performance.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelCandidate, Provider, ProviderCallResult, TelemetryModelIdentity, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
@@ -47,15 +46,6 @@ export interface PassthroughAttemptArgs {
   // internal-debug envelope.
   readonly call: (provider: Provider, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
 }
-
-const recordUpstreamPerformance = (
-  scheduler: BackgroundScheduler,
-  context: PerformanceTelemetryContext,
-  failed: boolean,
-  durationMs: number,
-): void => {
-  scheduler(failed ? recordPerformanceError(context, 'upstream_success') : recordPerformanceLatency(context, 'upstream_success', durationMs));
-};
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
   const { c, ctx, candidate, stream, call } = args;
@@ -88,7 +78,9 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
   // attempted upstream; request-perf and the dump's upstream attribution
   // wait until the serve loop picks its terminal candidate (2xx success
   // or last failure on exhaustion).
-  recordUpstreamPerformance(ctx.backgroundScheduler, performance, !response.ok, upstreamDurationMs);
+  ctx.backgroundScheduler(response.ok
+    ? recordPerformanceLatency(performance, 'upstream_success', upstreamDurationMs)
+    : recordPerformanceError(performance, 'upstream_success'));
   return {
     type: 'plain',
     status: response.status,
