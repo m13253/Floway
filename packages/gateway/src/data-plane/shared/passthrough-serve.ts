@@ -303,9 +303,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       ctx.dump?.error('gateway');
       return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
     }
-    // Unreachable: anyCandidateServedEndpoint=true implies one candidate
-    // either succeeded (returned above) or failed (lastFailedResponse set).
-    throw new Error('passthrough-serve: loop exhausted with no success or failure response');
+    // `anyCandidateServedEndpoint=true` means the loop dispatched at least
+    // one attempt; every attempt either returned via the 2xx path above or
+    // recorded `lastFailedResponse`. There is no third state.
+    throw new Error('invariant broken: passthroughServe exhausted candidates with neither success nor failure');
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const forwarded = httpResponseToResponse(e.httpResponse);
