@@ -116,9 +116,9 @@ const makeCandidate = (overrides: {
   // The gemini serve layer picks the target from model.endpoints (chat-completions
   // first, then messages, then responses). Narrow endpoints to the target this
   // test wants so the gemini serve layer picks the expected target via
-  // geminiGenerateTarget / planGeminiRouting. An explicit `endpoints` override
-  // beats the default `targetApi`-derived map, for tests that need a candidate
-  // whose endpoints satisfy none of the target preferences.
+  // geminiGenerateTarget.canServe. An explicit `endpoints` override beats the
+  // default `targetApi`-derived map, for tests that need a candidate whose
+  // endpoints satisfy none of the target preferences.
   const endpoints = overrides.endpoints ?? (targetApi === 'chat-completions'
     ? { chatCompletions: {} }
     : targetApi === 'messages'

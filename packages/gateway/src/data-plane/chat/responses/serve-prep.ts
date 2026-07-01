@@ -1,13 +1,14 @@
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
+import { classifyResponsesItemAffinity } from './items/affinity.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
-import { planResponsesRouting } from './routing.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -60,17 +61,16 @@ export const expandPreviousResponseId = async (
   };
 };
 
-// Materializes the user-supplied input (string or array) into Responses items
-// and stages them so the snapshot picks them up alongside the prior history
-// and this turn's output. Mirrors the contract the routing/affinity walk
-// already honors via `loadInputItems` — staging is the write-side companion.
-const stageUserInputItems = async (input: ResponsesPayload['input'], store: StatefulResponsesStore): Promise<void> => {
-  const items: ResponsesInputItem[] = typeof input === 'string'
-    ? [{ type: 'message', role: 'user', content: input }]
-    : [...input];
-  await store.stageInputItems(items);
-  await store.refreshTouchedItems();
-};
+// A bare-string Responses `input` is wrapped into a synthetic user message
+// so staging and the affinity walk both see it as a real item. The affinity
+// walk still receives an empty `sourceItems` array since a string carries no
+// item references — only the staged form matters.
+const materializeInput = (input: ResponsesPayload['input']): {
+  readonly sourceItems: readonly ResponsesInputItem[];
+  readonly items: readonly ResponsesInputItem[];
+} => typeof input === 'string'
+  ? { sourceItems: [], items: [{ type: 'message', role: 'user', content: input }] }
+  : { sourceItems: input, items: input };
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
@@ -78,10 +78,10 @@ export type ResponsesServePlan =
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
-// expand any `previous_response_id`, enumerate candidates, plan routing,
-// stage the user input, and pick the first candidate. Returns a rendered
-// failure result when no candidate is viable so the caller can surface it
-// directly without re-deriving the model-error branch.
+// expand any `previous_response_id`, enumerate candidates, classify item
+// affinity, stage the user input, and pick the first candidate. Returns a
+// rendered failure result when no candidate is viable so the caller can
+// surface it directly without re-deriving the model-error branch.
 export const prepareResponsesServePlan = async (args: {
   readonly payload: ResponsesPayload;
   readonly ctx: ChatGatewayCtx;
@@ -97,14 +97,23 @@ export const prepareResponsesServePlan = async (args: {
     currentColo: ctx.currentColo,
   });
   const viable = enumerated.filter(c => responsesTarget.canServe(c.model.endpoints));
-  const decision = await planResponsesRouting({ payload: prepared, candidates: viable, ctx });
+  const { sourceItems, items: inputItemsToStage } = materializeInput(prepared.input);
+  const decision = await classifyResponsesItemAffinity({
+    sourceItems,
+    view: responsesItemsView,
+    store,
+    candidates: viable,
+    inputItemsToStage,
+  });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
   // up the new user items in addition to the prior snapshot history.
-  // Runs after routing so any `item_reference` in user-supplied input has
-  // its target row loaded by the affinity walk.
-  await stageUserInputItems(payload.input, store);
+  // Runs after the affinity walk so any `item_reference` in user-supplied
+  // input has its target row loaded.
+  const { items: itemsToStage } = materializeInput(payload.input);
+  await store.stageInputItems(itemsToStage);
+  await store.refreshTouchedItems();
 
   // Any non-throwing attempt result — events, api-error, or
   // internal-error — IS the answer for this request: an upstream 4xx/5xx
