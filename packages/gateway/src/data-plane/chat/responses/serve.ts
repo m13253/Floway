@@ -1,8 +1,8 @@
 import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
-import { isAttemptSuccess } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { iterateChatCandidates } from '../shared/iterate-candidates.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -29,13 +29,11 @@ export const responsesServe = {
     // final answer; per-candidate failures fall through so a transient
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
-    let lastFailure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | undefined;
-    for (const candidate of plan.candidates) {
-      const result = await responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
-      if (isAttemptSuccess(result)) return result;
-      lastFailure = result;
-    }
-    return lastFailure!;
+    return await iterateChatCandidates(
+      plan.candidates,
+      'responsesServe.generate',
+      candidate => responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers }),
+    );
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -50,12 +48,10 @@ export const responsesServe = {
     // re-tags the result as compact on the way out.
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
-    let lastFailure: ResponsesAttemptResult | undefined;
-    for (const candidate of plan.candidates) {
-      const result = await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
-      if (isAttemptSuccess(result)) return result;
-      lastFailure = result;
-    }
-    return lastFailure!;
+    return await iterateChatCandidates(
+      plan.candidates,
+      'responsesServe.compact',
+      candidate => responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers }),
+    );
   },
 };

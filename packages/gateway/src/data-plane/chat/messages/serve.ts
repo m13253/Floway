@@ -2,8 +2,9 @@ import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } fr
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
-import { isAttemptSuccess, noViableCandidateFailure } from '../shared/errors.ts';
+import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { iterateChatCandidates } from '../shared/iterate-candidates.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
@@ -46,13 +47,11 @@ export const messagesServe = {
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim.
-    let lastFailure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | undefined;
-    for (const candidate of decision.candidates) {
-      const result = await messagesAttempt.generate({ payload, ctx, candidate, headers });
-      if (isAttemptSuccess(result)) return result;
-      lastFailure = result;
-    }
-    return lastFailure!;
+    return await iterateChatCandidates(
+      decision.candidates,
+      'messagesServe.generate',
+      candidate => messagesAttempt.generate({ payload, ctx, candidate, headers }),
+    );
   },
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
@@ -74,12 +73,10 @@ export const messagesServe = {
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
     if (decision.candidates.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
 
-    let lastFailure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult | undefined;
-    for (const candidate of decision.candidates) {
-      const result = await messagesAttempt.countTokens({ payload, ctx, candidate, headers });
-      if (isAttemptSuccess(result)) return result;
-      lastFailure = result;
-    }
-    return lastFailure!;
+    return await iterateChatCandidates(
+      decision.candidates,
+      'messagesServe.countTokens',
+      candidate => messagesAttempt.countTokens({ payload, ctx, candidate, headers }),
+    );
   },
 };

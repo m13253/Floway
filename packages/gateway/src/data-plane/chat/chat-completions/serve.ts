@@ -2,8 +2,9 @@ import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
-import { isAttemptSuccess, noViableCandidateFailure } from '../shared/errors.ts';
+import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { iterateChatCandidates } from '../shared/iterate-candidates.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -41,12 +42,10 @@ export const chatCompletionsServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
     // real upstream telemetry rather than a synthetic envelope.
-    let lastFailure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> | undefined;
-    for (const candidate of decision.candidates) {
-      const result = await chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
-      if (isAttemptSuccess(result)) return result;
-      lastFailure = result;
-    }
-    return lastFailure!;
+    return await iterateChatCandidates(
+      decision.candidates,
+      'chatCompletionsServe.generate',
+      candidate => chatCompletionsAttempt.generate({ payload, ctx, candidate, headers }),
+    );
   },
 };
