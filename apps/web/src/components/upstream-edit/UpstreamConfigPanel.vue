@@ -27,7 +27,7 @@ const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList',
 const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
 
 type CommonConfigPanelProps = {
-  provider: UpstreamProviderKind;
+  kind: UpstreamProviderKind;
   flags: FlagDef[];
   customApiKeySet: boolean;
   azureApiKeySet: boolean;
@@ -113,7 +113,7 @@ const measureFloor = () => {
   if (header) h += header.getBoundingClientRect().height;
   intrinsicFloorPx.value = h;
 };
-watch([contentRef, flagSectionRef, headerRef, () => props.provider], () => {
+watch([contentRef, flagSectionRef, headerRef, () => props.kind], () => {
   floorObserver?.disconnect();
   const content = contentRef.value;
   if (!content) return;
@@ -135,8 +135,8 @@ onBeforeUnmount(() => floorObserver?.disconnect());
     <header ref="headerRef" class="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
       <span
         class="rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-        :class="providerBadgeClass(provider)"
-      >{{ providerMeta(provider).label }}</span>
+        :class="providerBadgeClass(kind)"
+      >{{ providerMeta(kind).label }}</span>
       <h2 class="min-w-0 truncate text-sm font-semibold text-white">
         {{ name || (mode === 'create' ? 'New upstream' : 'Upstream') }}
       </h2>
@@ -145,7 +145,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
     <div ref="contentRef" class="flex min-h-0 flex-1 flex-col gap-6 px-5 py-5">
 
-      <section v-if="!(mode === 'create' && (provider === 'copilot' || provider === 'codex' || provider === 'claude-code'))" class="shrink-0">
+      <section v-if="!(mode === 'create' && (kind === 'copilot' || kind === 'codex' || kind === 'claude-code'))" class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
@@ -164,7 +164,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         class="shrink-0"
       />
 
-      <section v-if="provider === 'custom'" class="shrink-0">
+      <section v-if="kind === 'custom'" class="shrink-0">
         <CustomConfigPanel
           v-model="customDraft"
           :api-key-set="customApiKeySet"
@@ -176,7 +176,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'azure'" class="shrink-0">
+      <section v-else-if="kind === 'azure'" class="shrink-0">
         <AzureConfigPanel
           v-model="azureDraft"
           :api-key-set="azureApiKeySet"
@@ -184,7 +184,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'ollama'" class="shrink-0">
+      <section v-else-if="kind === 'ollama'" class="shrink-0">
         <OllamaConfigPanel
           v-model="ollamaDraft"
           :api-key-set="ollamaApiKeySet"
@@ -196,7 +196,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'copilot' && copilotPanel" class="shrink-0">
+      <section v-else-if="kind === 'copilot' && copilotPanel" class="shrink-0">
         <CopilotConfigPanel
           v-bind="copilotPanel"
           :initial-quota="initialCopilotQuota"
@@ -206,7 +206,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'codex' && codexPanel" class="shrink-0">
+      <section v-else-if="kind === 'codex' && codexPanel" class="shrink-0">
         <CodexConfigPanel
           v-bind="codexPanel"
           :proxy-fallback-list="proxyFallbackList"
@@ -215,7 +215,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="provider === 'claude-code' && claudeCodePanel" class="shrink-0">
+      <section v-else-if="kind === 'claude-code' && claudeCodePanel" class="shrink-0">
         <ClaudeCodeConfigPanel
           v-bind="claudeCodePanel"
           :proxy-fallback-list="proxyFallbackList"
@@ -264,7 +264,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <FlagOverridesEditor
           v-model="flagOverrides"
           :flags="flags"
-          :provider-kind="provider"
+          :kind="kind"
           name-prefix="upstream-flag"
           class="min-h-0 flex-1"
         />
