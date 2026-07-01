@@ -5,8 +5,6 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult, ResponsesInvocation, TelemetryModelIdentity } from '@floway-dev/provider';
 
-export type { ResponsesInvocation };
-
 // The chain runner produces an event stream for both actions — the attempt
 // post-processes it into a single `response.compaction` envelope when the
 // caller's intent action was 'compact'. `modelIdentity` and `usage` carry

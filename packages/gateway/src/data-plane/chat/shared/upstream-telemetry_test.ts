@@ -1,10 +1,9 @@
 import { beforeEach, test } from 'vitest';
 
-import type { ChatGatewayCtx } from './gateway-ctx.ts';
+import type { GatewayCtx } from './gateway-ctx.ts';
 import { withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -19,7 +18,7 @@ const CONTEXT: PerformanceTelemetryContext = {
   runtimeLocation: 'TEST',
 };
 
-const baseCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx => {
+const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
   const downstream = new AbortController();
   return {
     apiKeyId: 'key_1',
@@ -31,8 +30,7 @@ const baseCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx => {
     dump: null,
     abortSignal: downstream.signal,
     downstreamAbortController: downstream,
-    backgroundScheduler: (promise: Promise<unknown>) => { void promise; },
-    store: createNonResponsesSourceStore('key_1'),
+    backgroundScheduler: promise => { void promise; },
     ...overrides,
   };
 };

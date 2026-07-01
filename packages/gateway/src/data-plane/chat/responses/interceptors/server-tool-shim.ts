@@ -1,6 +1,6 @@
 import { jsonrepair } from 'jsonrepair';
 
-import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
+import type { ResponsesInterceptor } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
@@ -16,7 +16,7 @@ import type {
   ResponsesTool,
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
-import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, ResponsesInvocation } from '@floway-dev/provider';
 
 export interface MergeUsage {
   input_tokens?: number;

@@ -1,12 +1,11 @@
 import { test } from 'vitest';
 
 import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
-import type { ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult, type ResponsesInvocation } from '@floway-dev/provider';
 import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
