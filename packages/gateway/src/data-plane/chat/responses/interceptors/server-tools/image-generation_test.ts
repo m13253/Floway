@@ -21,10 +21,11 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../../items/store.ts';
-import type { CanonicalResponsesPayload, ResponsesInvocation } from '../types.ts';
+import type { ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { directFetcher } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertStringIncludes } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 

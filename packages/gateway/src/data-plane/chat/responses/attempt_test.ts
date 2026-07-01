@@ -1,7 +1,6 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
-import type { CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
 import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
@@ -14,6 +13,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_attempt_test';
 

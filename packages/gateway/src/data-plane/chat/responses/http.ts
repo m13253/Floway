@@ -1,5 +1,4 @@
 import { translatorInputErrorResult } from './errors.ts';
-import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -13,6 +12,7 @@ import { providerModelsUnavailableResponse } from '../shared/upstream-models-err
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Codex sends auto-review requests over the Responses wire API as a
 // `codex-auto-review` model id; rewrite at the entry so downstream routing,

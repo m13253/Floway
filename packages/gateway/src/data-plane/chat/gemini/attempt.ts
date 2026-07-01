@@ -5,7 +5,6 @@ import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupport
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
 import { chatTargetPicker } from '../shared/attempt-helpers.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -63,7 +62,7 @@ export const geminiAttempt = {
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
           translated => responsesAttempt.generate({
-            payload: canonicalizeResponsesPayload(translated), ctx, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }

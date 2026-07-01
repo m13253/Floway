@@ -2,7 +2,6 @@ import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
@@ -61,7 +60,7 @@ export const chatCompletionsAttempt = {
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: canonicalizeResponsesPayload(translated), ctx, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }

@@ -1,12 +1,13 @@
 import { test } from 'vitest';
 
-import type { CanonicalResponsesPayload, ResponsesInvocation } from './types.ts';
+import type { ResponsesInvocation } from './types.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',

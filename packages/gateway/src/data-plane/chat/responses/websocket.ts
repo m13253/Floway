@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -15,6 +14,7 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/respon
 import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;

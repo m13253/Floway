@@ -1,5 +1,5 @@
 import { responsesInterceptors } from './interceptors/index.ts';
-import type { CanonicalResponsesPayload, ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
+import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
@@ -20,6 +20,7 @@ import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/re
 import { type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/responses` generate prefers the native Responses target, then the
 // translated Messages path, then the translated Chat Completions path. The

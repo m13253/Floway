@@ -2,10 +2,9 @@ import { createTemporaryResponsesItemId, hashResponsesItemEncryptedContent, resp
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
-import type { CanonicalResponsesPayload } from '../interceptors/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
-import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import type { CanonicalResponsesPayload, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem & { upstreamId: string } =>
   row.upstreamId !== null;

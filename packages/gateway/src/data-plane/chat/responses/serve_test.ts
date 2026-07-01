@@ -1,6 +1,5 @@
 import { afterEach, test, vi } from 'vitest';
 
-import type { CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createStoredResponsesItemId } from './items/format.ts';
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
@@ -13,6 +12,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // `enumerateModelCandidates` is the only seam between serve and the
 // provider registry — mocking it directly keeps the serve tests narrow

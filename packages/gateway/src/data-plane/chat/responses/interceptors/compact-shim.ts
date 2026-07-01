@@ -45,7 +45,7 @@
 // untouched, so the operator can selectively turn the flag off for codex /
 // copilot / azure / custom upstreams that natively support compaction.
 
-import type { CanonicalResponsesPayload, ResponsesInterceptor, ResponsesInvocation } from './types.ts';
+import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
@@ -53,6 +53,7 @@ import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Vendored from openai/codex (Apache-2.0):
 // https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/prompts/templates/compact/prompt.md
