@@ -130,8 +130,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // family before they reach `modelServesEndpoint`. Iteration order
     // follows configured sort_order across upstreams, with the unprefixed
     // branch pushed before the prefixed one within a single upstream.
-    // Candidates are tried in turn; the first 2xx wins, transient
-    // failures (5xx/429/network) on one upstream roll over to the next.
     const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
