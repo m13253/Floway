@@ -21,17 +21,15 @@ import type { ModelCandidate, Provider, ProviderCallResult, TelemetryModelIdenti
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
 // the passthrough serve reads the rest to forward the response, attribute
-// dumps, and record request-total perf. The upstream id and per-attempt
-// perf context live on the result rather than on side-channel state
-// because the iterator only exposes the winning (or last-failed) result
-// back to the serve.
+// dumps, and record request-total perf. `identity` carries the upstream
+// id alongside the model/pricing metadata the dump and usage-record
+// paths already consume together.
 export interface PassthroughAttemptResult {
   readonly type: 'plain';
   readonly status: number;
   readonly response: Response;
   readonly performance: PerformanceTelemetryContext;
   readonly identity: TelemetryModelIdentity;
-  readonly upstream: string;
 }
 
 export interface PassthroughAttemptArgs {
@@ -97,6 +95,5 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     response,
     performance,
     identity,
-    upstream: candidate.provider.upstream,
   };
 };

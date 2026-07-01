@@ -180,14 +180,14 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return attempted;
       },
     );
-    const { response, performance: performanceContext, identity, upstream } = result;
+    const { response, performance: performanceContext, identity } = result;
 
     if (!response.ok) {
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
       recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
-      ctx.dump?.error('upstream', upstream);
+      ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
     }
 
