@@ -2,6 +2,7 @@ import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
+import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
@@ -14,7 +15,6 @@ import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStr
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
-import { canonicalizeResponsesPayload } from '../responses/interceptors/types.ts';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/chat/completions` generate prefers a native Chat Completions target,

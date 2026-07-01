@@ -15,7 +15,6 @@ import type {
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
   ResponsesOutputImageGenerationCall,
-  ResponsesPayload,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
 import type { Fetcher, Provider, PerformanceTelemetryContext, ModelCandidate, UpstreamModel } from '@floway-dev/provider';
@@ -346,8 +345,7 @@ export const synthesizeImageGenerationCallId = (): string =>
 // against the order received — and native flattens every image across messages
 // and tool results into this same forward order. Preserving declaration order
 // therefore makes "the Nth image" mean the same thing here as it does natively.
-export const collectImageSources = (input: ResponsesPayload['input']): ImageSource[] => {
-  if (!Array.isArray(input)) return [];
+export const collectImageSources = (input: readonly ResponsesInputItem[]): ImageSource[] => {
   const sources: ImageSource[] = [];
   const collectFromContent = (content: string | ResponsesInputContent[]): void => {
     if (!Array.isArray(content)) return;

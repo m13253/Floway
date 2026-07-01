@@ -246,10 +246,6 @@ test('collectImageSources skips http(s) image urls (remote fetch unsupported)', 
   assertEquals(collectImageSources(input).length, 0);
 });
 
-test('collectImageSources returns empty for a plain string input', () => {
-  assertEquals(collectImageSources('just text').length, 0);
-});
-
 test('collectImageSources reads tool-result images and preserves forward order', () => {
   const input: ResponsesInputItem[] = [
     { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },

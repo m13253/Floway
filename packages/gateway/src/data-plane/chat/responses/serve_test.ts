@@ -407,7 +407,6 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   );
 
   assertEquals(expanded.previous_response_id, undefined);
-  if (!Array.isArray(expanded.input)) throw new Error('expected expanded input array');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], { type: 'item_reference', id: previousMessageId });
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'second turn' });
@@ -460,7 +459,6 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
     store,
   );
 
-  if (!Array.isArray(expanded.input)) throw new Error('expected expanded input array');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], { type: 'item_reference', id });
 });

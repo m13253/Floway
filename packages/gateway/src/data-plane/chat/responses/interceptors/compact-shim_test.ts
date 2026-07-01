@@ -78,7 +78,6 @@ test('inbound: compaction item with a shim-encoded payload expands inline', () =
     ],
   });
 
-  if (typeof expanded.input === 'string') throw new Error('expected array input');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], userItem);
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'new turn' });

@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import type { CanonicalResponsesPayload } from './interceptors/types.ts';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from './interceptors/types.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -239,13 +239,9 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
   if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
-  // Normalize the wire string to a single synthetic user message so every
-  // downstream reader operates on array-shaped input. See http.ts:parsePayload
-  // for the matching normalization on the HTTP entry.
-  const input = typeof candidate.input === 'string'
-    ? [{ type: 'message' as const, role: 'user' as const, content: candidate.input }]
-    : candidate.input;
-  return { ...source, input, stream: true } as CanonicalResponsesPayload;
+  // Feed the wire shape through the same canonicalization the HTTP entry uses,
+  // then stamp `stream: true` — the WS transport streams every turn.
+  return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
 };
 
 const respondResponsesWebSocket = async (input: {
