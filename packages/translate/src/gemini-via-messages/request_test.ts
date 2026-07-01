@@ -405,25 +405,3 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
-
-// ── Floway extension emission ──
-
-test('buildTargetRequest emits generationConfig.serviceTier onto Messages service_tier', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
-    'claude-test',
-    noOptions,
-  );
-
-  assertEquals(result.service_tier, 'priority');
-});
-
-test('buildTargetRequest drops verbosity extension on Messages (no slot)', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'low' } },
-    'claude-test',
-    noOptions,
-  );
-
-  assertEquals('verbosity' in result, false);
-});

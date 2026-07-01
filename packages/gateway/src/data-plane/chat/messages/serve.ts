@@ -1,7 +1,6 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
-import { applyChatRulesToMessages } from '../../model-aliases/apply.ts';
 import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
@@ -24,9 +23,8 @@ export interface MessagesServeCountTokensArgs {
   readonly headers: Headers;
 }
 
-const applyAlias = (payload: MessagesPayload) => (resolution: { targetModelId: string; rules: Parameters<typeof applyChatRulesToMessages>[1] }) => {
+const applyAlias = (payload: MessagesPayload) => (resolution: { targetModelId: string }) => {
   payload.model = resolution.targetModelId;
-  applyChatRulesToMessages(payload, resolution.rules);
 };
 
 export const messagesServe = {

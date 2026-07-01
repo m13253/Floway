@@ -432,44 +432,7 @@ test('translateChatCompletionsToResponses rejects an unknown message role', () =
   );
 });
 
-// ── Floway extension emission ──
-
-test('translateChatCompletionsToResponses maps reasoning_summary onto reasoning.summary', () => {
-  const result = translateChatCompletionsToResponses({
-    model: 'gpt-test',
-    messages: [{ role: 'user', content: 'hi' }],
-    reasoning_summary: 'detailed',
-  });
-
-  assertEquals(result.reasoning, { summary: 'detailed' });
-});
-
-test('translateChatCompletionsToResponses co-emits reasoning_effort and reasoning_summary on the same reasoning object', () => {
-  const result = translateChatCompletionsToResponses({
-    model: 'gpt-test',
-    messages: [{ role: 'user', content: 'hi' }],
-    reasoning_effort: 'xhigh',
-    reasoning_summary: 'concise',
-  });
-
-  assertEquals(result.reasoning, { effort: 'xhigh', summary: 'concise' });
-});
-
-test('translateChatCompletionsToResponses leaves Messages-only extensions as inbound residue', () => {
-  const result = translateChatCompletionsToResponses({
-    model: 'gpt-test',
-    messages: [{ role: 'user', content: 'hi' }],
-    thinking_budget: 4096,
-    adaptive_thinking: true,
-  });
-
-  // Responses has no slot for any of these; the sanitizer strips the
-  // residue. Translate must not invent a target field.
-  assertEquals('thinking_budget' in result, false);
-  assertEquals('adaptive_thinking' in result, false);
-});
-
-test('translateChatCompletionsToResponses passes a fully extension-free payload through unchanged from prior behavior', () => {
+test('translateChatCompletionsToResponses forwards reasoning_effort and service_tier onto the native slots', () => {
   const result = translateChatCompletionsToResponses({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],

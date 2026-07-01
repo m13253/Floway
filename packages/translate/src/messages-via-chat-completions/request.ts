@@ -303,7 +303,6 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
     tools: translateMessagesTools(clientTools),
     tool_choice: translateMessagesToolChoice(payload.tool_choice, clientTools),
     ...(responseFormat ? { response_format: responseFormat } : {}),
-    ...(payload.verbosity != null ? { verbosity: payload.verbosity } : {}),
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
 };

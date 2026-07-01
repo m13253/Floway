@@ -2,7 +2,6 @@ import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { applyChatRulesToResponses } from '../../model-aliases/apply.ts';
 import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -93,10 +92,7 @@ export const prepareResponsesServePlan = async (args: {
     modelName: prepared.model,
     kind: 'chat',
     endpointAccepts: responsesTarget.canServe,
-    applyAlias: resolution => {
-      prepared.model = resolution.targetModelId;
-      applyChatRulesToResponses(prepared, resolution.rules);
-    },
+    applyAlias: resolution => { prepared.model = resolution.targetModelId; },
     renderAliasFailure: failure => renderResponsesFailure(failure),
   });
   if (resolved.kind === 'failure') return { kind: 'failure', result: resolved.result };

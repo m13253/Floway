@@ -532,33 +532,7 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
   );
 });
 
-// ── Floway extension emission ──
-
-test('translateMessagesToResponses emits verbosity onto text.verbosity', () => {
-  const result = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    verbosity: 'medium',
-  });
-
-  assertEquals(result.text?.verbosity, 'medium');
-});
-
-test('translateMessagesToResponses co-emits verbosity with json_schema format under text', () => {
-  const result = translateMessagesToResponses({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    verbosity: 'low',
-    output_config: { format: { type: 'json_schema', schema: { type: 'object', properties: {} } } },
-  });
-
-  assertEquals(result.text?.verbosity, 'low');
-  assertEquals(result.text?.format?.type, 'json_schema');
-});
-
-test('translateMessagesToResponses drops Anthropic-only mode knobs the Responses wire cannot express', () => {
+test('translateMessagesToResponses collapses Anthropic thinking mode onto reasoning.effort only', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',
     max_tokens: 256,
@@ -566,11 +540,9 @@ test('translateMessagesToResponses drops Anthropic-only mode knobs the Responses
     thinking: { type: 'enabled', budget_tokens: 4096 },
   });
 
-  // budget_tokens and adaptive have no Responses slot; translate emits
-  // nothing for them. The sanitizer drops residue. `speed` has its own
-  // bridge test below and is intentionally excluded here.
-  assertEquals('thinking_budget' in result, false);
-  assertEquals('adaptive_thinking' in result, false);
+  // `thinking.type === 'enabled'` resolves to the OpenAI-canonical `medium`
+  // effort; the `budget_tokens` scalar has no Responses slot and drops.
+  assertEquals(result.reasoning, { effort: 'medium' });
 });
 
 // ── speed ↔ service_tier bridge ──

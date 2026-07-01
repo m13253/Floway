@@ -411,23 +411,3 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
-
-// ── Floway extension emission ──
-
-test('buildTargetRequest emits generationConfig.verbosity onto text.verbosity', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'medium' } },
-    'gpt-test',
-  );
-
-  assertEquals(result.text?.verbosity, 'medium');
-});
-
-test('buildTargetRequest emits generationConfig.serviceTier onto Responses service_tier', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
-    'gpt-test',
-  );
-
-  assertEquals(result.service_tier, 'priority');
-});

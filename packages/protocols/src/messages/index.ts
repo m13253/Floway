@@ -56,8 +56,6 @@ export interface MessagesPayload {
   // protocol layer because the gateway treats `speed: 'fast'` as the canonical
   // client signal regardless of which upstream serves it.
   speed?: 'standard' | 'fast' | (string & {});
-  /** Floway protocol extension. Translated to OpenAI Chat `verbosity` / Responses `text.verbosity` when routed to those upstreams; dropped on Anthropic Messages and Gemini targets. */
-  verbosity?: string;
 }
 
 export interface MessagesSearchResultLocationCitation {

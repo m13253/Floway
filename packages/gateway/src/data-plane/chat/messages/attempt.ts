@@ -1,5 +1,6 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
+import { applyRulesToUpstreamMessages } from '../../model-aliases/apply.ts';
 import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -9,7 +10,6 @@ import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTarg
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
-import { sanitizeForMessagesUpstream, createSanitizeTraceCtx } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -57,8 +57,8 @@ export const messagesAttempt = {
     };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (targetApi === 'messages') {
+        if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
         const { model: _model, ...body } = invocation.payload;
-        sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
         const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.provider.provider.callMessages(
           candidate.model,
@@ -110,8 +110,8 @@ export const messagesAttempt = {
     };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
+      if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
       const { model: _model, ...body } = invocation.payload;
-      sanitizeForMessagesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
       const { response } = await candidate.provider.provider.callMessagesCountTokens(
         candidate.model,
         body,

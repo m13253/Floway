@@ -238,9 +238,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   const clientTools = getClientTools(payload.tools);
   const { instructions, prependItems } = placeMessagesSystem(payload.system);
   const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
-  const formatPart = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
-  const verbosityPart = payload.verbosity != null ? { verbosity: payload.verbosity } : undefined;
-  const text = formatPart || verbosityPart ? { ...formatPart, ...verbosityPart } : undefined;
+  const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
   // `speed: 'fast'` maps to Responses `service_tier: 'fast'`; other non-fast
   // `speed` values have no OpenAI equivalent and are dropped. When `speed` is

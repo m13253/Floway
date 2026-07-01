@@ -1512,7 +1512,7 @@ test('translateResponsesToChatCompletions maps multimodal function_call_output i
   ]);
 });
 
-// ── Floway extension emission ──
+// ── Native field forwarding ──
 
 test('translateResponsesToChatCompletions maps text.verbosity onto verbosity', () => {
   const result = translateResponsesToChatCompletions({
@@ -1534,18 +1534,6 @@ test('translateResponsesToChatCompletions co-emits reasoning.effort onto reasoni
 
   assertEquals(result.target.reasoning_effort, 'xhigh');
   assertEquals(result.target.service_tier, 'priority');
-});
-
-test('translateResponsesToChatCompletions leaves Messages-only extensions as inbound residue (CC has no slot)', () => {
-  const result = translateResponsesToChatCompletions({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    thinking_budget: 4096,
-    adaptive_thinking: true,
-  });
-
-  assertEquals('thinking_budget' in result.target, false);
-  assertEquals('adaptive_thinking' in result.target, false);
 });
 
 test('translateResponsesToChatCompletions drops reasoning.summary (Chat has no slot)', () => {

@@ -1,7 +1,6 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
-import { applyChatRulesToChatCompletions } from '../../model-aliases/apply.ts';
 import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
@@ -25,10 +24,7 @@ export const chatCompletionsServe = {
       modelName: payload.model,
       kind: 'chat',
       endpointAccepts: chatCompletionsTarget.canServe,
-      applyAlias: resolution => {
-        payload.model = resolution.targetModelId;
-        applyChatRulesToChatCompletions(payload, resolution.rules);
-      },
+      applyAlias: resolution => { payload.model = resolution.targetModelId; },
       renderAliasFailure: renderChatCompletionsFailure,
     });
     if (resolved.kind === 'failure') return resolved.result;

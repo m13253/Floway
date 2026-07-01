@@ -189,11 +189,6 @@ const applyGenerationConfig = (request: ChatCompletionsPayload, generationConfig
 
   const reasoningEffort = geminiReasoningEffort(generationConfig.thinkingConfig);
   if (reasoningEffort) request.reasoning_effort = reasoningEffort;
-
-  // Extension fields landed on CC: `verbosity` flows verbatim; `serviceTier`
-  // crosses naming conventions (camelCase Gemini → snake_case OpenAI).
-  if (generationConfig.verbosity != null) request.verbosity = generationConfig.verbosity;
-  if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
 };
 
 const buildTools = (payload: GeminiPayload): ChatCompletionsTool[] | undefined => {

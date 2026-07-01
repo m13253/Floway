@@ -1,30 +1,34 @@
-// Per-protocol rule overlay. Alias rules overwrite IR fields they name;
-// fields the target IR cannot express are silently dropped.
+// Post-translate rule overlay. The alias resolver stages the rules on
+// `ctx.aliasRules`; each terminal wire call reads them and writes onto the
+// target IR's NATIVE slot before dispatching. Rules that a target protocol
+// cannot express are silently dropped — the wire has nowhere to put them.
+//
+// Structuring the overlay this way keeps every translate pair pure
+// native↔native and eliminates the fan-out of Floway-extension fields onto
+// each source IR.
 
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { GeminiPayload } from '@floway-dev/protocols/gemini';
-import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { MessagesPayload, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 
-export const applyChatRulesToChatCompletions = (body: ChatCompletionsPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamChatCompletions = (body: ChatCompletionsPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
-    const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
+    const { effort } = rules.reasoning;
     if (effort !== undefined) body.reasoning_effort = effort;
-    if (budget_tokens !== undefined) body.thinking_budget = budget_tokens;
-    if (adaptive !== undefined) body.adaptive_thinking = adaptive;
-    if (summary !== undefined) body.reasoning_summary = summary;
+    // `budget_tokens`, `adaptive`, and `summary` have no native Chat
+    // Completions slot; drop silently.
   }
   if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyChatRulesToResponses = (body: ResponsesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamResponses = (body: ResponsesPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
-    const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
+    const { effort, summary } = rules.reasoning;
     if (effort !== undefined || summary !== undefined) {
       const existing = body.reasoning ?? {};
       body.reasoning = {
@@ -33,8 +37,8 @@ export const applyChatRulesToResponses = (body: ResponsesPayload, rules: AliasRu
         ...(summary !== undefined ? { summary } : {}),
       };
     }
-    if (budget_tokens !== undefined) body.thinking_budget = budget_tokens;
-    if (adaptive !== undefined) body.adaptive_thinking = adaptive;
+    // `budget_tokens` and `adaptive` have no native Responses slot; drop
+    // silently.
   }
   if (rules.verbosity !== undefined) {
     body.text = { ...body.text, verbosity: rules.verbosity };
@@ -42,9 +46,9 @@ export const applyChatRulesToResponses = (body: ResponsesPayload, rules: AliasRu
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyChatRulesToMessages = (body: MessagesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
-    const { effort, budget_tokens, adaptive } = rules.reasoning;
+    const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     // Anthropic stores explicit effort in `output_config.effort`; budget /
     // adaptive ride on `thinking.*`. Splitting them so both can be set in
     // the same overlay (effort fixed + budget pinned, e.g.) without one
@@ -52,13 +56,19 @@ export const applyChatRulesToMessages = (body: MessagesPayload, rules: AliasRule
     if (effort !== undefined) {
       body.output_config = { ...body.output_config, effort };
     }
+    const display = summary !== undefined ? mapSummaryToMessagesDisplay(summary) : undefined;
+    const displayPart = display !== undefined ? { display } : {};
     if (adaptive === true) {
-      body.thinking = { ...body.thinking, type: 'adaptive' };
+      body.thinking = { ...body.thinking, type: 'adaptive', ...displayPart };
     } else if (budget_tokens !== undefined) {
-      body.thinking = { ...body.thinking, type: 'enabled', budget_tokens };
+      body.thinking = { ...body.thinking, type: 'enabled', budget_tokens, ...displayPart };
+    } else if (display !== undefined) {
+      // Anthropic discards `thinking.display` unless a mode is set; default
+      // to the enabled variant so the summary hint reaches the wire.
+      body.thinking = { ...body.thinking, type: 'enabled', ...displayPart };
     }
   }
-  if (rules.verbosity !== undefined) body.verbosity = rules.verbosity;
+  // `verbosity` has no native Messages slot; drop silently.
   if (rules.serviceTier !== undefined) {
     // The cross-protocol bridge in translate maps `speed: 'fast'` ↔
     // `service_tier: 'fast'`; on a native Messages target the alias rule
@@ -77,40 +87,25 @@ export const applyChatRulesToMessages = (body: MessagesPayload, rules: AliasRule
   }
 };
 
-// Discrete effort presets map onto Gemini's `thinkingLevel` enum; unknown
-// values are dropped because Gemini rejects out-of-enum tiers upstream.
-const GEMINI_THINKING_LEVEL_BY_EFFORT: Record<string, 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'> = {
-  none: 'minimal',
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-};
-
-export const applyChatRulesToGemini = (body: GeminiPayload, rules: AliasRules): void => {
-  if (hasReasoning(rules)) {
-    const { effort, budget_tokens, adaptive } = rules.reasoning;
-    // Gemini collapses the three reasoning controls onto one `thinkingConfig`
-    // sub-object. Adaptive wins by encoding budget=-1 (Gemini's adaptive
-    // sentinel); an explicit budget pins the count; effort sets the level.
-    const thinkingConfig = { ...body.generationConfig?.thinkingConfig };
-    if (adaptive === true) {
-      thinkingConfig.thinkingBudget = -1;
-    } else if (budget_tokens !== undefined) {
-      thinkingConfig.thinkingBudget = budget_tokens;
-    }
-    if (effort !== undefined) {
-      const level = GEMINI_THINKING_LEVEL_BY_EFFORT[effort];
-      if (level !== undefined) thinkingConfig.thinkingLevel = level;
-    }
-    if (Object.keys(thinkingConfig).length > 0) {
-      body.generationConfig = { ...body.generationConfig, thinkingConfig };
-    }
-  }
-  if (rules.verbosity !== undefined) {
-    body.generationConfig = { ...body.generationConfig, verbosity: rules.verbosity };
-  }
-  if (rules.serviceTier !== undefined) {
-    body.generationConfig = { ...body.generationConfig, serviceTier: rules.serviceTier };
+// Collapse OpenAI-style summary presets onto Anthropic's structured
+// `thinking.display` enumeration: `concise`/`detailed` both surface a
+// redacted summary and collapse to `summarized`; `omitted` is the
+// canonical hide-everything spelling; `auto` returns undefined so
+// Anthropic's account default takes over. Operator-typed values that match
+// neither vocabulary pass through verbatim — Anthropic rejects unknown
+// values at the wire, which is the explicit-failure path.
+const mapSummaryToMessagesDisplay = (summary: string): MessagesThinkingDisplay | undefined => {
+  switch (summary) {
+  case 'concise':
+  case 'detailed':
+    return 'summarized';
+  case 'omitted':
+    return 'omitted';
+  case 'auto':
+    return undefined;
+  default:
+    // Anthropic rejects unknown enum values at the wire, so passing an
+    // operator-typed value verbatim is the explicit-failure path.
+    return summary as MessagesThinkingDisplay;
   }
 };

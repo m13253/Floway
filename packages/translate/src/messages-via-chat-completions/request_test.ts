@@ -521,19 +521,6 @@ test('translateMessagesToChatCompletions rejects an unknown message role', () =>
   );
 });
 
-// ── Floway extension emission ──
-
-test('translateMessagesToChatCompletions emits verbosity extension verbatim', () => {
-  const result = translateMessagesToChatCompletions({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-    verbosity: 'low',
-  });
-
-  assertEquals(result.verbosity, 'low');
-});
-
 test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no Chat-completions slot', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
@@ -543,22 +530,10 @@ test('translateMessagesToChatCompletions drops Anthropic-only knobs that have no
   });
 
   // Only the OpenAI-canonical effort axis survives; budget_tokens and display
-  // have no Chat-completions equivalent and the translate function emits
-  // nothing for them. (The sanitizer would strip anything anyway.) `speed`
-  // has its own bridge test below and is intentionally excluded here.
+  // have no Chat-completions equivalent and translate emits nothing for
+  // them. `speed` has its own bridge test below and is intentionally
+  // excluded here.
   assertEquals(result.reasoning_effort, 'medium');
-  assertEquals('thinking_budget' in result, false);
-  assertEquals('reasoning_summary' in result, false);
-});
-
-test('translateMessagesToChatCompletions does not emit verbosity when the extension is unset', () => {
-  const result = translateMessagesToChatCompletions({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals('verbosity' in result, false);
 });
 
 // ── speed ↔ service_tier bridge ──

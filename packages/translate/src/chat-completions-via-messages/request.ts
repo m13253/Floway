@@ -1,6 +1,5 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { buildMessagesThinkingFromExtensions } from '../shared/via-messages/anthropic-extensions.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -219,14 +218,6 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
-  // Materialize the Floway extension fields onto their Messages-natural
-  // slots.
-  const thinking = buildMessagesThinkingFromExtensions({
-    thinkingBudget: payload.thinking_budget,
-    adaptiveThinking: payload.adaptive_thinking,
-    reasoningSummary: payload.reasoning_summary,
-  });
-
   // `service_tier: 'fast'` from the Chat Completions caller maps to
   // Anthropic's `speed: 'fast'`; all other defined service_tier values
   // pass through as `service_tier` on the Messages wire.
@@ -255,7 +246,6 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
-    ...(thinking ? { thinking } : {}),
     ...serviceTierFields,
   };
 };

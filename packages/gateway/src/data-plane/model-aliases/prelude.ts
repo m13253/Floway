@@ -19,12 +19,13 @@ export interface AliasNoTargetFailure {
 // runs before routing. Resolves candidates against the live registry, runs
 // the alias resolver when the inbound id is an alias, stages the
 // `x-floway-alias` response header on every alias-touched code path
-// (including the no-target 404), and converts
+// (including the no-target 404), stashes the alias rules on `ctx` so each
+// terminal wire call can overlay them onto the target IR, and converts
 // `AliasNoTargetAvailableError` to whatever rendered failure the caller's
-// `renderAliasFailure` produces. Chat protocols also overlay rules onto the
-// payload via `applyAlias`; passthrough leaves it undefined because the
-// per-call `candidate.model.id` rewrite happens at the provider boundary,
-// not on the inbound body.
+// `renderAliasFailure` produces. `applyAlias` is left as the seam through
+// which the caller rewrites its own body-carried model id (chat: mutates
+// `payload.model`; Gemini reads `effectiveModelId` since the id rides the
+// URL path); rule overlay itself lives target-side in the attempt layer.
 export interface ResolveCandidatesArgs<F> {
   readonly ctx: GatewayCtx;
   readonly modelName: string;
@@ -105,6 +106,11 @@ export const resolveCandidatesAndApplyAlias = async <F>(args: ResolveCandidatesA
   );
 
   if (aliasResolution !== null) {
+    // Stash the rule overlay on ctx so each terminal wire call can apply
+    // it against the target IR. Cross-protocol translation preserves ctx,
+    // so nested attempts (CC → M → R → callResponses) all see the same
+    // rules automatically.
+    ctx.aliasRules = aliasResolution.rules;
     applyAlias?.(aliasResolution);
     ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
   }

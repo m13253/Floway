@@ -847,20 +847,6 @@ test('translateResponsesToMessages throws when a non-leading developer input mes
   );
 });
 
-// ── Floway extension emission ──
-
-const minimalResponsesPayload = (overrides: Record<string, unknown>) => ({
-  model: 'claude-test' as const,
-  input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }],
-  ...overrides,
-});
-
-test('translateResponsesToMessages emits thinking_budget onto thinking.{enabled, budget_tokens}', async () => {
-  const result = await translateResponsesToMessages(minimalResponsesPayload({ thinking_budget: 8192 }));
-  assertEquals(result.target.thinking, { type: 'enabled', budget_tokens: 8192 });
-});
-
-test('translateResponsesToMessages emits adaptive_thinking onto thinking.{adaptive}', async () => {
-  const result = await translateResponsesToMessages(minimalResponsesPayload({ adaptive_thinking: true }));
-  assertEquals(result.target.thinking, { type: 'adaptive' });
-});
+// (Native native↔native only — Responses no longer carries thinking-mode
+// extension fields; alias overlays land on the Messages IR at the wire
+// call via `applyRulesToUpstreamMessages`.)

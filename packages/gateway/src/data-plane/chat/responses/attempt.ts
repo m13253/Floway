@@ -6,13 +6,13 @@ import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } 
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { applyRulesToUpstreamResponses } from '../../model-aliases/apply.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { createSanitizeTraceCtx, sanitizeForResponsesUpstream } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -223,6 +223,7 @@ const dispatchResponses = async (
   switch (targetApi) {
   case 'responses': {
     const recorder = createUpstreamLatencyRecorder();
+    if (ctx.aliasRules !== undefined) applyRulesToUpstreamResponses(invocation.payload, ctx.aliasRules);
     if (invocation.action === 'compact') {
       // The compact wire body drops `stream` and `store` — `store` is a
       // gateway-only snapshot-persistence hint that the upstream compact
@@ -231,7 +232,6 @@ const dispatchResponses = async (
       // provider can decide for itself (every provider's streaming call
       // forces stream=true anyway).
       const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
       const providerResult = await candidate.provider.provider.callResponses(
         candidate.model,
         body,
@@ -242,7 +242,6 @@ const dispatchResponses = async (
       return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
     }
     const { model: _model, ...body } = invocation.payload;
-    sanitizeForResponsesUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
     const providerResult = await candidate.provider.provider.callResponses(
       candidate.model,
       body,

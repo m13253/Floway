@@ -478,26 +478,6 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
   );
 });
 
-// ── Floway extension emission ──
-
-test('buildTargetRequest emits generationConfig.verbosity onto Chat verbosity', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { verbosity: 'low' } },
-    'gpt-test',
-  );
-
-  assertEquals(result.verbosity, 'low');
-});
-
-test('buildTargetRequest emits generationConfig.serviceTier onto Chat service_tier (camelCase → snake_case)', () => {
-  const result = buildTargetRequest(
-    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { serviceTier: 'priority' } },
-    'gpt-test',
-  );
-
-  assertEquals(result.service_tier, 'priority');
-});
-
 test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and max', () => {
   const xhigh = buildTargetRequest(
     { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'xhigh' } } },

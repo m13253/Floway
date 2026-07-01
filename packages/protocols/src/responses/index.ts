@@ -37,10 +37,6 @@ export interface ResponsesPayload {
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
-  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
-  thinking_budget?: number;
-  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
-  adaptive_thinking?: boolean;
 }
 
 // Narrower payload for `/responses/compact`. The official endpoint accepts a

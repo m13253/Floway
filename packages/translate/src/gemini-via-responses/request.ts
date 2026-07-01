@@ -146,12 +146,6 @@ const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: Gem
     request.text = { ...request.text, format: { type: 'json_object' } };
   }
 
-  // `verbosity` extension rides under `text` alongside the structured-output
-  // format, matching the native Responses placement.
-  if (generationConfig.verbosity != null) request.text = { ...request.text, verbosity: generationConfig.verbosity };
-
-  if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
-
   const effort = geminiReasoningEffort(generationConfig.thinkingConfig);
   if (!effort) return;
 

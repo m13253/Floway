@@ -18,9 +18,7 @@ export interface ChatCompletionsPayload {
   parallel_tool_calls?: boolean | null;
   response_format?: Record<string, unknown> | null;
   reasoning_effort?: string | null;
-  // GPT-5-family response-length control. Native OpenAI Chat field; Floway
-  // mirrors it onto Responses `text.verbosity` and exposes it as an
-  // extension on Messages / Gemini IRs.
+  // GPT-5-family response-length control. Native OpenAI Chat field.
   // Reference: https://platform.openai.com/docs/api-reference/chat/create
   verbosity?: string | null;
   prompt_cache_key?: string | null;
@@ -30,12 +28,6 @@ export interface ChatCompletionsPayload {
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
   stream_options?: { include_usage: boolean } | null;
-  /** Floway protocol extension. Translated to Anthropic `thinking.budget_tokens` / Gemini `thinkingConfig.thinkingBudget` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
-  thinking_budget?: number;
-  /** Floway protocol extension. Translated to Anthropic `thinking.type: "adaptive"` / Gemini `thinkingConfig.thinkingBudget: -1` when routed to those upstreams; dropped on OpenAI Chat/Responses targets. */
-  adaptive_thinking?: boolean;
-  /** Floway protocol extension. Translated to OpenAI Responses `reasoning.summary` / Anthropic `thinking.display` / Gemini `thinkingConfig.includeThoughts` when routed to those upstreams; dropped on OpenAI Chat targets. */
-  reasoning_summary?: string;
 }
 
 export interface ChatCompletionsTool {

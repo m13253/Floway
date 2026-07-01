@@ -403,16 +403,18 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
   assertEquals(callMessagesCountTokens.mock.calls.length, 0);
 });
 
-test('alias resolution swaps the inbound model id for the target and overlays rules onto the Gemini IR', async () => {
+test('alias resolution swaps the inbound model id for the target and overlays rules onto the target IR at the wire call', async () => {
   installRepo();
   aliasResolutionQueue.push({
     targetModelId: 'gpt-5.4',
     rules: { reasoning: { effort: 'high', budget_tokens: 1024 }, verbosity: 'low' },
     aliasName: 'gemini-fast',
   });
-  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers(),
-  }));
+  const capturedBodies: Record<string, unknown>[] = [];
+  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    capturedBodies.push(body as Record<string, unknown>);
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+  });
   queueCandidates([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
 
   const payload = makePayload();
@@ -427,10 +429,12 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
 
   // The resolved target id, not the alias name, reaches candidate enumeration.
   assertEquals(lastCandidatesCall.model, 'gpt-5.4');
-  // Alias rules land on the Gemini IR before the cross-protocol translation.
-  assertEquals(payload.generationConfig?.thinkingConfig?.thinkingLevel, 'high');
-  assertEquals(payload.generationConfig?.thinkingConfig?.thinkingBudget, 1024);
-  assertEquals(payload.generationConfig?.verbosity, 'low');
+  // Alias rules land on the terminal wire target's native slots — for a
+  // Gemini→ChatCompletions traversal that is `reasoning_effort` and
+  // `verbosity`. Rules that lack a native CC slot (budget_tokens) drop.
+  const observed = capturedBodies[0]!;
+  assertEquals(observed.reasoning_effort, 'high');
+  assertEquals(observed.verbosity, 'low');
 });
 
 test('alias resolves to no routable target — renders the Gemini 404 envelope + stages x-floway-alias on the failure', async () => {

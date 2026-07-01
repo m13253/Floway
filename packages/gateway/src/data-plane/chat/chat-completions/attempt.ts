@@ -1,5 +1,6 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
+import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
@@ -7,7 +8,6 @@ import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { createSanitizeTraceCtx, sanitizeForChatCompletionsUpstream } from '../shared/sanitize.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -111,8 +111,8 @@ const callChatCompletionsAsExecuteResult = async (
   candidate: ProviderCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
+  if (ctx.aliasRules !== undefined) applyRulesToUpstreamChatCompletions(payload, ctx.aliasRules);
   const { model: _model, ...body } = payload;
-  sanitizeForChatCompletionsUpstream(body as Record<string, unknown>, createSanitizeTraceCtx());
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.provider.provider.callChatCompletions(
     candidate.model,

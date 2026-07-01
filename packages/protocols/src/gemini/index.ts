@@ -38,10 +38,6 @@ export interface GeminiGenerationConfig {
   responseMimeType?: string;
   responseSchema?: unknown;
   thinkingConfig?: GeminiThinkingConfig;
-  /** Floway protocol extension. Translated to OpenAI Chat `verbosity` / Responses `text.verbosity` when routed to those upstreams; dropped on Anthropic Messages and Gemini targets. */
-  verbosity?: string;
-  /** Floway protocol extension. Translated to OpenAI Chat `service_tier` / Responses `service_tier` / Anthropic `service_tier` when routed to those upstreams; dropped on Gemini targets. */
-  serviceTier?: string;
 }
 
 export interface GeminiThinkingConfig {

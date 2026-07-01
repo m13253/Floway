@@ -1271,56 +1271,7 @@ test('translateChatCompletionsToMessages rejects an unknown user content part ty
   );
 });
 
-// ── Floway extension emission ──
-
-test('translateChatCompletionsToMessages emits thinking_budget extension onto thinking.{enabled, budget_tokens}', async () => {
-  const result = await translateChatCompletionsToMessages(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      thinking_budget: 4096,
-    }),
-  );
-
-  assertEquals(result.thinking, { type: 'enabled', budget_tokens: 4096 });
-});
-
-test('translateChatCompletionsToMessages emits adaptive_thinking extension onto thinking.{adaptive} (wins over budget)', async () => {
-  const result = await translateChatCompletionsToMessages(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      thinking_budget: 4096,
-      adaptive_thinking: true,
-    }),
-  );
-
-  assertEquals(result.thinking, { type: 'adaptive' });
-});
-
-test('translateChatCompletionsToMessages maps reasoning_summary onto thinking.display via concise|detailed → summarized', async () => {
-  const concise = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'concise' }));
-  const detailed = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'detailed' }));
-  const omitted = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'omitted' }));
-  const auto = await translateChatCompletionsToMessages(mkPayload({ messages: [{ role: 'user', content: 'hi' }], reasoning_summary: 'auto' }));
-
-  assertEquals(concise.thinking, { type: 'enabled', display: 'summarized' });
-  assertEquals(detailed.thinking, { type: 'enabled', display: 'summarized' });
-  assertEquals(omitted.thinking, { type: 'enabled', display: 'omitted' });
-  // `auto` returns undefined display so Anthropic's account-default applies;
-  // with no budget/adaptive signal there is no thinking block to attach to.
-  assertEquals(auto.thinking, undefined);
-});
-
-test('translateChatCompletionsToMessages merges reasoning_summary onto budget-driven thinking block', async () => {
-  const result = await translateChatCompletionsToMessages(
-    mkPayload({
-      messages: [{ role: 'user', content: 'hi' }],
-      thinking_budget: 2048,
-      reasoning_summary: 'concise',
-    }),
-  );
-
-  assertEquals(result.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
-});
+// ── service_tier forwarding ──
 
 test('translateChatCompletionsToMessages forwards service_tier verbatim', async () => {
   const result = await translateChatCompletionsToMessages(
@@ -1333,7 +1284,7 @@ test('translateChatCompletionsToMessages forwards service_tier verbatim', async 
   assertEquals(result.service_tier, 'priority');
 });
 
-test('translateChatCompletionsToMessages does not emit Messages-protocol fields when the extension is unset', async () => {
+test('translateChatCompletionsToMessages does not emit thinking or fast-mode fields for a bare payload', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [{ role: 'user', content: 'hi' }],

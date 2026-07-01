@@ -1,7 +1,6 @@
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
-import { applyChatRulesToGemini } from '../../model-aliases/apply.ts';
 import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
@@ -37,7 +36,6 @@ export const geminiServe = {
       modelName: args.model,
       kind: 'chat',
       endpointAccepts: geminiGenerateTarget.canServe,
-      applyAlias: resolution => applyChatRulesToGemini(payload, resolution.rules),
       renderAliasFailure: failure => renderGeminiFailure(failure, 'generate'),
     });
     if (resolved.kind === 'failure') return resolved.result;
@@ -62,7 +60,6 @@ export const geminiServe = {
       modelName: args.model,
       kind: 'chat',
       endpointAccepts: geminiCountTokensTarget.canServe,
-      applyAlias: resolution => applyChatRulesToGemini(payload, resolution.rules),
       renderAliasFailure: failure => renderGeminiFailure(failure, 'countTokens'),
     });
     if (resolved.kind === 'failure') return resolved.result;

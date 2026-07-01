@@ -197,11 +197,6 @@ const applyGenerationConfig = (request: MessagesPayload, generationConfig: Gemin
     };
   }
 
-  // `serviceTier` extension flows verbatim onto the Messages-native slot;
-  // `verbosity` has no Anthropic equivalent and stays as inbound residue
-  // that the sanitizer strips after translation.
-  if (generationConfig.serviceTier != null) request.service_tier = generationConfig.serviceTier;
-
   applyThinkingConfig(request, generationConfig.thinkingConfig);
 };
 
