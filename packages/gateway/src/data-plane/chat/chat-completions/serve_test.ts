@@ -259,9 +259,10 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   });
   queueCandidates([makeCandidate({ upstream: 'up_a', callChatCompletions })]);
 
+  const ctx = makeGatewayCtx();
   const result = await chatCompletionsServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(),
+    ctx,
     store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
@@ -280,6 +281,31 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'low');
   assertEquals(observed.verbosity, 'low');
+  // The correlation header carries the alias name on the 200 path too, so
+  // downstream observability can tie "client asked for X" / "upstream saw Y"
+  // on every alias-touched response, not only alias-404 failures.
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gpt-fast');
+});
+
+test('non-alias request does not stage the x-floway-alias header', async () => {
+  installRepo();
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'test-model-key', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ upstream: 'up_a', callChatCompletions })]);
+
+  const ctx = makeGatewayCtx();
+  const result = await chatCompletionsServe.generate({
+    payload: makePayload(),
+    ctx,
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    headers: new Headers(),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), null);
 });
 
 test('alias resolves to no routable target — renders the protocol 404 envelope + stages x-floway-alias on the failure', async () => {

@@ -168,3 +168,22 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals((await repo.modelAliases.list()).length, 0);
   });
 }
+
+// Fresh-DB coverage for the seed row applied by migration 0046, run outside
+// the freshRepo() cleanup loop so the row survives to be asserted on.
+// Memory-backed repos have no migration seeding, so this only covers the SQL
+// backend.
+test('[sql] migration 0046 seeds the codex-auto-review alias with its two-target list', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const rows = await repo.modelAliases.list();
+  const seed = rows.find(row => row.name === 'codex-auto-review');
+  assertExists(seed);
+  assertEquals(seed.displayName, 'Codex Auto Review');
+  assertEquals(seed.visibleInModelsList, true);
+  assertEquals(seed.selection, 'first-available');
+  assertEquals(seed.kind, 'chat');
+  assertEquals(seed.targets, [
+    { target_model_id: 'codex-auto-review', rules: {} },
+    { target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } },
+  ]);
+});

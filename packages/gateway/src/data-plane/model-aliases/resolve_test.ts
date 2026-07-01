@@ -312,3 +312,53 @@ test('alias with every target unresolvable to any upstream throws AliasNoTargetA
     'none currently map to an enabled upstream binding',
   );
 });
+
+test('alias with mixed no-binding + endpoint-mismatch rejections falls back to the generic no-binding wording', async () => {
+  // Only the "every dropped target was endpoint-mismatched" branch earns
+  // the endpoint-specific hint. As soon as one target is dropped for a
+  // different reason (here `gone` never resolved to any binding at all),
+  // the resolver reverts to the generic wording so the operator does not
+  // read the endpoint hint as a summary that also applies to the missing
+  // target.
+  setRoutableWith({
+    'messages-only': { messages: {} },
+  });
+  const repo = stubRepoFor(aliasRecord({
+    targets: [
+      { target_model_id: 'gone', rules: {} },
+      { target_model_id: 'messages-only', rules: {} },
+    ],
+  }));
+  await assertRejects(
+    () => resolveAlias({
+      modelName: 'gpt-fast',
+      ...RESOLVE_DEFAULTS,
+      endpointAccepts: endpoints => endpoints.chatCompletions !== undefined,
+      repo,
+    }),
+    AliasNoTargetAvailableError,
+    'none currently map to an enabled upstream binding',
+  );
+});
+
+test('random selection with a single available target pins to that target across every iteration', async () => {
+  // Regression pin for the pool-of-one degenerate: `Math.floor(Math.random()
+  // * 1)` is always 0, so `random` with a single-target pool must return
+  // the same id every time — no off-by-one that would index into an empty
+  // slot and blow up with `undefined.target_model_id`.
+  setRoutable('only-target');
+  const repo = stubRepoFor(aliasRecord({
+    selection: 'random',
+    targets: [{ target_model_id: 'only-target', rules: {} }],
+  }));
+  for (let i = 0; i < 100; i++) {
+    const result = await resolveAlias({
+      modelName: 'gpt-fast',
+      ...RESOLVE_DEFAULTS,
+      endpointAccepts: () => true,
+      repo,
+    });
+    assert(result !== null);
+    assertEquals(result.targetModelId, 'only-target');
+  }
+});

@@ -518,9 +518,10 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   });
   queueCandidates([makeCandidate({ upstream: 'up_cf', callMessages })]);
 
+  const ctx = makeGatewayCtx();
   const result = await messagesServe.generate({
     payload: makePayload({ model: 'claude-fast' }),
-    ctx: makeGatewayCtx(),
+    ctx,
     store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
@@ -534,6 +535,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The serviceTier=fast → speed=fast bridge lands the alias rule on
   // Anthropic's native Fast Mode field.
   assertEquals(observed.speed, 'fast');
+  // The correlation header carries the alias name on the 200 path too.
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'claude-fast');
 });
 
 test('alias resolves to no routable target — renders the Messages 404 envelope + stages x-floway-alias on the failure', async () => {

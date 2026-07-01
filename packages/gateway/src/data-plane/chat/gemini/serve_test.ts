@@ -418,9 +418,10 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   queueCandidates([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
 
   const payload = makePayload();
+  const ctx = makeGatewayCtx();
   const result = await geminiServe.generate({
     payload,
-    ctx: makeGatewayCtx(),
+    ctx,
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'gemini-fast',
     headers: new Headers(),
@@ -435,6 +436,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'high');
   assertEquals(observed.verbosity, 'low');
+  // The correlation header carries the alias name on the 200 path too.
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gemini-fast');
 });
 
 test('alias resolves to no routable target — renders the Gemini 404 envelope + stages x-floway-alias on the failure', async () => {

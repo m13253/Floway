@@ -740,3 +740,64 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     },
   );
 });
+
+test('/v1/models folds a real-id collision onto the alias even when the alias points at a different target', async () => {
+  // The existing collision-fold case seeds an alias that targets its own
+  // name; C6 covers the more subtle "alias name coincides with an
+  // unrelated real id" case. `orphan-shadow` here targets `gpt-5.4`, but
+  // the upstream catalog also lists a real `orphan-shadow`. The alias
+  // must win the row and the real `orphan-shadow` must not appear
+  // separately — otherwise a caller resolving `orphan-shadow` would see
+  // two entries with the same id.
+  const { repo, apiKey } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_shadow',
+    name: 'Shadow Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://shadow.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-shadow',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.modelAliases.insert({
+    name: 'orphan-shadow',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Alias entry wins',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-5.4', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'shadow.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }, { id: 'orphan-shadow' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { name: string } }> };
+      const shadowRows = body.data.filter(model => model.id === 'orphan-shadow');
+      assertEquals(shadowRows.length, 1);
+      assertEquals(shadowRows[0].aliasedFrom?.name, 'orphan-shadow');
+      assertEquals(shadowRows[0].display_name, 'Alias entry wins');
+    },
+  );
+});

@@ -717,9 +717,10 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   });
   queueCandidates([makeCandidate({ upstream: 'up_a', callResponses })]);
 
+  const ctx = makeGatewayCtx();
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(),
+    ctx,
     store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
@@ -735,6 +736,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.reasoning?.summary, 'detailed');
   assertEquals(observed.text?.verbosity, 'medium');
   assertEquals(observed.service_tier, 'priority');
+  // The correlation header carries the alias name on the 200 path too.
+  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gpt-fast');
 });
 
 test('alias resolves to no routable target — renders the Responses 404 envelope + stages x-floway-alias on the failure', async () => {
