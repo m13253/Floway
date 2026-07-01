@@ -71,7 +71,7 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
     const instance = await createCodexProvider(baseRecord);
-    expect(instance.providerKind).toBe('codex');
+    expect(instance.kind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
     expect(instance.supportsResponsesItemReference).toBe(false);

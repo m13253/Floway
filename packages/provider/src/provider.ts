@@ -21,7 +21,7 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export interface Provider {
   upstream: string;
-  providerKind: UpstreamProviderKind;
+  kind: UpstreamProviderKind;
   name: string;
   // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];

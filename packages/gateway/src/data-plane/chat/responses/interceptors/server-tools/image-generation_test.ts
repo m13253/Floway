@@ -31,7 +31,7 @@ const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   candidate: {
     provider: {
-      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      upstream: 'test-upstream', kind: 'custom', name: 'test',
       disabledPublicModelIds: [], modelPrefix: null,
       instance: {} as never, supportsResponsesItemReference: false,
     },

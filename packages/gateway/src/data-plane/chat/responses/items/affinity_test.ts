@@ -21,7 +21,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,

@@ -83,7 +83,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, providerKind: 'custom', name: upstream,
+      upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
     model: overrides.endpoints ? stubUpstreamModel({ endpoints: overrides.endpoints }) : stubUpstreamModel(),

@@ -138,9 +138,9 @@ describe('createClaudeCodeProvider — factory surface', () => {
     expect(instance.instance.getPricingForModelKey('unknown-id')).toBeNull();
   });
 
-  test('providerKind is "claude-code" and supportsResponsesItemReference is false', async () => {
+  test('kind is "claude-code" and supportsResponsesItemReference is false', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
-    expect(instance.providerKind).toBe('claude-code');
+    expect(instance.kind).toBe('claude-code');
     expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });

@@ -13,7 +13,7 @@ const stubInstance = (
   fetchFn: () => Promise<UpstreamModel[]>,
 ): Provider => ({
   upstream: upstreamId,
-  providerKind: 'custom',
+  kind: 'custom',
   name: upstreamId,
   disabledPublicModelIds: [],
   modelPrefix: null,

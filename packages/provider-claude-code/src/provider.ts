@@ -100,7 +100,7 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
 
   return {
     upstream: record.id,
-    providerKind: 'claude-code',
+    kind: 'claude-code',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,

@@ -150,7 +150,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
       }
       if (typeof item.kind !== 'string' || !UPSTREAM_PROVIDERS.has(item.kind as UpstreamProviderKind)) {
-        throw new Error('kind must be one of custom, azure, copilot, codex, claude-code');
+        throw new Error(`kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}`);
       }
       if (typeof item.enabled !== 'boolean') throw new Error('enabled must be a boolean');
       if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');

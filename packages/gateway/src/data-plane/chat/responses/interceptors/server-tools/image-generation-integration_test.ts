@@ -35,7 +35,7 @@ const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: 
 const defaultCandidates = vi.hoisted(() => () => [{
   provider: {
     upstream: 'u',
-    providerKind: 'custom',
+    kind: 'custom',
     name: 'mock-image',
     disabledPublicModelIds: [],
     modelPrefix: null,
@@ -133,7 +133,7 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
 const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto', extraTool: Record<string, unknown> = {}): ResponsesInvocation => ({
   candidate: {
     provider: {
-      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      upstream: 'test-upstream', kind: 'custom', name: 'test',
       disabledPublicModelIds: [], modelPrefix: null,
       instance: {} as never, supportsResponsesItemReference: false,
     },
@@ -376,7 +376,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   stub.nextResolutionOverride = {
     candidates: [{
       provider: {
-        upstream: 'u', providerKind: 'custom', name: 'wrong-endpoint',
+        upstream: 'u', kind: 'custom', name: 'wrong-endpoint',
         disabledPublicModelIds: [], modelPrefix: null,
         supportsResponsesItemReference: false,
         provider: { getPricingForModelKey: () => null },

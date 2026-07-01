@@ -450,7 +450,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Pro
 
   return {
     upstream: copilot.id,
-    providerKind: 'copilot',
+    kind: 'copilot',
     name: copilot.name,
     disabledPublicModelIds: copilot.disabledPublicModelIds,
     modelPrefix: copilot.modelPrefix,

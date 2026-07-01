@@ -26,7 +26,7 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
 
 const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[]): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: instances.map(instance => ({ kind: instance.providerKind, id: instance.upstream, name: instance.name })),
+  upstreams: instances.map(instance => ({ kind: instance.kind, id: instance.upstream, name: instance.name })),
 });
 
 export const controlPlaneModels = async (c: Context) => {

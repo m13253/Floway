@@ -119,14 +119,14 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  providerKind?: ModelCandidate['provider']['providerKind'];
+  kind?: ModelCandidate['provider']['kind'];
   enabledFlags?: ReadonlySet<string>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const providerKind = overrides.providerKind ?? 'custom';
+  const kind = overrides.kind ?? 'custom';
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -134,7 +134,7 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, providerKind, name: upstream,
+      upstream, kind, name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
     model: stubUpstreamModel({
@@ -394,7 +394,7 @@ test('claude-code candidate preserves x-anthropic-billing-header system block th
   queueCandidates([
     makeCandidate({
       upstream: 'up_cc',
-      providerKind: 'claude-code',
+      kind: 'claude-code',
       enabledFlags: claudeCodeDefaults,
       callMessages,
     }),
@@ -449,7 +449,7 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
   queueCandidates([
     makeCandidate({
       upstream: 'up_co',
-      providerKind: 'copilot',
+      kind: 'copilot',
       enabledFlags: copilotDefaults,
       callMessages,
     }),

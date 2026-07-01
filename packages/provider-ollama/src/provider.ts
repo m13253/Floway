@@ -185,7 +185,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstream: record.id,
-    providerKind: 'ollama',
+    kind: 'ollama',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,

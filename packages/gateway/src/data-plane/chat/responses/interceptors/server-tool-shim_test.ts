@@ -312,7 +312,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
       // Tests don't care about provider identity here; the shim reads
       // targetApi off the invocation and enabledFlags off the candidate's
       // model. Use `never` to skip the full Provider literal.
-      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      upstream: 'test-upstream', kind: 'custom', name: 'test',
       disabledPublicModelIds: [], modelPrefix: null,
       instance: {} as never, supportsResponsesItemReference: false,
     },

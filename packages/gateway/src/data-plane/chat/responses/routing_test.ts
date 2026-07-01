@@ -33,7 +33,7 @@ const candidateFor = (upstream: string): ModelCandidate => {
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,

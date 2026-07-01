@@ -60,7 +60,7 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
 export const stubModelCandidate = (overrides: { model?: Partial<UpstreamModel>; provider?: Provider } = {}): ModelCandidate => {
   const provider = overrides.provider ?? {
     upstream: 'test-upstream',
-    providerKind: 'custom',
+    kind: 'custom',
     name: 'Test Upstream',
     disabledPublicModelIds: [],
     modelPrefix: null,
